@@ -10,5 +10,5 @@ export const allCollections = (
   docs: { home: string | null; tabs: { slug: string }[] },
   tab: { slug: string; name: string } | null | undefined,
   all: string,
-): { href: string; label: string } =>
-  tab && docs.tabs.length > 1 ? { href: docsTabPath(docs, tab.slug), label: tab.name } : { href: "/docs", label: all };
+): { href: string; label: string; /** It's the tab's name (the team's words), not the portal's. */ tab?: true } =>
+  tab && docs.tabs.length > 1 ? { href: docsTabPath(docs, tab.slug), label: tab.name, tab: true } : { href: "/docs", label: all };

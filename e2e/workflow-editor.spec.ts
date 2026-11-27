@@ -200,3 +200,30 @@ test("an owner makes a priority workflow in its editor, a user in its group writ
   await owner.goto(editor);
   await owner.waitForURL(`**/app/${slug}/settings/workflows`);
 });
+
+test("an owner changes only the text of a saved workflow's set reply, and it's saved", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const { id } = (await api("/workflows", {
+    name: "Say hello",
+    trigger: "about_to_hand_over",
+    actions: [{ kind: "reply_text", text: "Hello!" }, { kind: "dont_hand_over" }],
+  })) as unknown as { id: string };
+
+  await owner.goto(`/app/${slug}/settings/workflows/${id}`);
+  const reply = owner.getByRole("textbox", { name: "Reply" });
+  await expect(reply).toHaveValue("Hello!");
+  const save = owner.getByRole("button", { name: "Save changes" });
+  await expect(save).toBeDisabled();
+  await reply.fill("Hello! We'll be with you soon.");
+  await save.click();
+  await expect(owner.getByText("Saved Say hello")).toBeVisible();
+  await expect(save).toBeDisabled();
+  const stored = (await api(`/workflows/${id}`, undefined, "GET")) as unknown as { actions: { kind: string; text?: string }[] };
+  expect(stored.actions).toEqual([{ kind: "reply_text", text: "Hello! We'll be with you soon." }, { kind: "dont_hand_over" }]);
+  await owner.reload();
+  await expect(reply).toHaveValue("Hello! We'll be with you soon.");
+});

@@ -20,6 +20,7 @@ export type WorkflowRow = { id: string; name: string; trigger: WorkflowTrigger; 
 const GROUPS: Record<WorkflowTrigger, { title: string; empty: string }> = {
   conversation_started: { title: "When a conversation starts", empty: "No workflows. New conversations go on to the next step." },
   user_replied: { title: "When a user replies", empty: "No workflows. Replies go on to the next step." },
+  about_to_hand_over: { title: "When a conversation is about to go to a person", empty: "No workflows. Conversations go to your team." },
 };
 
 /**

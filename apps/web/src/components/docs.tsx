@@ -194,6 +194,7 @@ export function ArticleForm({
   screenshots = null,
   canTakeScreenshots = false,
   imageEditing,
+  askAi,
 }: {
   findings?: import("@/components/verification-marks").VerificationFinding[];
   /** Its "[Screenshot: …]" lines and their runs (a saved article's). */
@@ -212,6 +213,8 @@ export function ArticleForm({
   defaultTitle?: string;
   /** "Edit with AI" on the text's images; null where the server can't make images. */
   imageEditing?: ImageEditing | null;
+  /** Ask AI on selected text, where the server has AI; `paused`: the project is out of credits. */
+  askAi?: { paused: boolean } | null;
 }) {
   const [wide] = useState(sections);
   // The text shown (`opened`) and the version its saves are made on (`base`), kept while it has edits not saved,
@@ -422,6 +425,7 @@ export function ArticleForm({
           onChange={changed}
           uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
           imageEditing={imageEditing && { ...imageEditing, title }}
+          askAi={askAi && { projectSlug, kind: "article", paused: askAi.paused }}
         />
       </FieldGroup>
     </form>

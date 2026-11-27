@@ -877,3 +877,69 @@ paths:
     await fake.close();
   }
 });
+
+test("the docs in German: tabs' and collections' names translated on the home, a collection's page and an article's, marked as German", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // Two tabs: Handbooks translated, Plans not. Invoicing (translated) with Receipts in it (translated too).
+  await api("/tabs", { name: "Handbooks" });
+  // Plans for signed-in readers only: a signed-out one sees its page locked.
+  await api("/tabs", { name: "Plans", access: "signed_in", noAccess: "lock" });
+  await api("/collections", { name: "Invoicing", description: "Paying and receipts.", tab: "handbooks" });
+  await api("/collections", { name: "Receipts", description: "What you get.", parent: "invoicing" });
+  await api("/collections", { name: "Pricing", tab: "plans" });
+  for (const [title, collection] of [["Paying an invoice", "invoicing"], ["Downloading a receipt", "receipts"], ["Our plans", "pricing"]]) {
+    const article = await api("/articles", { title, body: `${title}.`, collection });
+    await api(`/articles/${article.slug}/publish`, {});
+  }
+  // An unlisted article alone in its collection (Notes, in Handbooks): readable at its link, its collection in no list.
+  await api("/collections", { name: "Notes", tab: "handbooks" });
+  const unlisted = await api("/articles", { title: "Internal notes", body: "Notes.", collection: "notes", listing: "unlisted" });
+  await api(`/articles/${unlisted.slug}/publish`, {});
+  // German written by the team: nothing asks the model. Its names as the team wrote them (L13's settings, later).
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  const german = (name: string, description?: string) => JSON.stringify({ de: { name, ...(description !== undefined && { description }), auto: false, source: null } });
+  await query(`UPDATE collection SET translations = $1 WHERE slug = 'invoicing' AND "projectId" = (SELECT id FROM project WHERE slug = $2)`, [german("Rechnungen", "Bezahlen und Belege."), slug]);
+  await query(`UPDATE collection SET translations = $1 WHERE slug = 'receipts' AND "projectId" = (SELECT id FROM project WHERE slug = $2)`, [german("Belege", "Was du bekommst."), slug]);
+  await query(`UPDATE docs_tab SET translations = $1 WHERE slug = 'handbooks' AND "projectId" = (SELECT id FROM project WHERE slug = $2)`, [german("Handbücher"), slug]);
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 1280, height: 800 });
+  await reader.goto("/de/docs");
+  const collections = reader.getByRole("list", { name: "Sammlungen" });
+  await expect(collections.getByRole("heading", { name: "Rechnungen" }).locator("[lang=de]")).toHaveText("Rechnungen");
+  await expect(collections.getByText("Bezahlen und Belege.")).toHaveAttribute("lang", "de");
+  // The tabs: one in German, the other in the team's English, each marked so.
+  const tabs = reader.getByRole("navigation", { name: "Dokumentationsbereiche" });
+  await expect(tabs.getByRole("link", { name: "Handbücher" }).locator("[lang=de]")).toHaveText("Handbücher");
+  await expect(tabs.getByRole("link", { name: "Plans" }).locator("[lang=en]")).toHaveText("Plans");
+  await checkpoint(reader, "docs-home-names-in-german", { fullPage: false });
+  // A collection's page: its heading and description, the one in it, and its link up to its tab.
+  await reader.goto("/de/docs/invoicing");
+  await expect(reader.getByRole("heading", { level: 1 }).locator("[lang=de]")).toHaveText("Rechnungen");
+  await expect(reader.getByRole("main").getByText("Bezahlen und Belege.")).toHaveAttribute("lang", "de");
+  await expect(reader.getByRole("main").getByRole("heading", { name: "Belege" }).locator("[lang=de]")).toHaveText("Belege");
+  await expect(reader.getByRole("main").getByText("Was du bekommst.")).toHaveAttribute("lang", "de");
+  await expect(reader.getByRole("main").getByRole("link", { name: "Handbücher", exact: true })).toHaveAttribute("lang", "de");
+  await checkpoint(reader, "docs-collection-names-in-german", { fullPage: false });
+  // The one in it: its link up to Rechnungen.
+  await reader.goto("/de/docs/receipts");
+  // (Not the tree's link to it, which has its name as its title.)
+  await expect(reader.getByRole("main").getByRole("link", { name: "Rechnungen", exact: true }).and(reader.locator("a:not([title])"))).toHaveAttribute("lang", "de");
+  // An article in Invoicing: the breadcrumb's link to it, and the sidebar's tree.
+  await reader.goto("/de/docs/paying-an-invoice");
+  await expect(reader.getByRole("navigation", { name: "Navigationspfad" }).getByRole("link", { name: "Rechnungen" })).toHaveAttribute("lang", "de");
+  await expect(reader.getByRole("navigation", { name: "Dokumentation" }).locator("[lang=de]", { hasText: "Rechnungen" })).toBeVisible();
+  // That unlisted one: its collection not listed, its breadcrumb's link up is to its tab, Handbücher.
+  await reader.goto(`/de/docs/${unlisted.slug}`);
+  await expect(reader.getByRole("navigation", { name: "Navigationspfad" }).getByRole("link", { name: "Handbücher" })).toHaveAttribute("lang", "de");
+  // The tab not translated, locked for this reader: its page's heading in the team's English.
+  await reader.goto("/de/docs/plans");
+  await expect(reader.getByRole("heading", { level: 1 }).locator("[lang=en]")).toHaveText("Plans");
+  // At the default language's address, the team's names.
+  await reader.goto("/docs");
+  await expect(reader.getByRole("list", { name: "Collections" }).getByRole("heading", { name: "Invoicing" })).toBeVisible();
+});

@@ -2,7 +2,6 @@ import { ARTICLE_TITLE_ID, docHeadings, type Heading } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import type { ApiOperation } from "@tuti/shared/api-reference";
 import { prisma } from "@tuti/db";
-import { DEFAULT_LANGUAGE } from "@tuti/shared";
 import { MESSAGES } from "@tuti/shared/messages";
 import { ArrowLeftIcon, ArrowRightIcon, ChevronDownIcon, ChevronRightIcon, LanguagesIcon, LockIcon } from "lucide-react";
 import { createTranslator } from "next-intl";
@@ -171,7 +170,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
           <PopularChips articles={popular} />
         </div>
       ) : (
-        <PortalPageHeader title={tab.name} />
+        <PortalPageHeader title={<span lang={tab.lang ?? lang}>{tab.name}</span>} />
       )}
       {collections.length === 0 && uncollected.length === 0 && references.length === 0 && (
         <EmptyState title={t("empty")} description={t("emptyDescription")} />
@@ -192,11 +191,11 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
                 )}
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <h2 className="font-sans text-[1.0625rem] font-semibold break-words">
-                    <span lang={lang}>{collection.name}</span>
+                    <span lang={collection.lang ?? lang}>{collection.name}</span>
                     {collection.locked && <LockedMark />}
                   </h2>
                   {collection.sample && <SampleBadge />}
-                  {collection.description && <p lang={lang} className="line-clamp-2 text-[0.9375rem] break-words text-muted-foreground">{collection.description}</p>}
+                  {collection.description && <p lang={collection.lang ?? lang} className="line-clamp-2 text-[0.9375rem] break-words text-muted-foreground">{collection.description}</p>}
                   <div className="mt-auto pt-2">
                     <ArticleCount count={articleCount(collection)} label={t("articleCount", { count: articleCount(collection) })} />
                   </div>
@@ -280,7 +279,9 @@ export async function DocsTabPage({
   if (tab?.locked) {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-        <PortalPageHeader title={tab.slug !== docs.home ? tab.name : MESSAGES[(await pageTranslator("helpCenter")).language].header.docs} />
+        <PortalPageHeader
+          title={tab.slug !== docs.home ? <span lang={tab.lang ?? (await teamLanguage())}>{tab.name}</span> : MESSAGES[(await pageTranslator("helpCenter")).language].header.docs}
+        />
         <LockedMessage signedIn={docs.signedIn} />
         <PortalFooter docs />
       </div>
@@ -332,13 +333,13 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
   // The level above: the collection it's in, else its tab or all of them.
   const up = parent ? { href: `/docs/${parent.slug}`, label: parent.name } : allCollections(docs, tab, (await pageTranslator("helpCenter")).t("allCollections"));
   // The team's words (its and its parent's names, its description, its articles): in the default language under another's
-  // address (teamLanguage).
+  // address (teamLanguage), but names and descriptions translated into the page's (their own `lang`, docs/plan.md L9).
   const lang = await teamLanguage();
   return (
     <DocsLayout tree={docsTree(docs, tab?.slug ?? null, collection.slug)} current={collection.slug}>
       <div className="flex flex-col gap-8">
         <div className="flex flex-col gap-6">
-          <Link lang={parent ? lang : undefined} href={at(up.href)} className="self-start text-sm font-medium text-primary hover:underline">
+          <Link lang={parent ? (parent.lang ?? lang) : "tab" in up ? (tab?.lang ?? lang) : undefined} href={at(up.href)} className="self-start text-sm font-medium text-primary hover:underline">
             {up.label}
           </Link>
           <PortalPageHeader
@@ -350,12 +351,12 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
                     <CollectionIcon name={collection.icon} />
                   </span>
                 )}
-                <span lang={lang} className="min-w-0">
+                <span lang={collection.lang ?? lang} className="min-w-0">
                   {collection.name}
                 </span>
               </span>
             }
-            description={collection.description && <span lang={lang}>{collection.description}</span>}
+            description={collection.description && <span lang={collection.lang ?? lang}>{collection.description}</span>}
           />
           {collection.sample && <SampleBadge />}
         </div>
@@ -395,7 +396,7 @@ export async function DocsArticle({
   /** Its slug at this address (its slug in the address's language, where it has one). */
   own?: string;
 }) {
-  const [at, lang, { language: pageLanguage, prefix, defaultLanguage }] = await Promise.all([portalLinks(), teamLanguage(), portalLanguage()]);
+  const [at, lang, { language: pageLanguage, prefix }] = await Promise.all([portalLinks(), teamLanguage(), portalLanguage()]);
   // Its own words are in its version's language here, or the default language's (docs/plan.md, "A page not yet translated"),
   // with a line in the page's language saying so.
   const textLang = article.language ?? lang;
@@ -414,15 +415,6 @@ export async function DocsArticle({
   const up = collection ? { href: `/docs/${collection.slug}`, label: collection.name } : allCollections(docs, tab, (await pageTranslator("helpCenter")).t("allCollections"));
   // The way up's own words, in the page's language.
   const crumbs = { docs: (await pageTranslator("header")).t("docs"), label: (await pageTranslator("helpCenter")).t("breadcrumb") };
-  // Its search data's breadcrumb is its canonical page's: translated, this address's words and addresses; else the
-  // default language's, as that page says it.
-  const searchLanguage = prefix && article.untranslated ? (defaultLanguage ?? DEFAULT_LANGUAGE) : (pageLanguage ?? DEFAULT_LANGUAGE);
-  const searchWords = MESSAGES[searchLanguage];
-  const search = {
-    docs: createTranslator({ locale: searchLanguage, messages: searchWords, namespace: "header" })("docs"),
-    up: collection ? up : allCollections(docs, tab, createTranslator({ locale: searchLanguage, messages: searchWords, namespace: "helpCenter" })("allCollections")),
-    prefix: prefix && !article.untranslated ? prefix : "",
-  };
   const markdown = readable && (await articleMarkdown(readable));
   // How long it takes to read, at about 200 words a minute.
   const minutes = markdown ? Math.max(1, Math.round(markdown.split(/\s+/).filter(Boolean).length / 200)) : null;
@@ -440,11 +432,13 @@ export async function DocsArticle({
       path: ownPath,
       published: readable.publishedAt,
       modified: readable.updatedAt,
-      // A tab showing it in its place is its own page: no step for it.
+      // A tab showing it in its place is its own page: no step for it. The docs' and the collection's steps at their address
+      // in the page's language (those pages are there, translated or not, and their names are that language's where they're
+      // translated); the article's own at its own (ownPath: the default language's where it isn't translated there).
       breadcrumb: [
-        ...[{ name: search.docs, path: "/docs" }, { name: search.up.label, path: search.up.href }]
+        ...[{ name: crumbs.docs, path: "/docs" }, { name: up.label, path: up.href }]
           .filter((crumb, i) => (i === 0 || crumb.path !== "/docs") && crumb.path !== path)
-          .map((crumb) => ({ ...crumb, path: `${search.prefix}${crumb.path}` })),
+          .map((crumb) => ({ ...crumb, path: `${prefix}${crumb.path}` })),
         { name: readable.title, path: ownPath },
       ],
     }));
@@ -473,7 +467,7 @@ export async function DocsArticle({
                   <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
                 </>
               )}
-              <Link lang={collection ? lang : undefined} href={at(up.href)} className="truncate font-medium text-foreground hover:underline">
+              <Link lang={collection ? (collection.lang ?? lang) : "tab" in up ? (tab?.lang ?? lang) : undefined} href={at(up.href)} className="truncate font-medium text-foreground hover:underline">
                 {up.label}
               </Link>
             </nav>
@@ -612,8 +606,9 @@ async function ArticleEnd({ end, support, lang }: { end: Awaited<ReturnType<type
 
 /** Docs' row under the header: its tabs with something to read (with two or more), `active` the one this page is in. */
 export async function DocsTabsRow({ docs, active }: { docs: DocsContents; active: string | null }) {
-  const at = await portalLinks();
-  const links = docs.tabs.map((tab) => ({ href: at(docsTabPath(docs, tab.slug)), name: tab.name, active: tab.slug === active, locked: tab.locked }));
+  const [at, lang] = await Promise.all([portalLinks(), teamLanguage()]);
+  // Their names: the team's words, in their own language (translated into the page's, or the default language's).
+  const links = docs.tabs.map((tab) => ({ href: at(docsTabPath(docs, tab.slug)), name: tab.name, active: tab.slug === active, locked: tab.locked, lang: tab.lang ?? lang }));
   return <PartRow label={(await pageTranslator("helpCenter")).t("docsTabs")} links={links} />;
 }
 
@@ -644,13 +639,14 @@ async function DocsTree({ tree, current, extra }: { tree: DocsTree; current: str
   const named = (collection: DocsTreeCollection) => (
     <>
       <CollectionIcon name={collection.icon} />
-      {locked(collection.name, collection.locked)}
+      {locked(collection.name, collection.locked, collection.lang)}
     </>
   );
-  // A page's name, with a lock if it's locked for this reader (kept in view when the name is cut short).
-  const locked = (name: string, isLocked?: boolean) => (
+  // A page's name, with a lock if it's locked for this reader (kept in view when the name is cut short); `nameLang`, a
+  // collection's name translated into the page's language.
+  const locked = (name: string, isLocked?: boolean, nameLang?: string) => (
     <>
-      <span lang={lang} className="min-w-0 break-words">
+      <span lang={nameLang ?? lang} className="min-w-0 break-words">
         {name}
       </span>
       {isLocked && <LockedMark />}
