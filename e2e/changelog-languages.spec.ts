@@ -36,7 +36,7 @@ test("the team writes a published entry's German from its editor's language pill
   await team.getByRole("textbox", { name: "What changed" }).fill("Wechsle das Design im Profilmenü.");
   await checkpoint(team, "team-changelog-version");
   await team.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  await expect(team.getByRole("region", { name: /Notifications/ }).getByText("Saved", { exact: true })).toBeVisible();
   await expect(languages.getByRole("link", { name: /Deutsch/ })).toContainText("Written by your team");
   await expect(team.getByRole("switch", { name: /Keep up to date/ })).not.toBeChecked();
 

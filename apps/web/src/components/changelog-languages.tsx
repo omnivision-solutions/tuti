@@ -316,7 +316,6 @@ export function ChangelogVersionForm({
           keep={keep}
           kind={kind}
           on={view.keepUpToDate}
-          defaultName={defaultName}
           teamWrote={view.state === "written" || view.state === "behind" || view.state === "setting"}
         />
         {languages.length > 1 && <ChangelogLanguageList languages={languages} current={view.code} />}
@@ -333,7 +332,6 @@ function KeepUpToDate({
   keep,
   kind,
   on,
-  defaultName,
   teamWrote,
   version,
   onSaved,
@@ -342,7 +340,6 @@ function KeepUpToDate({
   keep: VersionActions["keep"];
   kind: VersionKind;
   on: boolean;
-  defaultName: string;
   teamWrote: boolean;
   /** The page's latest read of the version (`teamWrote` is that read's too): turning it on over text changed since is refused, not done unconfirmed. */
   version: string;
@@ -385,11 +382,13 @@ function KeepUpToDate({
   };
   return (
     <>
-      <label className="flex items-start justify-between gap-3">
-        <span className="flex flex-col gap-0.5">
-          <span className="font-medium">Keep up to date</span>
-          <span className="text-xs text-muted-foreground">Translated again whenever {defaultName} changes.</span>
-        </span>
+      {/* Under its group label, as the entry editor's sidebar groups are (docs/design.md): no hint sentence. */}
+      <section aria-labelledby="version-translation" className="flex flex-col gap-2">
+      <h2 id="version-translation" className="group-label">
+        Translation
+      </h2>
+      <label className="flex items-center justify-between gap-3">
+        <span className="font-medium">Keep up to date</span>
         {/* Not `disabled` while it saves (focus would leave it): changes are ignored meanwhile. */}
         <Switch
           checked={checked}
@@ -407,6 +406,7 @@ function KeepUpToDate({
           }}
         />
       </label>
+      </section>
       <AlertDialog open={confirming} onOpenChange={setConfirming}>
         <AlertDialogContent>
           <AlertDialogHeader>
