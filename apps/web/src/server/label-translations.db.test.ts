@@ -241,3 +241,19 @@ test("a languages save that removes one language and changes another waits for a
   await Promise.all([writing, saving]);
   expect(Object.keys((await collection("billing")).translations as object)).toEqual(["fr"]);
 });
+
+test("a language's wait is kept whatever the database's time zone (its time is UTC)", async () => {
+  await german();
+  await prisma.collection.create({ data: { projectId: project.id, slug: "imported", name: "Imported" } });
+  // Waiting another hour, on a server whose sessions are 14 hours ahead of UTC.
+  await prisma.projectLanguage.updateMany({ where: { projectId: project.id }, data: { labelsTries: 1, labelsRetryAt: new Date(Date.now() + 3_600_000) } });
+  const [{ name }] = await prisma.$queryRaw<{ name: string }[]>`SELECT current_database() AS name`;
+  await prisma.$executeRawUnsafe(`ALTER DATABASE "${name}" SET timezone TO 'Pacific/Kiritimati'`);
+  await prisma.$disconnect();
+  try {
+    expect(await handlers.retryArticleTranslations({}, log)).not.toHaveProperty("labels");
+  } finally {
+    await prisma.$executeRawUnsafe(`ALTER DATABASE "${name}" RESET timezone`);
+    await prisma.$disconnect();
+  }
+});
