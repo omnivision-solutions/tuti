@@ -74,12 +74,12 @@ test("a sender marked as spam is filed next time, with the reason on the convers
   await expect(notice).toContainText("Marked as spam: you blocked this address's domain");
   // The button is beside the reason, not under it.
   const beside = async () => {
-    const [reason, button] = [(await notice.locator("p").boundingBox())!, (await notice.getByRole("button", { name: "Not spam" }).boundingBox())!];
+    const [reason, button] = [(await notice.locator("p").boundingBox())!, (await notice.getByRole("button", { name: "Not spam", exact: true }).boundingBox())!];
     return button.x >= reason.x + reason.width && button.y < reason.y + reason.height;
   };
   expect(await beside()).toBe(true);
   // A dense control's height, as the buttons over it.
-  expect((await notice.getByRole("button", { name: "Not spam" }).boundingBox())!.height).toBe(32);
+  expect((await notice.getByRole("button", { name: "Not spam", exact: true }).boundingBox())!.height).toBe(32);
   await checkpoint(owner, "why-its-in-spam");
   // On a phone too, the reason wrapping beside it, and nothing is wider than the screen.
   const desktop = owner.viewportSize()!;
@@ -92,7 +92,7 @@ test("a sender marked as spam is filed next time, with the reason on the convers
   // Not spam, by an owner: this sender is let through, the domain stays blocked, and it says so. Opened by its address
   // (in no list to move on in), its line goes with the mark, and the keyboard's focus to More actions, which stays.
   await owner.goto(`/app/${slug}/inbox/4`);
-  await notice.getByRole("button", { name: "Not spam" }).click();
+  await notice.getByRole("button", { name: "Not spam", exact: true }).click();
   await expect(owner.getByText("Moved back to the inbox")).toBeVisible();
   await expect(owner.getByText("spam-corp.example stays blocked. e2e-lee@spam-corp.example is let through from now on.")).toBeVisible();
   await expect(notice).toHaveCount(0);

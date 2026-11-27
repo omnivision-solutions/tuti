@@ -66,7 +66,7 @@ test("an owner adds block rules of a few kinds in Settings → Spam, tries a mes
   ]);
   await expect(rules.getByRole("heading", { level: 2 })).toHaveText("Block rules 3");
   // One that's there already, however it's written, says so.
-  await add("facebook-admin", "Subject or body", "contains");
+  await add("facebook-admin", "Subject or body", "contains", "Everyone");
   await expect(rules).toContainText("That rule is already there");
   await add("@SPAM-corp.example", "Sender domain", "is");
   await expect(rules).toContainText("That rule is already there");
@@ -94,9 +94,10 @@ test("an owner adds block rules of a few kinds in Settings → Spam, tries a mes
   await attempt.getByRole("button", { name: "Try it" }).click();
   await expect(attempt.getByRole("status")).toHaveText("This would go to Spam: your rule “subject or body contains Facebook Admin”.");
   await attempt.getByLabel("From").fill("e2e-lee@mail.spam-corp.example");
+  await attempt.getByLabel("Message").fill("Buy 10,000 followers today.");
   await attempt.getByRole("button", { name: "Try it" }).click();
   await expect(attempt.getByRole("status")).toHaveText("This would go to Spam: your rule “sender domain is spam-corp.example”.");
-  await expect(attempt.getByLabel("Message")).toHaveValue("This is the facebook admin: your page will be disabled.");
+  await expect(attempt.getByLabel("Subject")).toHaveValue("A notice");
   // The name in From, for rules on the sender's name.
   await attempt.getByLabel("From").fill("Big GIVEAWAY team <e2e-win@prizes.example>");
   await attempt.getByLabel("Message").fill("Claim your prize.");
