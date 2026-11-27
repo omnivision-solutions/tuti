@@ -10,6 +10,7 @@ import type { FormState } from "./form-state";
 import { pathIn } from "./docs-queries";
 import { portalLanguages } from "./portal-language";
 import { sessionIn } from "./session";
+import { changelogAt } from "./changelog-subscription";
 
 /**
  * The portal's header's switcher (docs/plan.md, Languages): the reader reads the portal in `code`, one of its live languages
@@ -37,6 +38,13 @@ export async function chooseLanguage(projectSlug: string, code: string, at?: { f
   const session = await sessionIn(project.id);
   if (session) {
     await prisma.user.update({ where: { id: session.user.id }, data: { language } });
+    // Their changelog emails follow (docs/plan.md L16), at the address the project's emails go to (their sign-on's, on an
+    // SSO portal), only where it's proven theirs: an address they only typed can't move someone else's subscription. The
+    // default language is null, as on a subscription made on its pages.
+    const [{ default: fallback }, at] = await Promise.all([portalLanguages(project.id), changelogAt(project.id, session.user.id)]);
+    if (at.email && at.proven) {
+      await prisma.changelogSubscriber.updateMany({ where: { projectId: project.id, email: at.email }, data: { language: language === fallback ? null : language } });
+    }
   }
   // Only a path built here (an article's at its slug there): any other page is the same one there, which the switcher has.
   const path = at && (await pathIn(String(projectSlug), String(at.path), String(at.from), language, project.language));
