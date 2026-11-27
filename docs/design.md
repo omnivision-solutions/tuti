@@ -249,8 +249,9 @@ the list picks none to approve at once.
   phrase “facebook admin”"), "a teammate marked it" for a mark.
   Not spam's toast says what stays in the way (a blocked address or domain and who can change it, the hourly limit);
   where an owner's or admin's takes a blocked address off the list, the button says so first ("Not spam, and unblock
-  <address>"). For owners and admins More actions has "Mark as spam, also block <domain>…" under Mark as spam, where
-  the sender's domain can be blocked; it asks first.
+  <address>"). More actions has "Report spam"; for owners and admins, "Report spam and block sender" (the address
+  under it, muted) and "Report spam and block domain" (the organisational domain under it), where the sender's address is
+  proven and, for the domain, it isn't free mail. None asks first: Not spam undoes each.
   Close, More actions and the details toggle share the conversation's title row at every width. Assign lives in
   details, followed by Status and Snooze (Waiting until while snoozed). The details card collapses, with that choice
   kept for the browser; without room for it (38rem beside a 480px conversation) its toggle opens the same controls and context in a sheet,
