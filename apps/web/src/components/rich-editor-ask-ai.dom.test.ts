@@ -419,10 +419,13 @@ test("from the selection bar it says it edits the selected text, with no Draft w
 test("what's sent is plain objects throughout, a heading's attrs too (a server action can't send ProseMirror's null-prototype ones)", async () => {
   const titled = { type: "doc", content: [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Faster exports" }] }, paragraph("They run quietly.")] };
   const view = await editor({ initial: titled });
-  await act(async () => view.editor.chain().focus().selectAll().run());
+  // The line under the heading: the whole text, heading and all, goes along as context.
+  const line = 1 + "Faster exports".length + 1 + 1;
+  await view.select(line, line + "They run quietly.".length);
   await view.click("Ask AI");
   rewriteText.mockResolvedValueOnce({ error: "x" });
   await view.click("Shorter");
+  expect(rewriteText.mock.lastCall![1].whole).toEqual(expect.objectContaining({ content: expect.arrayContaining([expect.objectContaining({ type: "heading" })]) }));
   const plainThroughout = (value: unknown): boolean =>
     value === null || typeof value !== "object" || ((Array.isArray(value) || Object.getPrototypeOf(value) === Object.prototype) && Object.values(value).every(plainThroughout));
   expect(plainThroughout(rewriteText.mock.lastCall![1])).toBe(true);
