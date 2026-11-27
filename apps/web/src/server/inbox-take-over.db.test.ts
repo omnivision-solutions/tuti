@@ -272,9 +272,11 @@ test("a message being written as a teammate hands back is seen: the hand back wa
   );
   await isWritten;
   const handingBack = handBackConversation(project.slug, 1);
-  // Waiting on the row's lock, as Postgres says (never a sleep).
+  // Waiting on the row's lock, as Postgres says (never a sleep): a session of this test's database, not another file's.
   await vi.waitUntil(
-    async () => (await prisma.$queryRaw<{ waiting: number }[]>`SELECT count(*)::int AS waiting FROM pg_locks WHERE NOT granted`)[0]!.waiting > 0,
+    async () =>
+      (await prisma.$queryRaw<{ waiting: number }[]>`
+        SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.waiting > 0,
     { timeout: 10_000, interval: 20 },
   );
   commit();
@@ -289,6 +291,18 @@ test("over the API: ifNobodyWaits refuses handing back one in Spam, which the AI
   await takeOverConversation(project.slug, 1);
   const context = { actor: { kind: "apiKey" as const, keyId: "key", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
   await call(updateConversation, context, { number: 1, spam: true });
+  await expect(call(updateConversation, context, { number: 1, handledBy: "ai", ifNobodyWaits: true })).rejects.toMatchObject({ status: 409, code: "spam" });
+  expect((await row()).handledBy).toBe("TEAM");
+});
+
+test("over the API: ifNobodyWaits refuses handing back one the spam filter holds, though it isn't marked spam", async () => {
+  const { owner, project, tess, row } = await handedToAi();
+  actAs(tess);
+  await takeOverConversation(project.slug, 1);
+  const context = { actor: { kind: "apiKey" as const, keyId: "key", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
+  // The team replied last: nobody waits, so only the hold refuses it.
+  await call(replyToConversation, context, { number: 1, body: "Looking into it." });
+  await prisma.conversation.update({ where: { id: (await row()).id }, data: { spamHeldAt: new Date(), spam: false } });
   await expect(call(updateConversation, context, { number: 1, handledBy: "ai", ifNobodyWaits: true })).rejects.toMatchObject({ status: 409, code: "spam" });
   expect((await row()).handledBy).toBe("TEAM");
 });
