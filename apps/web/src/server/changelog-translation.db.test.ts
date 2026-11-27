@@ -528,6 +528,22 @@ test("a reader with no language saved turning the changelog on from Account on a
   expect(await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: reader.email.toLowerCase() } })).toMatchObject({ language: "de", confirmedAt: expect.any(Date) });
 });
 
+test("the page's language the Account switch passes counts only where the portal is in it: an offline one leaves the subscription's, the default's is null", async () => {
+  await languages({ languages: [{ code: "de", live: true, newPages: "manual" }, { code: "fr", live: false, newPages: "manual" }] });
+  const turnOn = async (name: string, language: "fr" | "en") => {
+    const reader = await signUp(name);
+    const email = reader.email.toLowerCase();
+    // Asked for on the German page before, not confirmed; nothing saved.
+    await prisma.changelogSubscriber.create({ data: { projectId: project.id, email, language: "de" } });
+    await onPortal(reader, project);
+    actAs(reader);
+    await call(updateEmailPreferences, { actor: { kind: "user", userId: reader.id }, projectId: project.id }, { changelog: true, language });
+    return (await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email } })).language;
+  };
+  expect(await turnOn("Reader One", "fr")).toBe("de");
+  expect(await turnOn("Reader Two", "en")).toBeNull();
+});
+
 test("on an SSO portal, the switch moves the subscription at the sign-on's address, not the account's", async () => {
   await languages({ languages: [{ code: "de", live: true, newPages: "manual" }] });
   const reader = await signUp("Sam SSO");
