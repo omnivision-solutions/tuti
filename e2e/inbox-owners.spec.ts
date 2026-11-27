@@ -156,7 +156,18 @@ test("a conversation the AI has says so and offers Take over where the reply box
   await expect(owner.getByRole("list", { name: "Messages" })).toContainText("I'm on it, Sam.");
   await expect(meta.locator(".inbox-conversation-state")).toHaveText("Waiting on user");
   await expectMoreView(owner, "Waiting on user 1");
-  // Answered: now it's offered.
+  // Answered: now it's offered, while the AI has something to answer from. Unpublished, nothing: it isn't.
+  await more.click();
+  await expect(owner.getByRole("menuitem", { name: "Hand back to the AI" })).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await api(`/articles/${article.slug}/unpublish`, {});
+  await owner.reload();
+  await more.click();
+  await expect(owner.getByRole("menuitem", { name: "Remove priority" })).toBeVisible();
+  await expect(owner.getByRole("menuitem", { name: "Hand back to the AI" })).toHaveCount(0);
+  await owner.keyboard.press("Escape");
+  await api(`/articles/${article.slug}/publish`, {});
+  await owner.reload();
   await more.click();
   await expect(owner.getByRole("menuitem", { name: "Hand back to the AI" })).toBeVisible();
   await owner.keyboard.press("Escape");
