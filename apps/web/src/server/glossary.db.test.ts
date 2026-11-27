@@ -589,3 +589,29 @@ test("a save answers the hash of what it wrote, not of a teammate's save landing
   await expect(call(updateGlossary, as(), { hash: saved.hash, terms: mine })).rejects.toMatchObject({ status: 409 });
 });
 
+
+test("a term crossing a formatting tag in a remembered segment (Open the <b>billing</b> guide.) is cleared from memory when it changes", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de" }] });
+  await call(updateGlossary, as(), { terms: [{ term: "billing guide", translations: { de: "Abrechnungsleitfaden" } }] });
+  const content: Doc = {
+    type: "doc",
+    content: [{ type: "paragraph", content: [{ type: "text", text: "Open the " }, { type: "text", text: "billing", marks: [{ type: "bold" }] }, { type: "text", text: " guide." }] }],
+  };
+  const { segments } = segmentsOf(translationSource({ title: "Guide", description: "", keywords: [], body: "", content }).doc);
+  const tagged = segments.find(({ text }) => text.includes("guide."))!.text;
+  expect(tagged).toMatch(/Open the <[a-z]\d+>billing<\/[a-z]\d+> guide\./);
+  model.reply(
+    JSON.stringify({
+      segments: Object.fromEntries(segments.map(({ id, text }) => [id, `[de] ${text.replace(/billing(<\/[a-z]\d+>) guide/, "Abrechnungsleitfaden$1")}`])),
+    }),
+  );
+  await call(createArticle, as(), { title: "Guide", content });
+  await call(publishArticle, as(), { slug: "guide" });
+  await languageTranslationsDone();
+  expect(Object.keys((await version("guide")).memory as Record<string, string>)).toContain(tagged);
+  // Changed: the plan finds it in the plain text, and the memory, read with its tags, loses it too.
+  const plan = await planGlossaryChanges(project.id, await call(getGlossary, as(), {}).then(({ terms }) => terms), [{ term: "billing guide", keep: false, translations: { de: "Rechnungshilfe" } }]);
+  expect(plan.touched).toHaveLength(1);
+  await prisma.$transaction((tx) => applyGlossaryChanges(tx, plan));
+  expect(Object.keys((await version("guide")).memory as Record<string, string>)).not.toContain(tagged);
+});
