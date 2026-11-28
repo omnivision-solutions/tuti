@@ -44,7 +44,7 @@ export function RichText({
   let next = 0;
   const content = (doc.content ?? []).map((child, i) =>
     child.type === "tableOfContents" ? (
-      <TableOfContents key={i} headings={headings} links={headingIds} words={words} />
+      <TableOfContents key={i} headings={headings} links={headingIds} words={words} lang={lang} />
     ) : (
       renderNode(child, i, options, headingIds && child.type === "heading" ? headings[next++]?.id : undefined)
     ),
@@ -61,7 +61,18 @@ export function RichText({
  * the editor's shows them as text). Nothing without headings, except as text: a diff shows it alone, without the
  * article's headings, and says what it is.
  */
-export function TableOfContents({ headings, links = true, words }: { headings: Heading[]; links?: boolean; words?: RichTextWords }) {
+export function TableOfContents({
+  headings,
+  links = true,
+  words,
+  lang,
+}: {
+  headings: Heading[];
+  links?: boolean;
+  /** Its name in the page's language (`words.lang`), its headings in the text's (`lang`). */
+  words?: RichTextWords;
+  lang?: string;
+}) {
   const entries = tocEntries(headings);
   if (entries.length === 0) {
     return links ? null : <p className="rich-toc">Table of contents</p>;
@@ -73,9 +84,9 @@ export function TableOfContents({ headings, links = true, words }: { headings: H
     </li>
   );
   return (
-    <nav className="rich-toc" aria-label={words?.inThisArticle ?? "In this article"}>
-      <p lang={words?.lang}>{words?.inThisArticle ?? "In this article"}</p>
-      <ul>{entries.map((entry) => item(entry, entry.children.length > 0 && <ul>{entry.children.map((child) => item(child))}</ul>))}</ul>
+    <nav className="rich-toc" lang={words?.lang} aria-label={words?.inThisArticle ?? "In this article"}>
+      <p>{words?.inThisArticle ?? "In this article"}</p>
+      <ul lang={words?.lang && lang}>{entries.map((entry) => item(entry, entry.children.length > 0 && <ul>{entry.children.map((child) => item(child))}</ul>))}</ul>
     </nav>
   );
 }
@@ -226,6 +237,7 @@ function renderNode(node: JSONContent, key: number, options: Options, id?: strin
             allowFullScreen
             loading="lazy"
             title={options.words?.video ?? "Video"}
+            lang={options.words?.lang}
           />
         </div>
       ) : null;

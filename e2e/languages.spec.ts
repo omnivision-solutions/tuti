@@ -1307,6 +1307,8 @@ test("an article's own words in German at /de/docs: its actions, reading time, s
   await query(`UPDATE article SET "publishedAt" = '2026-01-05', "revisedAt" = '2026-03-10' WHERE slug = $1 AND "projectId" = (SELECT id FROM project WHERE slug = $2)`, [first.slug, slug]);
   const second = await api("/articles", { title: "Billing", body: "Pay by card.", collection: "basics" });
   await api(`/articles/${second.slug}/publish`, {});
+  const third = await api("/articles", { title: "Teams", body: "Invite your team.", collection: "basics" });
+  await api(`/articles/${third.slug}/publish`, {});
 
   const reader = await newPerson(browser, portalUrl(slug));
   await reader.setViewportSize({ width: 1440, height: 900 });
@@ -1326,10 +1328,13 @@ test("an article's own words in German at /de/docs: its actions, reading time, s
   await expect(reader.getByRole("navigation", { name: "Auf dieser Seite" })).toBeVisible();
   // The table of contents' label inside the English text: marked German.
   const contents = main.getByRole("navigation", { name: "In diesem Artikel" });
-  await expect(contents.getByText("In diesem Artikel")).toHaveAttribute("lang", "de");
+  await expect(contents).toHaveAttribute("lang", "de");
+  await expect(contents.getByRole("link", { name: "Install" }).locator("xpath=ancestor::*[@lang][1]")).toHaveAttribute("lang", "en");
   await expect(main.getByRole("button", { name: "Code kopieren" })).toHaveText("Kopieren");
+  await expect(main.getByRole("button", { name: "Code kopieren" })).toHaveAttribute("lang", "de");
   // The way on, and the answer to Was this helpful.
   await expect(main.getByRole("navigation", { name: "Zurück und weiter" }).getByRole("link", { name: /Weiter/ })).toContainText("Billing");
+  await expect(main.getByRole("region", { name: "Ähnliche Artikel" }).getByRole("link", { name: "Teams" })).toBeVisible();
   await expect(main.getByRole("heading", { name: "War das hilfreich?" })).toBeVisible();
   await checkpoint(reader, "article-own-words-in-german");
   await main.getByRole("button", { name: "Nein" }).click();
