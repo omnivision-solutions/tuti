@@ -667,7 +667,6 @@ const matrix: Matrix = {
       call: (slug) =>
         posts.createPost({}, form({ projectSlug: slug, boardSlug: "feature-requests", title: "Dark mode" })),
     },
-    toggleVote: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => posts.toggleVote(f.postId) },
     setPostSubscription: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => posts.setPostSubscription(f.postId, true) },
     addComment: {
       allowed: "signed in",
@@ -826,14 +825,6 @@ const matrix: Matrix = {
     },
     // Reads only what the portal shows whoever's asking.
     widgetIdeas: { allowed: "public", call: (slug) => widget.widgetIdeas(slug, null) },
-    widgetVote: {
-      allowed: "public",
-      takesIds: true,
-      call: async (slug, f) => {
-        const project = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { id: true } });
-        return widget.widgetVote(slug, widgetToken(project.id, users.MEMBER.id), f.postId, true);
-      },
-    },
     widgetReacted: { allowed: "public", call: (slug) => widget.widgetReacted(slug, null, 1) },
     widgetReact: {
       allowed: "public",

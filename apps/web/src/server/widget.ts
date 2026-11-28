@@ -16,10 +16,9 @@ import type { FormState } from "./form-state";
 import { canActIn } from "./membership";
 import { createPost as createPostOperation } from "./operations/create";
 import { type Actor, OperationError } from "./operations/define";
-import { setVote } from "./operations/more";
 import { reactToChangelogEntry } from "./operations/changelog";
 import { createChangelogComment, deleteChangelogComment, listChangelogComments, updateChangelogComment } from "./operations/changelog-comments";
-import { asAdmin, call, postNumberOf } from "./operations/run";
+import { asAdmin, call } from "./operations/run";
 import { WIDGET_READER_COOKIE } from "./auth/portal-readers";
 import { readableProject } from "./portal-access";
 import { boardPosts } from "./post-lists";
@@ -144,24 +143,6 @@ export async function widgetIdeas(projectSlug: string, token: string | null, min
 }
 
 export type WidgetIdea = Awaited<ReturnType<typeof widgetIdeas>>[number];
-
-/** Votes for an idea from the widget, or takes the vote back, as its person (widgetPerson); with the idea's votes after. */
-export async function widgetVote(projectSlug: string, token: string | null, postId: string, voted: boolean): Promise<{ votes?: number; error?: string }> {
-  const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
-  const userId = project && (await widgetPerson(project.id, token));
-  if (!project || !userId) {
-    return { error: "Sign in to vote" };
-  }
-  try {
-    const context = { actor: widgetActor(userId, token), projectId: project.id };
-    return { votes: (await call(setVote, context, { number: await postNumberOf(project.id, postId), voted: voted === true })).votes };
-  } catch (error) {
-    if (error instanceof OperationError) {
-      return { error: error.message };
-    }
-    throw error;
-  }
-}
 
 /** The reactions its person (widgetPerson) left on a published entry; none for nobody, or a portal they may not read. */
 export async function widgetReacted(projectSlug: string, token: string | null, number: number): Promise<Reaction[]> {

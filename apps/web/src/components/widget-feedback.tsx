@@ -9,13 +9,14 @@ import { usePortalHref } from "@/components/portal-base";
 import { StatusDot } from "@/components/post-status-badge";
 import { pillClass } from "@/components/filter-pills";
 import { Skeleton } from "@/components/ui/skeleton";
+import { errorMessage, useTRPCClient, widgetCall } from "@/components/trpc";
 import { VoteButton } from "@/components/vote-button";
 import { heardSignOut } from "@/lib/heard-sign-out";
 import { latestOnly } from "@/lib/latest-only";
 import { WIDGET_LABEL } from "@/lib/portal-look";
 import { postPath } from "@/lib/post-urls";
 import { WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE } from "@/lib/widget-messages";
-import { type WidgetIdea, widgetCreatePost, widgetIdeas, widgetSignIn, widgetSignOut, widgetVote } from "@/server/widget";
+import { type WidgetIdea, widgetCreatePost, widgetIdeas, widgetSignIn, widgetSignOut } from "@/server/widget";
 import { useTranslations } from "next-intl";
 import { useTeamLanguage } from "@/components/portal-look";
 
@@ -191,6 +192,7 @@ export function WidgetFeedback({
   const team = useTeamLanguage();
   const { signedIn, error, known, pending } = useWidgetSignIn(projectSlug, !portalSignedIn);
   const link = usePortalHref();
+  const client = useTRPCClient();
   const token = signedIn?.token ?? null;
   const viewer = portalSignedIn || !!signedIn;
   // Who votes here: what's known of their votes is theirs only.
@@ -245,18 +247,22 @@ export function WidgetFeedback({
     const shown = (votes.identity === identity && votes.ideas[post.id]) || post;
     return (
       <VoteButton
-        postId={post.id}
+        project={projectSlug}
+        number={post.number}
         count={shown.voteCount}
         voted={shown.voted}
         shape="compact"
         disabled={!known || pending}
         vote={async (voted) => {
           const at = identity;
-          const result = await widgetVote(projectSlug, token, post.id, voted);
-          if (result.votes !== undefined) {
-            answered(at, [{ id: post.id, voteCount: result.votes, voted }]);
-          }
-          return result;
+          // As the widget's person: their token, or (on the portal's own site) its signed-in session.
+          return client.votes.set.mutate({ project: projectSlug, number: post.number, voted }, widgetCall(token)).then(
+            (result) => {
+              answered(at, [{ id: post.id, voteCount: result.votes, voted }]);
+              return {};
+            },
+            (error: unknown) => ({ error: errorMessage(error) }),
+          );
         }}
         signInHref={known && !viewer ? link(signInTo(postPath(post))) : undefined}
       />

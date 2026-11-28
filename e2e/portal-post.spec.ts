@@ -193,6 +193,46 @@ test("a portal post: the team's reply stands out, its status history and voters;
   await checkpoint(visitor, "portal-post-commented");
 });
 
+test("a vote waits for its save: a second click can't overtake the first, so after a quick vote and unvote the post is as last clicked", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const ada = await signUp(browser, portalUrl(slug), "Ada");
+  await ada.goto("/feedback/feature-requests");
+  await postFeedback(ada, "Dark mode");
+  const bo = await signUp(browser, portalUrl(slug), "Bo");
+  await bo.goto("/feedback/feature-requests/dark-mode-1");
+
+  // The vote's save held on its way: the button waits, so another click can't send a second save past it.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const saves: string[] = [];
+  await bo.route("**/api/trpc/votes.set**", async (route) => {
+    saves.push(route.request().postData() ?? "");
+    if (saves.length === 1) {
+      await held;
+    }
+    await route.continue();
+  });
+  await bo.getByRole("button", { name: "Upvote" }).click();
+  const voted = bo.getByRole("button", { name: "Upvoted" });
+  await expect(voted).toBeDisabled();
+  // The save reaches the route a moment after the button waits.
+  await expect.poll(() => saves.length).toBe(1);
+  release();
+  await expect(voted).toBeEnabled();
+  await expect(voted).toHaveText("Upvoted2");
+  await voted.click();
+  const unvoted = bo.getByRole("button", { name: "Upvote (1 vote)" });
+  await expect(unvoted).toHaveText("Upvote1");
+  // Saved once it's pressable again (it shows the change at once).
+  await expect(unvoted).toBeEnabled();
+  expect(saves.map((body) => JSON.parse(body) as { json?: { voted?: boolean }; 0?: { json?: { voted?: boolean } } }).map((body) => (body.json ?? body[0]?.json)?.voted)).toEqual([true, false]);
+  // As saved: the last click.
+  await bo.reload();
+  await expect(bo.getByRole("button", { name: "Upvote (1 vote)" })).toHaveText("Upvote1");
+});
+
 test("a portal post: Subscribe, for people who don't vote, and they hear when it ships; similar ideas under it", async ({ browser }, testInfo) => {
   test.setTimeout(180_000);
   const checkpoint = checkpoints(testInfo);

@@ -6,7 +6,9 @@ import { beforeEach, expect, test, vi } from "vitest";
 
 import { generateSsoSecret } from "@/server/auth/sso";
 import { widgetToken } from "@/server/auth/widget-session";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { requestContext } from "@/server/trpc/context";
+import { createCaller } from "@/server/trpc/server";
+import { actAs, createProject, onPortal, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
 import { WIDGET_READER_COOKIE } from "./auth/portal-readers";
@@ -23,8 +25,29 @@ import {
   widgetReact,
   widgetReacted,
   widgetSignIn,
-  widgetVote,
 } from "./widget";
+
+/**
+ * A vote from the widget's panel, as it sends it: votes.set through /api/trpc's context, as the widget's person
+ * (`Authorization: Widget <token>`), else the portal's own cookie session. The votes after, or the refusal's message.
+ */
+async function widgetVote(projectSlug: string, token: string | null, postId: string, voted: boolean): Promise<{ votes?: number; error?: string }> {
+  // The panel names one of this project's posts by its number; another's isn't one of them.
+  const found = await prisma.post.findFirst({ where: { id: postId, project: { slug: projectSlug } }, select: { number: true } });
+  // From the panel's own page (the portal's host): the browser says it's same-origin.
+  const headers = new Headers({
+    host: `${projectSlug}.localhost:3100`,
+    "sec-fetch-site": "same-origin",
+    ...(token && { authorization: `Widget ${token}` }),
+    ...(request.cookie && { cookie: request.cookie }),
+  });
+  return createCaller(await requestContext(headers))
+    .votes.set({ project: projectSlug, number: found?.number ?? 999_999, voted })
+    .then(
+      (result) => ({ votes: result.votes }),
+      (error: Error) => ({ error: error.message }),
+    );
+}
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -170,14 +193,17 @@ test("the widget votes as its person, and takes the vote back; nobody else's and
   expect(await prisma.vote.count({ where: { postId: idea.id, userId: fan.id } })).toBe(1);
   expect(await widgetVote(project.slug, token, idea.id, false)).toEqual({ votes: 5 });
 
-  expect(await widgetVote(project.slug, null, idea.id, true)).toEqual({ error: "Sign in to vote" });
-  expect(await widgetVote(project.slug, "made.up.token", idea.id, true)).toEqual({ error: "Sign in to vote" });
+  // The router's refusals: nobody, and a token that isn't one of ours.
+  expect(await widgetVote(project.slug, null, idea.id, true)).toEqual({ error: "Sign in to do this" });
+  expect(await widgetVote(project.slug, "made.up.token", idea.id, true)).toEqual({ error: "Sign in again" });
   const elsewhere = await post("Elsewhere", { in: await createProject(await signUp()) });
-  expect(await widgetVote(project.slug, token, elsewhere.id, true)).toEqual({ error: "Post not found" });
+  expect(await widgetVote(project.slug, token, elsewhere.id, true)).toEqual({ error: expect.stringMatching(/^There's no post #/) });
 
   // On the portal's own site, its signed-in user.
+  await onPortal(fan, project);
   actAs(fan);
   expect(await widgetVote(project.slug, null, idea.id, true)).toEqual({ votes: 6 });
+  request.host = "";
 });
 
 test("similar ideas say whether whoever's asking voted for them: the widget's person, or the portal's signed-in user", async () => {
@@ -203,7 +229,7 @@ test("a private portal's reader whose access the team takes away can't vote or p
   expect(await widgetVote(project.slug, token, idea.id, true)).toEqual({ votes: 2 });
 
   await prisma.portalReader.delete({ where: { id: access.id } });
-  expect(await widgetVote(project.slug, token, idea.id, false)).toEqual({ error: "Sign in to vote" });
+  expect(await widgetVote(project.slug, token, idea.id, false)).toEqual({ error: "You can't do this in this project" });
   expect(await widgetCreatePost(project.slug, token, {}, form("Sneaky"))).toEqual({ error: "Sign in to post feedback" });
   expect(await prisma.post.count({ where: { projectId: project.id, title: "Sneaky" } })).toBe(0);
   expect((await prisma.post.findUniqueOrThrow({ where: { id: idea.id } })).voteCount).toBe(2);

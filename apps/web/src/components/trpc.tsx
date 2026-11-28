@@ -1,7 +1,7 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createTRPCClient, httpBatchLink, type TRPCClient, TRPCClientError } from "@trpc/client";
+import { createTRPCClient, httpBatchLink, httpLink, splitLink, type TRPCClient, TRPCClientError } from "@trpc/client";
 import { createTRPCContext } from "@trpc/tanstack-react-query";
 import { createContext, useContext, useState } from "react";
 import superjson from "superjson";
@@ -32,12 +32,33 @@ export function useTRPCClient(): TRPCClient<AppRouter> {
 export const errorMessage = (error: unknown, otherwise = "Something went wrong. Try again.") => (error instanceof TRPCClientError && error.shape ? error.message : otherwise);
 
 /**
+ * A call as the widget's person (server/trpc/context.ts): someone the customer's site signed in (their widget token), or
+ * a signed-out visitor (their visitor token). Without either, the call is the page's cookie session, as any other.
+ * Pass as the call's options: `client.votes.set.mutate(input, widgetCall(token))`.
+ */
+export const widgetCall = (token: string | null | undefined, visitor?: string | null) => ({
+  context: { authorization: token ? `Widget ${token}` : visitor ? `Visitor ${visitor}` : undefined },
+});
+
+/**
  * What the browser fetches or saves goes through /api/trpc (pages read on the server, server/trpc/server.ts). `base`:
- * where a portal is on its team's site (acme.com/portal), which forwards only its own path.
+ * where a portal is on its team's site (acme.com/portal), which forwards only its own path. A call with its own
+ * `Authorization` (widgetCall) goes on its own, never batched with another's.
  */
 export function TrpcProvider({ base = "", children }: { base?: string; children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } }));
-  const [client] = useState(() => createTRPCClient<AppRouter>({ links: [httpBatchLink({ url: withBase(base, "/api/trpc"), transformer: superjson })] }));
+  const [client] = useState(() => {
+    const url = withBase(base, "/api/trpc");
+    return createTRPCClient<AppRouter>({
+      links: [
+        splitLink({
+          condition: (op) => typeof op.context.authorization === "string",
+          true: httpLink({ url, transformer: superjson, headers: ({ op }) => ({ authorization: op.context.authorization as string }) }),
+          false: httpBatchLink({ url, transformer: superjson }),
+        }),
+      ],
+    });
+  });
   return (
     <QueryClientProvider client={queryClient}>
       <Provider trpcClient={client} queryClient={queryClient}>

@@ -14,6 +14,9 @@ import { PREVIEW } from "@/lib/portal-base";
 import { previewToken } from "@/server/auth/preview-session";
 import { widgetToken } from "@/server/auth/widget-session";
 import { proxy } from "@/proxy";
+import { getSession } from "@/server/session";
+import { sessionContext } from "@/server/trpc/context";
+import { createCaller } from "@/server/trpc/server";
 import { actAs, createProject, onPortal, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
@@ -42,7 +45,7 @@ let owner: TestUser;
 let project: Project;
 const VISITORS = ["signed out", "signed up", "team", "SSO user", "reader", "unverified reader"] as const;
 let visitors: Record<(typeof VISITORS)[number], TestUser | null>;
-let fixture: { postId: string; questionId: string };
+let fixture: { postId: string; postNumber: number; questionId: string };
 
 const form = (fields: Record<string, string>) => {
   const data = new FormData();
@@ -78,7 +81,7 @@ async function portalWithContent(owner: TestUser) {
   const question = await prisma.docsQuestion.create({
     data: { projectId, askerId: "a-reader", question: "How do I start?", source: "PORTAL", status: "ANSWERED", answer: "Sign up." },
   });
-  return { project, fixture: { postId: post.id, questionId: question.id } };
+  return { project, fixture: { postId: post.id, postNumber: post.number, questionId: question.id } };
 }
 
 beforeAll(async () => {
@@ -186,7 +189,18 @@ const readers: { name: string; account?: true; served: (slug: string) => Promise
     account: true,
     served: async (slug) => !(await posts.createPost({}, form({ projectSlug: slug, boardSlug: "feature-requests", title: `Idea ${randomUUID()}` }))).error,
   },
-  { name: "voting (toggleVote)", account: true, served: async () => !(await posts.toggleVote(fixture.postId)).error },
+  {
+    // As the portal's page sends it: votes.set through the router, as the request's session.
+    name: "voting (votes.set)",
+    account: true,
+    served: async (slug) =>
+      createCaller(sessionContext(await getSession()))
+        .votes.set({ project: slug, number: fixture.postNumber, voted: true })
+        .then(
+          () => true,
+          () => false,
+        ),
+  },
   { name: "subscribing (setPostSubscription)", account: true, served: async () => !(await posts.setPostSubscription(fixture.postId, true)).error },
   { name: "commenting (addComment)", account: true, served: async () => !(await posts.addComment({}, form({ postId: fixture.postId, body: "Me too" }))).error },
   { name: "reacting to the changelog", account: true, served: async (slug) => !(await changelog.reactToChangelogEntry(slug, 1, "tada", true)).error },

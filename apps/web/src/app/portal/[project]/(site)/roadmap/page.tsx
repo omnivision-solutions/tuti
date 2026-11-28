@@ -235,7 +235,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                           {status === "COMPLETED" ? (
                             <VoteCount count={post.voteCount} shape="chip" />
                           ) : (
-                            <VoteButton shape="chip" postId={post.id} count={post.voteCount} voted={voted.has(post.id)} disabled={!voter} signedOut={!session} />
+                            <VoteButton shape="chip" project={slug} number={post.number} count={post.voteCount} voted={voted.has(post.id)} disabled={!voter} signedOut={!session} />
                           )}
                         </div>
                         {entry && (

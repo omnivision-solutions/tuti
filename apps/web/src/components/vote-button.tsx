@@ -2,14 +2,15 @@
 
 import { CheckIcon, ChevronUpIcon } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useOptimistic, useTransition } from "react";
 import { toast } from "sonner";
 
 import { useSignInHref } from "@/components/sign-in-link";
+import { errorMessage, useTRPCClient } from "@/components/trpc";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { toggleVote } from "@/server/posts";
 
 const SHAPE = "h-auto w-12 flex-col gap-0 py-1.5";
 /**
@@ -58,7 +59,8 @@ function Contents({ shape, count, voted }: { shape?: VoteShape; count: number; v
 }
 
 export function VoteButton({
-  postId,
+  project,
+  number,
   count,
   voted,
   disabled,
@@ -67,11 +69,13 @@ export function VoteButton({
   signedOut,
   shape,
 }: {
-  postId: string;
+  /** The post: its project's slug and its number (votes.set). */
+  project: string;
+  number: number;
   count: number;
   voted: boolean;
   disabled: boolean;
-  /** Votes (true) or takes it back instead of toggleVote (the widget's, which updates `count` and `voted` itself). */
+  /** Votes (true) or takes it back instead of votes.set as the page's session (the widget's, which updates `count` and `voted` itself). */
   vote?: (voted: boolean) => Promise<{ error?: string }>;
   /** Signed out, a link to sign in (in a new tab: the widget's) instead of a disabled button. */
   signInHref?: string;
@@ -81,6 +85,8 @@ export function VoteButton({
   shape?: VoteShape;
 }) {
   const [pending, startTransition] = useTransition();
+  const client = useTRPCClient();
+  const router = useRouter();
   const [optimistic, setOptimistic] = useOptimistic({ count, voted });
   const t = useTranslations("feedback");
   const votes = t("votes", { count: optimistic.count });
@@ -110,11 +116,18 @@ export function VoteButton({
       // The count too: the label replaces the button's text for screen readers.
       // Its words first (the post's says "Upvoted" once voted, for voice control), then the count; aria-pressed says it's on.
       aria-label={optimistic.voted ? (shape === "upvote" ? t("upvotedLabel", { votes }) : t("removeVoteLabel", { votes })) : t("upvoteLabel", { votes })}
+      // Disabled while its save goes (`pending`), so two of its saves never overlap: each lands before the next is sent.
       onClick={() =>
         startTransition(async () => {
           const next = !optimistic.voted;
           setOptimistic((s) => ({ voted: next, count: s.count + (next ? 1 : -1) }));
-          const result = await (vote ? vote(next) : toggleVote(postId));
+          const result: { error?: string } = vote
+            ? await vote(next)
+            : await client.votes.set.mutate({ project, number, voted: next }).then(
+                // Saved: the page again (its count, who voted), in this transition, so the vote shown stays till it comes.
+                () => (router.refresh(), {}),
+                (error: unknown) => ({ error: errorMessage(error) }),
+              );
           if (result.error) {
             toast.error(result.error);
           }
