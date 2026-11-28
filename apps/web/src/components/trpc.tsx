@@ -3,7 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createTRPCClient, httpBatchLink, type TRPCClient, TRPCClientError } from "@trpc/client";
 import { createTRPCContext } from "@trpc/tanstack-react-query";
-import { createContext, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useRef, useState } from "react";
 import superjson from "superjson";
 
 import { withBase } from "@/lib/portal-base";
@@ -45,4 +45,18 @@ export function TrpcProvider({ base = "", children }: { base?: string; children:
       </Provider>
     </QueryClientProvider>
   );
+}
+
+/**
+ * A component's saves one at a time, in the order they're asked for, as its server actions ran: tRPC mutations
+ * otherwise overlap, and a later save could land before an earlier one and be overwritten by it. A save waits for the
+ * one before it, which may have failed.
+ */
+export function useInOrder() {
+  const last = useRef<Promise<unknown>>(Promise.resolve());
+  return useCallback(<T,>(save: () => Promise<T>): Promise<T> => {
+    const run = last.current.then(save, save);
+    last.current = run.catch(() => {});
+    return run;
+  }, []);
 }

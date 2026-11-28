@@ -53,7 +53,10 @@ test("an owner adds block rules of a few kinds in Settings → Spam, tries a mes
   await add("not a domain");
   await expect(rules).toContainText("Enter a domain, like acme.example");
   await expect(rules.getByLabel("Value")).toHaveValue("not a domain");
+  // Added through tRPC (spam.update), not a server action.
+  const ruleSaved = owner.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/api/trpc/spam.update"));
   await add("Spam-Corp.example");
+  await ruleSaved;
   await expect(owner.getByText("Rule added")).toBeVisible();
   await expect(rules.getByRole("listitem")).toHaveText(["Sender domain · is · spam-corp.example"]);
   await expect(rules.getByLabel("Value")).toHaveValue("");
@@ -91,7 +94,9 @@ test("an owner adds block rules of a few kinds in Settings → Spam, tries a mes
   await attempt.getByLabel("From").fill("Kim Lee <e2e-kim@strangers.example>");
   await attempt.getByLabel("Subject").fill("A notice");
   await attempt.getByLabel("Message").fill("This is the facebook admin: your page will be disabled.");
+  const tried = owner.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/api/trpc/spam.try"));
   await attempt.getByRole("button", { name: "Try it" }).click();
+  await tried;
   await expect(attempt.getByRole("status")).toHaveText("This would go to Spam: your rule “subject or body contains Facebook Admin”.");
   await attempt.getByLabel("From").fill("e2e-lee@mail.spam-corp.example");
   await attempt.getByLabel("Message").fill("Buy 10,000 followers today.");

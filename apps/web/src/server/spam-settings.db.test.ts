@@ -6,7 +6,8 @@ import type { z } from "zod";
 
 import { NEW_BY_EMAIL_PER_HOUR } from "@/lib/spam-reasons";
 import { widgetToken } from "@/server/auth/widget-session";
-import { actAs, addMember, createProject, signUp } from "@/test/helpers";
+import { parseFrom } from "@/lib/email-from";
+import { actAs, addMember, callerAs, createProject, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
 
 import { mailSubdomain, supportAddress } from "./inbound";
@@ -16,7 +17,6 @@ import { call } from "./operations/run";
 import { getSpamSettings, trySpamFilter, updateSpamSettings } from "./operations/spam";
 import { upsertProjectUser } from "./project-users";
 import { arrivalOf, lockSpamRules, SPAM_CHECKS, spamChoices, spamVerdict } from "./spam";
-import { trySpam } from "./spam-settings";
 import type { SpamRuleField, SpamRuleMatcher } from "@/lib/spam-rules";
 import { widgetStartConversation } from "./widget-inbox";
 
@@ -358,12 +358,13 @@ test("trying a message says what the free checks would do with it and which rule
 test("Settings' Try a message takes From as a name and an address, and To as where it was sent", async () => {
   const { project, owner, update } = await setup();
   await update({ addRules: [rule("sender_name", "contains", "giveaway"), rule("sent_to", "is", "sales@acme.example")] });
-  actAs(owner);
-  const attempt = (from: string, to = "") => trySpam(project.slug, { from, to, subject: "Hi", text: "Hello" });
-  expect(await attempt('"Big Giveaway" <e2e-win@prizes.example>')).toEqual({ spam: true, aiCheck: false, why: "your rule “sender name contains giveaway”" });
-  expect(await attempt("e2e-win@prizes.example", "Sales@acme.example")).toEqual({ spam: true, aiCheck: false, why: "your rule “sent to is sales@acme.example”" });
-  expect(await attempt("Kim <e2e-kim@strangers.example>")).toEqual({ spam: false, aiCheck: false, why: "no check filed it" });
-  expect(await attempt("Kim <not an address>")).toEqual({ error: "Enter a valid email address" });
+  // As Settings → Spam's Try a message sends it: the From line as its name and address, To when given.
+  const caller = await callerAs(owner);
+  const attempt = (from: string, to = "") => caller.spam.try({ project: project.slug, ...parseFrom(from), to: to ? [to] : [], subject: "Hi", text: "Hello" });
+  expect(await attempt('"Big Giveaway" <e2e-win@prizes.example>')).toMatchObject({ spam: true, aiCheck: false, why: "your rule “sender name contains giveaway”" });
+  expect(await attempt("e2e-win@prizes.example", "Sales@acme.example")).toMatchObject({ spam: true, aiCheck: false, why: "your rule “sent to is sales@acme.example”" });
+  expect(await attempt("Kim <e2e-kim@strangers.example>")).toMatchObject({ spam: false, aiCheck: false, why: "no check filed it" });
+  await expect(attempt("Kim <not an address>")).rejects.toMatchObject({ code: "BAD_REQUEST", message: "Enter a valid email address" });
 });
 
 test.each([

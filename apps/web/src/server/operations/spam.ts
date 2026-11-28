@@ -18,7 +18,7 @@ import { defineOperation, OperationError } from "./define";
  * W3), and trying a message against the filter.
  */
 
-export { MAX_SPAM_RULES };
+export { MAX_SPAM_GUIDANCE, MAX_SPAM_RULES };
 export const MAX_SPAM_RULE_VALUE = 200;
 /** The allowed list. */
 export const MAX_SPAM_SENDERS = 500;
