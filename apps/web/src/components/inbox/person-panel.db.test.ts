@@ -7,8 +7,6 @@ import { deleteUser, userAccounts } from "@/server/operations/users";
 import { upsertProjectUser } from "@/server/project-users";
 import { createProject, signUp } from "@/test/helpers";
 
-import { maybeUser } from "@/server/operations/conversation-person";
-
 import { PersonPanel } from "./person-panel";
 import { type Person, personPanel } from "@/server/operations/conversation-person";
 
@@ -21,9 +19,11 @@ test("the hint finds the project's user whatever the capitals in their saved add
   const userId = await upsertProjectUser(project.id, "kim-1", { name: "Kim Lee" });
   // As an older instance may have saved it.
   await prisma.ssoIdentity.update({ where: { userId }, data: { email: "E2E-Kim@Example.com" } });
-  expect(await maybeUser(project.id, "e2e-kim@example.com")).toEqual({ name: "Kim Lee", id: "kim-1" });
+  // Beside a conversation from someone who typed the address signed out.
+  const maybe = async (projectId: string) => (await personPanel(projectId, { userId: null, email: "e2e-kim@example.com", emailVerified: false })).maybe;
+  expect(await maybe(project.id)).toEqual({ name: "Kim Lee", id: "kim-1" });
   const other = await createProject(await signUp());
-  expect(await maybeUser(other.id, "e2e-kim@example.com")).toBeNull();
+  expect(await maybe(other.id)).toBeNull();
 });
 
 test("a user's page lists what they did with every account that is them, as Users counts it; not spam", async () => {

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { type Prisma, prisma } from "@tuti/db";
-import { type ModelFake, startModelFake } from "@tuti/testkit";
+import { type ModelFake, startModelFake, startWebhookReceiver, type WebhookReceiver } from "@tuti/testkit";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -40,6 +40,14 @@ import { widgetConversation } from "./widget-inbox";
  * support inbox (docs.escalate), on the portal, in the widget and over the API. The summary comes
  * from the model fake.
  */
+
+// The project's webhook, on this machine: a delivery never waits on outside DNS.
+let hooks: WebhookReceiver;
+beforeAll(async () => {
+  hooks = await startWebhookReceiver();
+});
+afterAll(() => hooks.close());
+beforeEach(() => vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true"));
 
 let model: ModelFake;
 let owner: TestUser;
@@ -386,7 +394,7 @@ describe("from the widget", () => {
     const userId = await upsertProjectUser(project.id, "user-8", { name: "Sam", email: "e2e-sam-8@example.com" });
     await prisma.spamRule.create({ data: { projectId: project.id, field: "sender_address", matcher: "is", value: "e2e-sam-8@example.com" } });
     await prisma.webhook.create({
-      data: { projectId: project.id, url: "https://hooks.example.com/tuti", secret: "secret", events: ["conversation.created"], createdById: owner.id },
+      data: { projectId: project.id, url: hooks.url, secret: "secret", events: ["conversation.created"], createdById: owner.id },
     });
     model.reply("They want to pay in crypto.");
     const signedIn = await asked(asReader(), { source: "WIDGET" });

@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { creditBalance, inboxDue, inboxDueToken } from "@tuti/jobs";
 import { log } from "@tuti/shared";
-import { configFile, type ModelFake, startModelFake } from "@tuti/testkit";
+import { configFile, type ModelFake, startModelFake, startWebhookReceiver, type WebhookReceiver } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 // What the path leaves to `after`: kept here to run by hand, as Next.js would once the request has answered.
@@ -59,6 +59,14 @@ afterEach(() => {
   model.decisions.length = 0;
 });
 
+// The project's webhook, on this machine: a delivery never waits on outside DNS.
+let hooks: WebhookReceiver;
+beforeAll(async () => {
+  hooks = await startWebhookReceiver();
+});
+afterAll(() => hooks.close());
+beforeEach(() => vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true"));
+
 async function setup({ guidance = "SEO pitches are spam" } = {}) {
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
@@ -66,7 +74,7 @@ async function setup({ guidance = "SEO pitches are spam" } = {}) {
   // The AI check runs only for a team that wrote its guidance.
   await prisma.project.update({ where: { id: projectId }, data: { supportInbox: true, spamGuidance: guidance } });
   await prisma.webhook.create({
-    data: { projectId, url: "https://hooks.example.com/tuti", secret: "secret", events: ["conversation.created", "conversation.message_created"], createdById: owner.id },
+    data: { projectId, url: hooks.url, secret: "secret", events: ["conversation.created", "conversation.message_created"], createdById: owner.id },
   });
   const admin = { actor: { kind: "user" as const, userId: owner.id }, projectId };
   const to = supportAddress(await mailSubdomain(projectId), DOMAIN);

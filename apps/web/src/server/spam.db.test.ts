@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
-import { billingFile } from "@tuti/testkit";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { billingFile, startWebhookReceiver, type WebhookReceiver } from "@tuti/testkit";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { NEW_BY_EMAIL_PER_HOUR } from "@/lib/spam-reasons";
 import { widgetToken } from "@/server/auth/widget-session";
@@ -33,6 +33,14 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 
+// The project's webhook, on this machine: a delivery never waits on outside DNS.
+let hooks: WebhookReceiver;
+beforeAll(async () => {
+  hooks = await startWebhookReceiver();
+});
+afterAll(() => hooks.close());
+beforeEach(() => vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true"));
+
 /** `hook`: with a webhook for new conversations, for the tests that count who was told (`told`). */
 async function setup({ hook = false } = {}) {
   const owner = await signUp("Olive Owner");
@@ -43,7 +51,7 @@ async function setup({ hook = false } = {}) {
   const as = (user: { id: string }) => ({ actor: { kind: "user" as const, userId: user.id }, projectId: project.id });
   if (hook) {
     await prisma.webhook.create({
-      data: { projectId: project.id, url: "https://hooks.example.com/tuti", secret: "secret", events: ["conversation.created", "conversation.message_created"], createdById: owner.id },
+      data: { projectId: project.id, url: hooks.url, secret: "secret", events: ["conversation.created", "conversation.message_created"], createdById: owner.id },
     });
   }
   actAs(null);

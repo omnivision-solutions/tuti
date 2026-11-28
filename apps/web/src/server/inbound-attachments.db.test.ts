@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { type S3Fake, startS3Fake } from "@tuti/testkit";
+import { type S3Fake, startS3Fake, startWebhookReceiver, type WebhookReceiver } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { createProject, signUp } from "@/test/helpers";
@@ -26,6 +26,14 @@ beforeEach(() => {
     vi.stubEnv(name, value);
   }
 });
+
+// The project's webhook, on this machine: a delivery never waits on outside DNS.
+let hooks: WebhookReceiver;
+beforeAll(async () => {
+  hooks = await startWebhookReceiver();
+});
+afterAll(() => hooks.close());
+beforeEach(() => vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true"));
 
 const PDF = Buffer.from("%PDF-1.4 the invoice");
 const PNG = Buffer.from("\x89PNG screenshot");
@@ -118,7 +126,7 @@ test("an email's attachments are kept whole in the media storage and linked to i
 test("the webhook for a new conversation says what came with its message", async () => {
   const { project, owner, address } = await setup();
   await prisma.webhook.create({
-    data: { projectId: project.id, url: "https://hooks.example.com/tuti", secret: "whsec_test", events: ["conversation.created"], createdById: owner.id },
+    data: { projectId: project.id, url: hooks.url, secret: "whsec_test", events: ["conversation.created"], createdById: owner.id },
   });
   await postEmail(withAttachments("Kim <e2e-kim@example.com>", address), { recipient: address });
   const delivery = await prisma.webhookDelivery.findFirstOrThrow({ where: { webhook: { projectId: project.id } } });
