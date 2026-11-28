@@ -76,3 +76,10 @@ test("each call names the project it uploads to", async () => {
   expect(finishUpload).toHaveBeenCalledWith({ project: "acme", mediaId: "m1" });
   expect(uploadStatus).toHaveBeenCalledWith({ project: "acme", mediaId: "m1" });
 });
+
+test("the server failing unexpectedly rejects too, so the caller's own words show, not the server's", async () => {
+  const failed = new TRPCClientError("Something went wrong", { result: { error: { message: "Something went wrong", code: -32603, data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 500 } } } });
+  createUpload.mockRejectedValue(failed);
+  await expect(uploadImage("acme", image())).rejects.toBe(failed);
+  await expect(uploadFile("acme", image())).rejects.toBe(failed);
+});

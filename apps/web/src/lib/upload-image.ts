@@ -6,10 +6,13 @@ import type { AppRouter } from "@/server/trpc/router";
 /** The tRPC client a component has (useTRPCClient): uploads go through the uploads.* procedures. */
 export type Uploader = TRPCClient<AppRouter>;
 
-/** The server's refusal as the `{ error }` callers show, in its words; anything else (offline) rejects, as the callers expect. */
+/**
+ * The server's refusal as the `{ error }` callers show, in its words; anything else rejects, as the callers expect, so
+ * they say it in their own (translated) words: offline, or the server failing unexpectedly ("Something went wrong").
+ */
 async function said<T>(call: Promise<T>): Promise<T | { error: string }> {
   return call.catch((error: unknown) => {
-    if (error instanceof TRPCClientError && error.shape) {
+    if (error instanceof TRPCClientError && error.shape && error.data?.code !== "INTERNAL_SERVER_ERROR") {
       return { error: error.message };
     }
     throw error;

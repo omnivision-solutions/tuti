@@ -67,11 +67,13 @@ export async function imageUploaded(input: JobInput<"imageUploaded">, log: JobLo
       data: { status: "READY", width: info.width, height: info.height, size },
     });
     if (count === 0) {
-      // Another run settled it first. Its files have these keys only if it's READY at the same width (keys come from
-      // the id and widths); otherwise what this run wrote is nobody's.
+      // Another run settled it first. Never delete while it's PROCESSING or UPLOADING again (a retried finish's run may
+      // be writing these same keys). Gone or FAILED, nothing here is anyone's; READY, only what isn't among its own
+      // files (keys come from the id and widths, so smaller widths and the email copy may be shared).
       const settled = await prisma.media.findUnique({ where: { id: media.id }, select: { status: true, width: true } });
-      if (settled?.status !== "READY" || settled.width !== info.width) {
-        await Promise.all(files.map((f) => storage.delete(f.key).catch(() => {})));
+      if (!settled || settled.status === "FAILED" || (settled.status === "READY" && settled.width)) {
+        const kept = new Set(settled?.status === "READY" && settled.width ? [...imageWidths(settled.width).map((width) => imageKey(media.id, width)), emailImageKey(media.id)] : []);
+        await Promise.all(files.filter((f) => !kept.has(f.key)).map((f) => storage.delete(f.key).catch(() => {})));
       }
       log.warn(`media ${media.id} was settled by another run, skipping`);
       return { skipped: true };

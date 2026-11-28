@@ -348,6 +348,49 @@ describe("finishing", () => {
     s3.beforeGet = undefined;
     expect(await prisma.media.findUniqueOrThrow({ where: { id: failed }, select: { status: true, size: true } })).toEqual({ status: "FAILED", size: 0 });
     expect(filesOf(failed)).toEqual([]);
+
+    // Waiting again meanwhile (its claim given back, a retried finish's run to come): the keys aren't this run's to delete.
+    const retried = await claimed();
+    s3.beforeGet = async (key) => {
+      if (key === originalKey(retried)) {
+        await prisma.media.update({ where: { id: retried }, data: { status: "UPLOADING" } });
+      }
+    };
+    expect(await handlers.imageUploaded({ mediaId: retried }, quiet)).toEqual({ skipped: true });
+    s3.beforeGet = undefined;
+    expect(filesOf(retried).length).toBeGreaterThan(0);
+
+    // Both runs at work at once (both read the original): the one that lost keeps every file the ready image uses.
+    const parallel = await claimed();
+    let arrived = 0;
+    let bothIn!: () => void;
+    const together = new Promise<void>((resolve) => (bothIn = resolve));
+    s3.beforeGet = async (key) => {
+      if (key === originalKey(parallel) && ++arrived === 2) {
+        bothIn();
+      }
+      if (key === originalKey(parallel)) {
+        await together;
+      }
+    };
+    const both = await Promise.all([0, 1].map(() => handlers.imageUploaded({ mediaId: parallel }, quiet)));
+    s3.beforeGet = undefined;
+    expect(both.map((result) => (result.ready ? "ready" : result.skipped ? "skipped" : JSON.stringify(result))).sort()).toEqual(["ready", "skipped"]);
+    const ready = await prisma.media.findUniqueOrThrow({ where: { id: parallel } });
+    const own = [...imageWidths(ready.width!).map((width) => imageKey(parallel, width)), emailImageKey(parallel)];
+    expect(own.filter((key) => !s3.objects.has(key))).toEqual([]);
+
+    // Settled READY at other widths meanwhile: only what isn't among its files goes (the email copy is shared).
+    const wider = await claimed();
+    s3.beforeGet = async (key) => {
+      if (key === originalKey(wider)) {
+        await prisma.media.update({ where: { id: wider }, data: { status: "READY", width: 2400, height: 1800 } });
+      }
+    };
+    expect(await handlers.imageUploaded({ mediaId: wider }, quiet)).toEqual({ skipped: true });
+    s3.beforeGet = undefined;
+    expect(s3.objects.has(imageKey(wider, 400))).toBe(false);
+    expect(s3.objects.has(emailImageKey(wider))).toBe(true);
   });
 
   test("only the uploader can finish an upload or see its status", async () => {
