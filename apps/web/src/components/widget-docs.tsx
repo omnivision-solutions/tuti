@@ -214,7 +214,7 @@ async function WidgetArticle({
   /** The collection it was opened from: the way back is named after it. */
   from?: string;
 }) {
-  const [link, { t: w }, { t: d }, team] = await Promise.all([portalLinks(), pageTranslator("widget"), pageTranslator("docs"), teamLanguage()]);
+  const [link, { t: w }, { t: d, language: shown }, team] = await Promise.all([portalLinks(), pageTranslator("widget"), pageTranslator("docs"), teamLanguage()]);
   // An article's ID opens it at its slug; another language's slug (an AI answer's source, docs/plan.md L10), or an old slug of
   // one that has since moved, where it is now.
   const byId = await articleById(projectSlug, asked);
@@ -273,6 +273,8 @@ async function WidgetArticle({
           doc={article.doc}
           // In the language its text is in, as its title.
           lang={article.language ?? team}
+          // The panel's own words in it (a table of contents' heading, a video's title), in the panel's language.
+          words={{ lang: shown, inThisArticle: d("inThisArticle"), video: d("video") }}
           mediaUrls={await mediaUrls(article.doc)}
           headingIds
           // Its links to the portal's other articles open them here in the panel; to its other docs pages, on the portal.

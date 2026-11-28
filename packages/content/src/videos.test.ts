@@ -79,3 +79,18 @@ test("a video added while a block is picked (an upload finishing) goes after it,
   expect(editor.getJSON().content?.map((node) => node.type)).toEqual(["image", "video", "paragraph"]);
   editor.destroy();
 });
+
+test("the page's own words around the text (`words`): a video's title and a table of contents' name in the page's language, marked so; else English", () => {
+  const embed = { type: "video", attrs: { provider: "youtube", id: "aBcDeFgHiJk" } };
+  const heading = (text: string) => ({ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text }] });
+  const content = doc({ type: "tableOfContents" }, heading("Install"), heading("Sign in"), embed);
+  const html = renderToStaticMarkup(
+    createElement(RichText, { doc: content, lang: "en", headingIds: true, words: { lang: "de", inThisArticle: "In diesem Artikel", video: "Video ansehen" } }),
+  );
+  expect(html).toContain('<nav class="rich-toc" lang="de" aria-label="In diesem Artikel"><p>In diesem Artikel</p><ul lang="en">');
+  expect(html).toMatch(/<iframe [^>]*title="Video ansehen" lang="de"/);
+  const english = renderToStaticMarkup(createElement(RichText, { doc: content, headingIds: true }));
+  expect(english).toContain('aria-label="In this article"');
+  expect(english).toMatch(/<iframe [^>]*title="Video"/);
+  expect(english).not.toContain("lang=");
+});

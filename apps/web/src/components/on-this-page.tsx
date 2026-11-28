@@ -1,6 +1,7 @@
 "use client";
 
 import type { Heading } from "@tuti/content";
+import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -8,6 +9,7 @@ import { cn } from "@/lib/utils";
 /** An article's sections beside it, the one being read marked: the one just linked to while it's near the top (or in view at the bottom of the page), else the last heading above the top third of the screen (none yet: the first; at the bottom of the page, the last one). */
 export function OnThisPage({ headings, lang }: { headings: Heading[]; /** What the headings are in (the article's text's language). */ lang?: string }) {
   const [current, setCurrent] = useState<string | null>(null);
+  const t = useTranslations("docs");
   useEffect(() => {
     const update = () => {
       const elements = headings.map((heading) => document.getElementById(heading.id)).filter((element) => element !== null);
@@ -33,8 +35,8 @@ export function OnThisPage({ headings, lang }: { headings: Heading[]; /** What t
     };
   }, [headings]);
   return (
-    <nav aria-label="On this page" className="flex flex-col gap-3 text-sm">
-      <p className="font-medium text-muted-foreground">On this page</p>
+    <nav aria-label={t("onThisPage")} className="flex flex-col gap-3 text-sm">
+      <p className="font-medium text-muted-foreground">{t("onThisPage")}</p>
       <ul lang={lang} className="flex flex-col border-l">
         {headings.map((heading) => (
           <li key={heading.id}>
