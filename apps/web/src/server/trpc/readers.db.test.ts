@@ -8,6 +8,7 @@ import { PREVIEW_READER_COOKIE, WIDGET_READER_COOKIE } from "@/server/auth/porta
 import { previewToken } from "@/server/auth/preview-session";
 import { newVisitor } from "@/server/auth/visitor-session";
 import { widgetToken } from "@/server/auth/widget-session";
+import { authorId } from "@/server/operations/create";
 import { serverCaller } from "@/server/trpc/server";
 import { callerAs, createProject, onPortal, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
@@ -194,4 +195,32 @@ test("a page reads as the request's reader: Customize's preview reads a private 
     request.cookie = "";
     request.host = "";
   }
+});
+
+test("only a key writes on someone's behalf: a person, the widget's person and a visitor are refused `author`", async () => {
+  const number = await post();
+  const reader = await signUp("Rae Reader");
+  await onPortal(reader, project);
+  const someone = { author: { id: "user-42", email: "e2e-someone@example.com" } };
+  const said = (body: unknown) => JSON.stringify(body).includes("Only API keys can write on someone's behalf");
+  const portal = await trpc("votes.set", { number, voted: true, ...someone }, { cookie: reader.cookie, "sec-fetch-site": "same-origin" }, true);
+  expect({ status: portal.status, said: said(portal.body) }).toEqual({ status: 403, said: true });
+  const widget = await trpc("votes.set", { number, voted: true, ...someone }, { authorization: `Widget ${widgetToken(project.id, reader.id)}` }, true);
+  expect({ status: widget.status, said: said(widget.body) }).toEqual({ status: 403, said: true });
+  // A visitor never gets that far (they may only read), and the rule refuses them too.
+  await expect(authorId({ actor: { kind: "visitor", visitorHash: null }, projectId: project.id }, someone.author)).rejects.toMatchObject({ status: 403 });
+  expect(await prisma.user.count({ where: { ssoIdentity: { externalId: "user-42" } } })).toBe(0);
+});
+
+test("a teammate through the widget reads as a reader: no draft entry, no team-only post; in the app, both", async () => {
+  const number = await post();
+  await prisma.post.update({ where: { projectId_number: { projectId: project.id, number } }, data: { visibility: "TEAM" } });
+  await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Not out yet" } });
+  const viaWidget = { authorization: `Widget ${widgetToken(project.id, owner.id)}` };
+  expect((await trpc("posts.get", { number }, viaWidget)).status).toBe(404);
+  expect((await trpc("changelog.get", { number: 1 }, viaWidget)).status).toBe(404);
+  // The same teammate in the app: the team's.
+  const app = await callerAs(owner);
+  await expect(app.posts.get({ project: project.slug, number })).resolves.toMatchObject({ number });
+  await expect(app.changelog.get({ project: project.slug, number: 1 })).resolves.toMatchObject({ number: 1 });
 });

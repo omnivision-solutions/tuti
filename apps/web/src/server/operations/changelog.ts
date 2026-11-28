@@ -262,9 +262,12 @@ async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entry
   };
 }
 
-/** API keys are the team's; people are when they're on the project's team (onTeam: never with a portal's session). Only the team sees drafts. */
+/**
+ * API keys are the team's; people are when they're on the project's team (onTeam: never with a portal's session, nor by
+ * the widget's token). Only the team sees drafts.
+ */
 export async function isTeam(actor: Actor, projectId: string): Promise<boolean> {
-  return actor.kind === "apiKey" || (actor.kind === "user" && onTeam(projectId, actor.userId));
+  return actor.kind === "apiKey" || (actor.kind === "user" && !actor.viaWidget && onTeam(projectId, actor.userId));
 }
 
 /** An entry as someone off the team reads it: only its public posts (post-visibility.ts), as the portal lists them. */

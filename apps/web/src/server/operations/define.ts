@@ -14,10 +14,12 @@ export type Scope = "read" | "write";
  * Who's calling: someone signed in (in the app, on a portal, or in the widget by its token), a project's API key (acting
  * as its team), or a visitor nobody signed in: the widget's signed-out visitor by their visitor token's hash, or, with
  * none (null), someone reading a portal signed out. `sessionId`: the app session a teammate called the API with
- * (server/api-auth.ts), which a device they register belongs to. A visitor acts only where `access` is "reader".
+ * (server/api-auth.ts), which a device they register belongs to. `viaWidget`: someone the customer's site signed in to
+ * the widget, a reader whatever their role (the embedding site holds their token): never the team, in what they see
+ * either. A visitor acts only where `access` is "reader".
  */
 export type Actor =
-  | { kind: "user"; userId: string; sessionId?: string }
+  | { kind: "user"; userId: string; sessionId?: string; viaWidget?: true }
   | { kind: "apiKey"; keyId: string; projectId: string; scope: Scope; createdById: string }
   | { kind: "visitor"; visitorHash: string | null };
 export type ApiKeyActor = Extract<Actor, { kind: "apiKey" }>;

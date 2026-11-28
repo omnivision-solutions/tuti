@@ -142,7 +142,7 @@ export async function projectOf(ctx: TrpcContext, slug: string | undefined, acce
       if (!userId && !readers) {
         throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in again" });
       }
-      actor = userId ? { kind: "user", userId } : actor;
+      actor = userId ? { kind: "user", userId, viaWidget: true } : actor;
     }
     return { actor, projectId: project.id, role: null, mayRead: mayRead(project.id) };
   }

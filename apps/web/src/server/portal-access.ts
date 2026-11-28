@@ -65,12 +65,13 @@ export async function readableProject(slug: string): Promise<{ id: string } | nu
  * verified (any of them puts them in a group). None for everyone else, and none on a plan without
  * reader groups. Once per request: pages ask many times.
  */
-export const readerOf = cache(async (projectId: string, userId: string | null | undefined, session?: Session | null): Promise<Reader> => {
+export const readerOf = cache(async (projectId: string, userId: string | null | undefined, session?: Session | null, asReader = false): Promise<Reader> => {
   if (!userId) {
     return SIGNED_OUT;
   }
   const [member, account, groups, project] = await Promise.all([
-    onTeam(projectId, userId, session),
+    // `asReader`: never the team (the widget's person: Actor's viaWidget).
+    !asReader && onTeam(projectId, userId, session),
     prisma.user.findUnique({ where: { id: userId }, select: { email: true, emailVerified: true } }),
     prisma.readerGroup.findMany({ where: { projectId }, select: { key: true, conditions: true, match: true } }),
     prisma.project.findUnique({ where: { id: projectId }, select: { plan: true } }),
@@ -118,8 +119,11 @@ export async function currentPostViewer(projectId: string): Promise<PostViewer> 
   return read === null ? { team: true, userId } : { team: false, userId: read.signedIn ? userId : null };
 }
 
-/** An operation's caller as a reader: API keys act for the team (everything); a visitor reads as people signed out do. */
+/**
+ * An operation's caller as a reader: API keys act for the team (everything); a visitor reads as people signed out do; the
+ * widget's person as a reader, never the team.
+ */
 export async function actorReader(actor: Actor, projectId: string): Promise<Reader> {
-  return actor.kind === "apiKey" ? null : readerOf(projectId, actor.kind === "user" ? actor.userId : null);
+  return actor.kind === "apiKey" ? null : actor.kind === "user" ? readerOf(projectId, actor.userId, undefined, !!actor.viaWidget) : readerOf(projectId, null);
 }
 

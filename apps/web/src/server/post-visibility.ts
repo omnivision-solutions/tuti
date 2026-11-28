@@ -68,14 +68,15 @@ export function seesBoard(viewer: PostViewer, board: { postVisibility: PostVisib
 export const PORTAL_BOARDS = shownBoards(SIGNED_OUT_VIEWER);
 
 /** Someone (null: signed out) as a viewer of the project's posts: the team if they're on it (onTeam: never with a portal's session). */
-export async function postViewer(projectId: string, userId: string | null | undefined): Promise<PostViewer> {
+export async function postViewer(projectId: string, userId: string | null | undefined, asReader = false): Promise<PostViewer> {
   if (!userId) {
     return SIGNED_OUT_VIEWER;
   }
-  return { team: await onTeam(projectId, userId), userId };
+  // `asReader`: never the team (the widget's person: Actor's viaWidget).
+  return { team: !asReader && (await onTeam(projectId, userId)), userId };
 }
 
-/** An operation's caller as a viewer: API keys act for the team; a visitor views as people signed out do. */
+/** An operation's caller as a viewer: API keys act for the team; a visitor views as people signed out do; the widget's person as a reader. */
 export function actorPostViewer(actor: Actor, projectId: string): Promise<PostViewer> {
-  return actor.kind === "apiKey" ? Promise.resolve(TEAM_VIEWER) : postViewer(projectId, actor.kind === "user" ? actor.userId : null);
+  return actor.kind === "apiKey" ? Promise.resolve(TEAM_VIEWER) : actor.kind === "user" ? postViewer(projectId, actor.userId, !!actor.viaWidget) : postViewer(projectId, null);
 }

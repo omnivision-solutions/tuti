@@ -61,14 +61,12 @@ export const author = z
  * app when `author` is given (created on first sight; see namedProjectUser), otherwise the key's creator.
  */
 export async function authorId(context: { actor: Actor; projectId: string }, input: z.infer<typeof author>) {
-  if (context.actor.kind === "visitor") {
-    actingUserId(context.actor);
-  }
-  if (context.actor.kind === "user") {
+  // Only a key writes on someone's behalf: anyone else (a person, the widget's, a visitor) writes as themselves.
+  if (context.actor.kind !== "apiKey") {
     if (input) {
       throw new OperationError(403, "forbidden", "Only API keys can write on someone's behalf");
     }
-    return context.actor.userId;
+    return actingUserId(context.actor);
   }
   if (!input) {
     return actingUserId(context.actor);
