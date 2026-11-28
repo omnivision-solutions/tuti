@@ -23,19 +23,39 @@ import { isPortalFont, PORTAL_FONTS, type PortalFont } from "@/lib/portal-fonts"
 import { COLOR_SCHEMES, type ColorScheme, LOGO_TEXT_MAX } from "@/lib/portal-look";
 import { uploadImage } from "@/lib/upload-image";
 import { cn } from "@/lib/utils";
+import { errorMessage, useTRPCClient } from "@/components/trpc";
 import { checkBrandingLicense, saveBranding } from "@/server/branding";
+import type { updateBranding } from "@/server/operations/branding";
+import type { InputOf } from "@/server/operations/define";
 
 type Image = { id: string; url: string } | null;
 
 /**
- * One part of the branding's form (see branding.update and saveBranding), saved with the panel's
- * "Save changes" (with a toast, and then the preview shows what's saved), and shown in the preview as
- * it's changed (`toDraft`).
+ * One part of the branding's form (see branding.update), saved with the panel's "Save changes" (with a toast, and then
+ * the preview shows what's saved), and shown in the preview as it's changed (`toDraft`). With `input`, it saves through
+ * tRPC; without, through saveBranding until each screen moves (docs/plan.md, "One way in", T3).
  */
-export function useBrandingForm(projectSlug: string, message: string, toDraft: (data: FormData) => Draft, busy = false) {
+export function useBrandingForm(
+  projectSlug: string,
+  message: string,
+  toDraft: (data: FormData) => Draft,
+  busy = false,
+  input?: (data: FormData) => Omit<InputOf<typeof updateBranding>, "project">,
+) {
   const preview = usePreview();
+  const trpc = useTRPCClient();
   return useCustomizeForm({
-    save: (prev, formData) => saveBranding(projectSlug, prev, formData),
+    save: async (prev, formData) => {
+      if (!input) {
+        return saveBranding(projectSlug, prev, formData);
+      }
+      try {
+        await trpc.branding.update.mutate({ project: projectSlug, ...input(formData) });
+      } catch (error) {
+        return { error: errorMessage(error) };
+      }
+      return {};
+    },
     onSaved: () => {
       toast.success(message);
       preview.reload();
