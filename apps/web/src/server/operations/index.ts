@@ -98,6 +98,7 @@ import { getGlossary, updateGlossary } from "./glossary";
 import { getBoardTranslations, getCollectionTranslations, getTabTranslations, updateBoardTranslation, updateCollectionTranslation, updateTabTranslation } from "./label-translations";
 import { getChangelogTranslation, saveChangelogTranslation } from "./changelog-translations";
 import { getTranslation, keepTranslationUpToDate, publishTranslation, saveTranslation, updateTranslationSections } from "./translations";
+import { getPortalPreview } from "./customize";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
 import { createUpload, finishUpload, getUploadStatus } from "./uploads";
 import { getUsage } from "./usage";
@@ -321,6 +322,7 @@ export const all = [
   updateTabTranslation,
   getBoardTranslations,
   updateBoardTranslation,
+  getPortalPreview,
   // Before screenshots.get: /screenshots/settings isn't a run's id.
   getScreenshotSettings,
   updateScreenshotSettings,

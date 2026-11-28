@@ -26,11 +26,17 @@ export function CustomCodeSettings({
   max: number;
   ownAddress: string | null;
 }) {
-  const { state, form } = useBrandingForm(projectSlug, "Custom code saved", (data) => ({ customCss: String(data.get("customCss") ?? "") }));
+  const text = (data: FormData, name: string) => String(data.get(name) ?? "");
+  const { state, form } = useBrandingForm(
+    projectSlug,
+    "Custom code saved",
+    (data) => ({ customCss: text(data, "customCss") }),
+    false,
+    (data) => ({ customCss: text(data, "customCss"), customHtml: text(data, "customHtml") }),
+  );
   const code = "font-mono text-xs";
   return (
     <form {...form} className="flex flex-col gap-4">
-      <input type="hidden" name="part" value="code" />
       <SettingsCard>
         <SettingBlock className="gap-2.5 py-3.5">
           <label htmlFor="custom-css" className="font-medium">
