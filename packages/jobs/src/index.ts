@@ -70,7 +70,7 @@ export { allowedHosts, dropChangedScreenshotProfile, LANDING_SHOT, SCREENSHOT_ER
 export { markersIn, MAX_SHOW, placeScreenshots, screenshotsAsked } from "./screenshot-lines";
 export { foundDomains, partlyScannedFor, scannedFor, scanSignInServices, type SignInService } from "./sign-in-hosts";
 export { SCREENSHOT_DECISIONS } from "./stale-screenshots";
-export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
+export { aiPaused, aiPausedIn, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, thresholds } from "./code-change-decisions";
 export { type ArticlePlace, draftPlace, placeWords, SCREENSHOT_RULE } from "./code-change-docs";
 export { analysisOn, claimCodeChange, codeChange, queueClaimed, GAVE_UP, RETRY_AFTER_MINUTES, retryCodeChanges, writeChangelogLine } from "./code-changes";

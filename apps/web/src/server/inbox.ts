@@ -11,16 +11,12 @@ import type { FormState } from "./form-state";
 import { getMembership } from "./membership";
 import { OperationError } from "./operations";
 import {
-  CONVERSATION_STATUSES,
   linkConversationPost,
   listArticlesToInsert,
-  markConversationRead as markRead,
   replyToConversation,
-  retryTranslation as retryTranslationOperation,
   startReplyUpload,
   translateReply,
   unlinkConversationPost,
-  updateConversation,
 } from "./operations/conversations";
 import { ACTIVITY_FILTERS, type Activity, getConversationActivity } from "./operations/conversation-activity";
 import { asAdmin, asTeam, call } from "./operations/run";
@@ -29,7 +25,7 @@ import { getSession } from "./session";
 import { supportDomain } from "./inbound";
 import { requirePlan } from "./operations/plan";
 import { checkEmailDomainOperation, removeEmailDomain, setEmailDomain, updateSupportSettings } from "./operations/support";
-import { suggestReply, summarizeConversation } from "./operations/support-ai";
+import { suggestReply } from "./operations/support-ai";
 
 /** The team's actions in the support inbox (any team role), through the conversations operations. */
 
@@ -43,12 +39,6 @@ function conversationNumber(value: unknown) {
   return parsed.data;
 }
 
-/** Viewing a visible, focused conversation acknowledges it for this teammate (never during prefetch). */
-export async function markConversationRead(projectSlug: string, conversation: number, seen: string | null): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can mark conversations read", (context) =>
-    call(markRead, context, { number: conversationNumber(conversation), seen }),
-  );
-}
 
 export async function replyInConversation(
   projectSlug: string,
@@ -130,12 +120,6 @@ export async function previewReplyTranslation(
   }
 }
 
-/** Try again: the customer's messages whose translation failed, translated again (conversations.retryTranslation). */
-export async function retryTranslation(projectSlug: string, conversation: number): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can translate messages", async (context) =>
-    call(retryTranslationOperation, context, { number: conversationNumber(conversation) }),
-  );
-}
 
 /** Starts uploading a file for a reply (conversations.upload): where the browser PUTs it, and its id for replyInConversation. */
 export async function uploadReplyAttachment(projectSlug: string, file: { filename: string; contentType: string; size: number }): Promise<{ error: string } | { id: string; contentType: string; uploadUrl: string }> {
@@ -153,95 +137,12 @@ export async function uploadReplyAttachment(projectSlug: string, file: { filenam
   }
 }
 
-export async function setConversationStatus(projectSlug: string, conversation: number, status: string): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can change a conversation's status", async (context) => {
-    const parsed = z.enum(CONVERSATION_STATUSES).safeParse(status);
-    if (!parsed.success) {
-      throw new OperationError(400, "invalid_input", "Unknown status");
-    }
-    return call(updateConversation, context, { number: conversationNumber(conversation), status: parsed.data });
-  });
-}
 
-/** Assigns a conversation to a team member (by their user id), or to nobody (null). */
-export async function assignConversation(projectSlug: string, conversation: number, userId: string | null): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can assign conversations", async (context) => {
-    let assignee: string | null = null;
-    if (userId !== null) {
-      const member = await prisma.teamMember.findFirst({
-        where: { projectId: context.projectId, userId: String(userId) },
-        select: { user: { select: { email: true } } },
-      });
-      if (!member) {
-        throw new OperationError(404, "not_found", "That person isn't on the project's team");
-      }
-      assignee = member.user.email;
-    }
-    return call(updateConversation, context, { number: conversationNumber(conversation), assignee });
-  });
-}
 
-/** Snoozes a conversation till a time to come (ISO), or wakes it (null). */
-export async function snoozeConversation(projectSlug: string, conversation: number, until: string | null): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can snooze conversations", async (context) =>
-    call(updateConversation, context, { number: conversationNumber(conversation), snoozedUntil: until === null ? null : String(until) }),
-  );
-}
 
-/**
- * Take over: a conversation the AI has becomes the team's, with nothing else about it moved (conversations.update's
- * `handledBy`).
- */
-export async function takeOverConversation(projectSlug: string, conversation: number): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can take over conversations", async (context) =>
-    call(updateConversation, context, { number: conversationNumber(conversation), handledBy: "team" }),
-  );
-}
 
-/**
- * Hand back to the AI (docs/plan.md, Inbox automation, W12): a conversation the team has becomes the AI's, out of the
- * team's views, with nothing else about it moved; the AI answers its user's next message. Refused while its user waits on
- * the team (conversations.update's `ifNobodyWaits`, read under the conversation's lock, so a message being written is
- * either seen or gets the AI's turn): their message would go unanswered, with nobody told. The page offers it only where
- * it's allowed (handBackOffered).
- */
-export async function handBackConversation(projectSlug: string, conversation: number): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can hand conversations back to the AI", async (context) =>
-    call(updateConversation, context, { number: conversationNumber(conversation), handledBy: "ai", ifNobodyWaits: true }),
-  );
-}
 
-/** Mark priority, or Remove priority. */
-export async function setConversationPriority(projectSlug: string, conversation: number, priority: boolean): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can mark conversations priority", async (context) =>
-    call(updateConversation, context, { number: conversationNumber(conversation), priority: priority === true }),
-  );
-}
 
-/**
- * Reports a conversation as spam (with `blockSender` or `blockDomain`, a block rule for its sender's address or domain
- * too) or marks it not spam (with `removeRule`, removing the rule that filed it): `notice` is what Not spam leaves in
- * place or undid (conversations.update's), to say with it.
- */
-export async function markConversationSpam(
-  projectSlug: string,
-  conversation: number,
-  spam: boolean,
-  options: { blockSender?: boolean; blockDomain?: boolean; removeRule?: boolean } = {},
-): Promise<FormState & { notice?: string }> {
-  let notice: string | undefined;
-  const result = await asTeam(projectSlug, "Only the project's team can mark spam", async (context) => {
-    const updated = await call(updateConversation, context, {
-      number: conversationNumber(conversation),
-      spam: spam === true,
-      ...(spam === true && options?.blockSender === true && { blockSender: true }),
-      ...(spam === true && options?.blockDomain === true && { blockDomain: true }),
-      ...(spam === false && options?.removeRule === true && { removeRule: true }),
-    });
-    notice = updated.notice;
-  });
-  return notice ? { ...result, notice } : result;
-}
 
 /** The posts "Link post…" offers for what's typed: any of the project's (searchPosts). */
 export async function findPostsToLink(projectSlug: string, q: string): Promise<{ error?: string; posts?: { id: string; number: number; title: string; voteCount: number }[] }> {
@@ -420,9 +321,3 @@ export async function draftReplyWithAi(
   }
 }
 
-/** Adds the AI's summary of the conversation as a note (conversations.summarize). */
-export async function summarizeWithAi(projectSlug: string, conversation: number): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can summarize conversations", async (context) =>
-    call(summarizeConversation, context, { number: conversationNumber(conversation) }),
-  );
-}

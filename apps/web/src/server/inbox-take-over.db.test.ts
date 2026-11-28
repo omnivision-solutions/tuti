@@ -1,10 +1,9 @@
 import { prisma } from "@tuti/db";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { actAs, addMember, createProject, signUp } from "@/test/helpers";
+import { addMember, callerAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { aiWouldAnswer } from "./ai-turn";
-import { handBackConversation, setConversationPriority, takeOverConversation } from "./inbox";
 import { createConversation, getConversation, replyToConversation, updateConversation } from "./operations/conversations";
 import type { Actor } from "./operations/define";
 import { call } from "./operations/run";
@@ -13,6 +12,23 @@ import { createWorkflow } from "./operations/workflows";
 const sam = { id: "user-42", name: "Sam", email: "e2e-sam@example.com" };
 
 afterEach(() => vi.unstubAllEnvs());
+
+/** Who the Inbox's buttons below act as. */
+let acting: TestUser;
+const actAs = (user: TestUser) => (acting = user);
+
+/** A change from the Inbox's buttons, through tRPC (conversations.update): `{}`, or the refusal's message. */
+async function save(slug: string, number: number, change: { handledBy?: "team" | "ai"; ifNobodyWaits?: boolean; priority?: boolean }) {
+  try {
+    await (await callerAs(acting)).conversations.update({ project: slug, number, ...change });
+    return {};
+  } catch (error) {
+    return { error: (error as Error).message };
+  }
+}
+const takeOverConversation = (slug: string, number: number) => save(slug, number, { handledBy: "team" });
+const handBackConversation = (slug: string, number: number) => save(slug, number, { handledBy: "ai", ifNobodyWaits: true });
+const setConversationPriority = (slug: string, number: number, priority: boolean) => save(slug, number, { priority });
 
 /** A conversation the team answered, assigned and snoozed, then handed to the AI over the API. */
 async function handedToAi() {
@@ -59,9 +75,9 @@ test("someone not on the project's team takes nothing over and marks nothing", a
   const { project, row } = await handedToAi();
   actAs(await signUp("Sid Stranger"));
 
-  expect(await takeOverConversation(project.slug, 1)).toEqual({ error: "Only the project's team can take over conversations" });
-  expect(await setConversationPriority(project.slug, 1, true)).toEqual({ error: "Only the project's team can mark conversations priority" });
-  expect(await takeOverConversation(project.slug, 99)).toEqual({ error: "Only the project's team can take over conversations" });
+  expect(await takeOverConversation(project.slug, 1)).toEqual({ error: "No such project, or it isn't yours" });
+  expect(await setConversationPriority(project.slug, 1, true)).toEqual({ error: "No such project, or it isn't yours" });
+  expect(await takeOverConversation(project.slug, 99)).toEqual({ error: "No such project, or it isn't yours" });
   expect(await row()).toMatchObject({ handledBy: "AI", priority: false });
 });
 
@@ -81,7 +97,7 @@ test("Hand back to the AI makes a conversation the team has the AI's, for any te
   });
 
   actAs(await signUp("Sid Stranger"));
-  expect(await handBackConversation(project.slug, 1)).toEqual({ error: "Only the project's team can hand conversations back to the AI" });
+  expect(await handBackConversation(project.slug, 1)).toEqual({ error: "No such project, or it isn't yours" });
 });
 
 test("Hand back to the AI is refused while its user waits on the team: their message would go unanswered", async () => {

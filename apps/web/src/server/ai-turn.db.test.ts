@@ -10,14 +10,13 @@ const later = vi.hoisted(() => [] as (() => unknown)[]);
 vi.mock("next/server", async (original) => ({ ...(await original<typeof import("next/server")>()), after: (task: () => unknown) => void later.push(task) }));
 
 import { AUTOMATED_REPLIES_PER_HOUR } from "@/lib/workflows";
-import { actAs, createProject, signUp } from "@/test/helpers";
+import { actAs, callerAs, createProject, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
 import { mailbox } from "@/test/mailbox";
 
 import { reportRange } from "@/lib/report-range";
 
 import { AI_TURN_GIVE_UP_MS, runAiTurn } from "./ai-turn";
-import { handBackConversation, takeOverConversation } from "./inbox";
 import { mailSubdomain, supportAddress } from "./inbound";
 import { createArticle, publishArticle } from "./operations/docs";
 import { replyToConversation, updateConversation } from "./operations/conversations";
@@ -334,11 +333,11 @@ async function answeredByTeamMeanwhile(person: number, afterwards?: () => void) 
   await mail();
   const { slug } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true } });
   model.decide({ person, reply: 0.9 }, QUESTION, async () => {
-    actAs(owner);
-    expect(await takeOverConversation(slug, 1)).toEqual({});
+    // Through tRPC, as the Inbox's Take over and Hand back to the AI save.
+    const caller = await callerAs(owner);
+    await caller.conversations.update({ project: slug, number: 1, handledBy: "team" });
     await call(replyToConversation, admin, { number: 1, body: "Settings → Export, Sam." });
-    expect(await handBackConversation(slug, 1)).toEqual({});
-    actAs(null);
+    await caller.conversations.update({ project: slug, number: 1, handledBy: "ai", ifNobodyWaits: true });
     afterwards?.();
   });
   return { turn, state, handovers };

@@ -1,10 +1,9 @@
 import { prisma } from "@tuti/db";
 import { expect, test } from "vitest";
 
-import { actAs, addMember, createProject, signUp } from "@/test/helpers";
+import { addMember, callerAs, createProject, signUp } from "@/test/helpers";
 
 import { conversationReads } from "./conversation-reads";
-import { markConversationRead } from "./inbox";
 import { addMessage, createConversation, markConversationRead as markRead, replyToConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 
@@ -25,7 +24,8 @@ test("read state belongs to each teammate, ignores team replies and notes, and o
   expect((await states()).get(id)?.unread).toBe(true);
   expect((await states()).size).toBe(2);
 
-  actAs(owner);
+  // Marked read from the conversation's page, through tRPC.
+  const markConversationRead = async (slug: string, number: number, seen: string) => (await callerAs(owner)).conversations.markRead({ project: slug, number, seen });
   const seen = (await states()).get(id)!.latestCustomerAt!.toISOString();
   expect(await markConversationRead(project.slug, 1, seen)).toEqual({});
   const read = await prisma.conversationRead.findUniqueOrThrow({ where: { conversationId_userId: { conversationId: id, userId: owner.id } } });

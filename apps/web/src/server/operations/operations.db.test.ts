@@ -178,6 +178,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "conversations.list": () => ({ status: "open", q: "matrix" }),
   "companies.list": () => ({}),
   "conversations.get": () => ({ number: 1 }),
+  // Internal (tRPC only): through the caller, below.
+  "inbox.conversation": () => ({ number: 1 }),
   "conversations.person": () => ({ number: 1 }),
   "conversations.activity": () => ({ number: 1 }),
   "conversations.markRead": () => ({ number: 1, seen: new Date().toISOString() }),

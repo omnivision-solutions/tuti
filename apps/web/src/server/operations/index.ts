@@ -23,6 +23,7 @@ import {
 } from "./conversations";
 import { getConversationActivity } from "./conversation-activity";
 import { getInboxList, setNewConversationEmails } from "./inbox";
+import { getInboxConversation } from "./inbox-conversation";
 import { getConversationPerson } from "./conversation-person";
 import { getNotificationSettings, registerDevice, removeDevice, updateNotificationSettings } from "./devices";
 import { checkEmailDomainOperation, getSupportSettings, removeEmailDomain, setEmailDomain, updateSupportSettings } from "./support";
@@ -131,6 +132,7 @@ export const all = [
   updateNotificationSettings,
   listArticlesToInsert,
   getConversation,
+  getInboxConversation,
   getConversationPerson,
   getConversationActivity,
   createConversation,

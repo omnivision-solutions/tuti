@@ -1,9 +1,11 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { AlarmClockIcon, CheckIcon, ChevronDownIcon, ShieldAlertIcon, SparklesIcon, UserPlusIcon } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
+import { errorMessage, useTRPCClient } from "@/components/trpc";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -12,22 +14,37 @@ import { actOn } from "@/components/inbox/list-keys";
 import { cn } from "@/lib/utils";
 import { CONVERSATION_STATUS_STYLES } from "@/lib/conversation-statuses";
 import { initial } from "@/lib/format";
-import {
-  assignConversation,
-  handBackConversation,
-  markConversationSpam,
-  setConversationPriority,
-  setConversationStatus,
-  snoozeConversation,
-  summarizeWithAi,
-  takeOverConversation,
-} from "@/server/inbox";
 
 type Props = { projectSlug: string; number: number };
+
+type Trpc = ReturnType<typeof useTRPCClient>;
+type Change = Omit<Parameters<Trpc["conversations"]["update"]["mutate"]>[0], "project" | "number">;
+
+/**
+ * Saves a change to the conversation (conversations.update): `{ error }` for its toast, or what Not spam left in place
+ * (`notice`). The page refreshes after, its refresh applied after the caller's own steps (actOn's), as an action's was.
+ */
+function useSave(projectSlug: string, number: number) {
+  const trpc = useTRPCClient();
+  const router = useRouter();
+  return async (change: Change | "summarize"): Promise<{ error?: string; notice?: string }> => {
+    try {
+      const saved =
+        change === "summarize"
+          ? await trpc.conversations.summarize.mutate({ project: projectSlug, number })
+          : await trpc.conversations.update.mutate({ project: projectSlug, number, ...change });
+      router.refresh();
+      return { notice: "notice" in saved ? (saved.notice ?? undefined) : undefined };
+    } catch (error) {
+      return { error: errorMessage(error) };
+    }
+  };
+}
 
 /** Close, or Reopen once it's closed. */
 export function CloseButton({ projectSlug, number, closed }: Props & { closed: boolean }) {
   const [pending, startTransition] = useTransition();
+  const save = useSave(projectSlug, number);
   return (
     <Button
       variant="outline"
@@ -38,7 +55,7 @@ export function CloseButton({ projectSlug, number, closed }: Props & { closed: b
       onClick={() =>
         startTransition(async () => {
           const moved = actOn(number, !closed);
-          const result = await setConversationStatus(projectSlug, number, closed ? "open" : "closed");
+          const result = await save({ status: closed ? "open" : "closed" });
           if (result.error) {
             toast.error(result.error);
           } else {
@@ -58,6 +75,7 @@ export function CloseButton({ projectSlug, number, closed }: Props & { closed: b
  * (they wrote again while it was being written), and back to open when it needs a reply after all. */
 export function MarkStatusButton({ projectSlug, number, status }: Props & { status: "open" | "waiting" }) {
   const [pending, startTransition] = useTransition();
+  const save = useSave(projectSlug, number);
   const label = status === "waiting" ? "waiting on user" : "open";
   return (
     <DropdownMenuItem
@@ -65,7 +83,7 @@ export function MarkStatusButton({ projectSlug, number, status }: Props & { stat
       onClick={() =>
         startTransition(async () => {
           const moved = actOn(number);
-          const result = await setConversationStatus(projectSlug, number, status);
+          const result = await save({ status });
           if (result.error) {
             toast.error(result.error);
           } else {
@@ -83,7 +101,7 @@ export function MarkStatusButton({ projectSlug, number, status }: Props & { stat
 /** Quiet label/value pickers in the conversation details card and sheet. */
 const TRIAGE_VALUE = "inbox-triage-value h-auto min-h-8 w-full min-w-0 justify-start border-0 bg-transparent px-1 py-0.5 text-left text-xs leading-5 whitespace-normal shadow-none [&>svg:first-child]:hidden group-[.inbox-details-sheet]/details:min-h-8.75 group-[.inbox-details-sheet]/details:text-[0.875rem]";
 
-type Teammate = { userId: string; name: string; image: string | null };
+type Teammate = { userId: string; name: string; email: string; image: string | null };
 
 function TeammateAvatar({ teammate }: { teammate: Teammate }) {
   return (
@@ -97,11 +115,12 @@ function TeammateAvatar({ teammate }: { teammate: Teammate }) {
 /** Who a conversation is assigned to (or "Assign"), opening the team to pick from: "Assign to me" first. */
 export function AssignMenu({ projectSlug, number, assigneeId, me, team }: Props & { assigneeId: string | null; me: string; team: Teammate[] }) {
   const [pending, startTransition] = useTransition();
+  const save = useSave(projectSlug, number);
   const assignee = team.find((m) => m.userId === assigneeId);
   const assign = (teammate: Teammate | null) =>
     startTransition(async () => {
       const moved = actOn(number);
-      const result = await assignConversation(projectSlug, number, teammate && teammate.userId);
+      const result = await save({ assignee: teammate ? teammate.email : null });
       if (result.error) {
         toast.error(result.error);
       } else {
@@ -185,6 +204,7 @@ function morning(days: number) {
 /** Snooze: out of the inbox's views till a time (back in Open then, or when they write); "Wake now" while it's snoozed. */
 export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoozedUntil: string | null }) {
   const [pending, startTransition] = useTransition();
+  const save = useSave(projectSlug, number);
   // The time in the browser's own zone only: the server's may differ, and its text would stay on the page.
   const inBrowser = useSyncExternalStore(
     () => () => {},
@@ -194,7 +214,7 @@ export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoo
   const snooze = (until: Date | null) =>
     startTransition(async () => {
       const moved = actOn(number, until !== null);
-      const result = await snoozeConversation(projectSlug, number, until && until.toISOString());
+      const result = await save({ snoozedUntil: until && until.toISOString() });
       if (result.error) {
         toast.error(result.error);
       } else {
@@ -260,13 +280,11 @@ type SpamOptions = { blockSender?: string; blockDomain?: string; removeRule?: bo
  */
 function useSpamMark(projectSlug: string, number: number) {
   const [pending, startTransition] = useTransition();
+  const save = useSave(projectSlug, number);
   const mark = (spam: boolean, { blockSender, blockDomain, removeRule }: SpamOptions = {}, done?: () => void) =>
     startTransition(async () => {
       const moved = actOn(number, spam);
-      const result = await markConversationSpam(projectSlug, number, spam, { blockSender: !!blockSender, blockDomain: !!blockDomain, removeRule }).catch(() => ({
-        error: "Couldn't reach Tuti. Try again.",
-        notice: undefined,
-      }));
+      const result = await save({ spam, ...(spam && blockSender && { blockSender: true }), ...(spam && blockDomain && { blockDomain: true }), ...(!spam && removeRule && { removeRule: true }) });
       if (result.error) {
         toast.error(result.error);
       } else {
@@ -379,12 +397,13 @@ export function SpamNotice({ projectSlug, number, why, unblocks, removesRule }: 
 /** More actions' Mark priority, or Remove priority: the one flag the list's rows and the conversation's own line show. */
 export function PriorityButton({ projectSlug, number, priority }: Props & { priority: boolean }) {
   const [pending, startTransition] = useTransition();
+  const save = useSave(projectSlug, number);
   return (
     <DropdownMenuItem
       disabled={pending}
       onClick={() =>
         startTransition(async () => {
-          const result = await setConversationPriority(projectSlug, number, !priority).catch(() => ({ error: "Couldn't reach Tuti. Try again." }));
+          const result = await save({ priority: !priority });
           if (result.error) {
             toast.error(result.error);
           } else {
@@ -401,12 +420,13 @@ export function PriorityButton({ projectSlug, number, priority }: Props & { prio
 /** More actions' Hand back to the AI, on a conversation the team has where the AI would answer: the AI's again, out of the team's views. */
 export function HandBackButton({ projectSlug, number }: Props) {
   const [pending, startTransition] = useTransition();
+  const save = useSave(projectSlug, number);
   return (
     <DropdownMenuItem
       disabled={pending}
       onClick={() =>
         startTransition(async () => {
-          const result = await handBackConversation(projectSlug, number).catch(() => ({ error: "Couldn't reach Tuti. Try again." }));
+          const result = await save({ handledBy: "ai", ifNobodyWaits: true });
           if (result.error) {
             toast.error(result.error);
           } else {
@@ -427,6 +447,7 @@ export function HandBackButton({ projectSlug, number }: Props) {
  */
 export function TakeOver({ projectSlug, number, ai, children }: Props & { ai: boolean; children: ReactNode }) {
   const [pending, startTransition] = useTransition();
+  const save = useSave(projectSlug, number);
   const box = useRef<HTMLDivElement>(null);
   // Taken over here (not by a teammate elsewhere, which the live refresh shows): its button goes, so the focus moves to the
   // reply. Set as it starts: whichever render first shows it taken over moves the focus.
@@ -458,7 +479,7 @@ export function TakeOver({ projectSlug, number, ai, children }: Props & { ai: bo
         onClick={() =>
           startTransition(async () => {
             took.current = true;
-            const result = await takeOverConversation(projectSlug, number).catch(() => ({ error: "Couldn't reach Tuti. Try again." }));
+            const result = await save({ handledBy: "team" });
             if (result.error) {
               took.current = false;
               toast.error(result.error);
@@ -477,12 +498,13 @@ export function TakeOver({ projectSlug, number, ai, children }: Props & { ai: bo
 /** "Summarize": the AI's summary of the conversation, added as a note (disabled while the project is out of credits). */
 export function SummarizeButton({ projectSlug, number, paused }: Props & { paused: boolean }) {
   const [pending, startTransition] = useTransition();
+  const save = useSave(projectSlug, number);
   return (
     <DropdownMenuItem
       disabled={pending || paused}
       onClick={() =>
         startTransition(async () => {
-          const result = await summarizeWithAi(projectSlug, number);
+          const result = await save("summarize");
           if (result.error) {
             toast.error(result.error);
           } else {
@@ -499,12 +521,13 @@ export function SummarizeButton({ projectSlug, number, paused }: Props & { pause
 /** The details' Status. `withAi`: the AI has it, so an open one is "Open", not "Needs reply" (it isn't waiting on the team). */
 export function ConversationStatusMenu({ projectSlug, number, status, answered, withAi = false }: Props & { status: "OPEN" | "WAITING" | "CLOSED"; answered: boolean; withAi?: boolean }) {
   const [pending, startTransition] = useTransition();
+  const save = useSave(projectSlug, number);
   const open = withAi ? "Open" : "Needs reply";
   const label = status === "OPEN" ? open : status === "WAITING" ? "Waiting on user" : "Closed";
   const set = (value: "open" | "waiting" | "closed") =>
     startTransition(async () => {
       const moved = actOn(number, value === "closed");
-      const result = await setConversationStatus(projectSlug, number, value);
+      const result = await save({ status: value });
       if (result.error) toast.error(result.error);
       else {
         toast.success(value === "closed" ? "Closed" : value === "open" ? "Reopened" : "Marked as waiting on user");

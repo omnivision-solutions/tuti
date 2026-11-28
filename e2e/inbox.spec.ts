@@ -8,7 +8,7 @@ import { spendCredits } from "./credits";
 import { publishMx } from "./dns";
 import { setThisMonthsEmails, setTodaysEmails } from "./email-days";
 import { APP_PORTAL_OWNER, APP_URL, CLOUD_URL, cloudPortalUrl, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
-import { apiFor, createProject, expectMoreView, moreView, openPersonDetails, png, signUp } from "./helpers";
+import { apiFor, createProject, expectMoreView, isSave, moreView, openPersonDetails, png, signUp, trpcRequest } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { nextModelReply } from "./model";
@@ -222,7 +222,9 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByRole("button", { name: "Draft with AI" })).toBeVisible();
   await nextModelReply("Sam's CSV export fails; a fix is on its way, and billing needs checking.", "Can't export to CSV");
   await owner.getByRole("button", { name: "More actions" }).click();
+  const summarizing = trpcRequest(owner, "conversations.summarize");
   await owner.getByRole("menuitem", { name: "Summarize with AI" }).click();
+  await summarizing;
   await expect(owner.getByText("Summary added as a note")).toBeVisible();
   await expect(messages).toHaveCount(5);
   await expect(messages.last()).toContainText("Internal note · AI");
@@ -390,14 +392,16 @@ test("conversations from the API land in the inbox, where the team replies, assi
   let releaseClose!: () => void;
   const closeHeld = new Promise<void>((resolve) => (releaseClose = resolve));
   await owner.route("**/*", async (route) => {
-    if (!route.request().headers()["next-action"]) {
+    if (!isSave(route.request())) {
       return route.fallback();
     }
     const response = await route.fetch();
     await closeHeld;
     await route.fulfill({ response });
   });
+  const closing = trpcRequest(owner, "conversations.update");
   await close.click();
+  await closing;
   await expect(close).toHaveAttribute("data-disabled");
   await expect(close).toHaveCSS("opacity", "0.5");
   await expect(close).toBeFocused();
@@ -880,7 +884,7 @@ test("the team member's own action taking the open conversation out of its view 
   let release!: () => void;
   const held = new Promise<void>((resolve) => (release = resolve));
   await owner.route("**/*", async (route) => {
-    if (!route.request().headers()["next-action"]) {
+    if (!isSave(route.request())) {
       return route.fallback();
     }
     const response = await route.fetch();
@@ -937,7 +941,7 @@ test("the team member's own action taking the open conversation out of its view 
   let answer!: () => void;
   const saved = new Promise<void>((resolve) => (answer = resolve));
   await owner.route("**/*", async (route) => {
-    if (!route.request().headers()["next-action"]) {
+    if (!isSave(route.request())) {
       return route.fallback();
     }
     const response = await route.fetch();
@@ -2613,7 +2617,9 @@ test("customer messages are bold until this teammate opens the conversation, the
   await link.hover();
   await expect(link).toHaveAccessibleName(/unread/i);
   await checkpoint(owner, "inbox-unread-customer-message");
+  const read = trpcRequest(owner, "conversations.markRead");
   await link.click();
+  await read;
   await expect(owner.getByRole("textbox", { name: "Reply", exact: true })).toBeVisible();
   await expect(link).not.toHaveAccessibleName(/unread/i);
   await expect(link).toHaveCSS("font-weight", "400");

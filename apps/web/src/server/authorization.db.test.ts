@@ -48,7 +48,6 @@ import * as groups from "./groups";
 import * as images from "./images";
 import * as imports from "./imports";
 import * as inbox from "./inbox";
-import { getMembership } from "./membership";
 import * as invitations from "./invitations";
 import * as glossary from "./glossary";
 import * as labelTranslations from "./label-translations";
@@ -567,40 +566,18 @@ const matrix: Matrix = {
     },
   },
   inbox: {
-    markConversationRead: { allowed: "MEMBER", call: (slug) => inbox.markConversationRead(slug, 1, new Date().toISOString()) },
     replyInConversation: { allowed: "MEMBER", call: (slug) => inbox.replyInConversation(slug, 1, "Thanks!") },
     // Translation is off in the fixture: no preview, and the model isn't asked.
     previewReplyTranslation: { allowed: "MEMBER", call: (slug) => inbox.previewReplyTranslation(slug, 1, "Thanks!") },
-    // No message's translation failed in the fixture: nothing is queued.
-    retryTranslation: { allowed: "MEMBER", call: (slug) => inbox.retryTranslation(slug, 1) },
     // Nothing in the docs is close to what was asked: no draft (and why), and the model isn't asked.
     draftReplyWithAi: {
       allowed: "MEMBER",
       call: (slug) => inbox.draftReplyWithAi(slug, 1),
     },
-    summarizeWithAi: { allowed: "MEMBER", before: () => model.reply("They want an invoice."), call: (slug) => inbox.summarizeWithAi(slug, 1) },
     uploadReplyAttachment: {
       allowed: "MEMBER",
       call: (slug) => inbox.uploadReplyAttachment(slug, { filename: "invoice.pdf", contentType: "application/pdf", size: 1000 }),
     },
-    setConversationStatus: { allowed: "MEMBER", call: (slug) => inbox.setConversationStatus(slug, 1, "closed") },
-    assignConversation: { allowed: "MEMBER", call: (slug) => inbox.assignConversation(slug, 1, users.MEMBER.id) },
-    markConversationSpam: { allowed: "MEMBER", call: (slug) => inbox.markConversationSpam(slug, 1, true) },
-    snoozeConversation: { allowed: "MEMBER", call: (slug) => inbox.snoozeConversation(slug, 1, new Date(Date.now() + 3_600_000).toISOString()) },
-    takeOverConversation: { allowed: "MEMBER", call: (slug) => inbox.takeOverConversation(slug, 1) },
-    handBackConversation: {
-      allowed: "MEMBER",
-      // Its user waits on conversation #1, which refuses a hand back for everyone: answered first (as the AI's turn answers)
-      // for a teammate's call, so only who may call it is tested. Nobody else's call writes anything (the snapshot checks).
-      call: async (slug) => {
-        if (await getMembership(slug)) {
-          const conversation = await prisma.conversation.findFirstOrThrow({ where: { project: { slug }, number: 1 }, select: { id: true, projectId: true } });
-          await prisma.conversationMessage.create({ data: { projectId: conversation.projectId, conversationId: conversation.id, author: "AI", channel: "API", body: "An answer" } });
-        }
-        return inbox.handBackConversation(slug, 1);
-      },
-    },
-    setConversationPriority: { allowed: "MEMBER", call: (slug) => inbox.setConversationPriority(slug, 1, true) },
     linkPostToConversation: { allowed: "MEMBER", call: (slug) => inbox.linkPostToConversation(slug, 1, 1, true) },
     loadConversationActivity: { allowed: "MEMBER", call: (slug) => inbox.loadConversationActivity(slug, 1, "all") },
     findPostsToLink: { allowed: "MEMBER", call: (slug) => inbox.findPostsToLink(slug, "Post") },
@@ -1465,7 +1442,8 @@ test.each(cases)("$name", async ({ name, rule }) => {
  * by a read and write key. Screens add theirs here as they move onto the router (docs/plan.md, "One way in").
  */
 type Caller = Awaited<ReturnType<typeof callerAs>>;
-type ProcedureCase = Omit<Case, "call" | "takesIds"> & { scope: "read" | "write"; call: (caller: Caller, slug: string) => Promise<unknown> };
+/** `peopleOnly`: a key, even a read and write one, is refused (`people_only`). */
+type ProcedureCase = Omit<Case, "call" | "takesIds"> & { scope: "read" | "write"; peopleOnly?: boolean; call: (caller: Caller, slug: string) => Promise<unknown> };
 
 const procedures: { [N in OperationName]?: ProcedureCase } = {
   "aiFirst.get": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.aiFirst.get({ project: slug }) },
@@ -1479,6 +1457,23 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   // The Inbox's list pane, and a teammate's own "Email me new conversations" (a key: its creator's).
   "inbox.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.list({ project: slug, q: "Post", overview: true }) },
   "inbox.newConversationEmails": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.inbox.newConversationEmails({ project: slug, on: false }) },
+  // The Inbox's conversation page: what it reads, and its buttons (status, assignee, snooze, spam, priority, take over and
+  // hand back are all conversations.update), Summarize, Try again on a translation, and marking it read.
+  "inbox.conversation": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.conversation({ project: slug, number: 1 }) },
+  "conversations.update": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.update({ project: slug, number: 1, status: "closed" }) },
+  // Twice: the teammate's call and the read and write key's.
+  "conversations.summarize": {
+    allowed: "MEMBER",
+    scope: "write",
+    before: () => {
+      model.reply("They want an invoice.");
+      model.reply("They want an invoice.");
+    },
+    call: (caller, slug) => caller.conversations.summarize({ project: slug, number: 1 }),
+  },
+  // No message's translation failed in the fixture: nothing is queued.
+  "conversations.retryTranslation": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.retryTranslation({ project: slug, number: 1 }) },
+  "conversations.markRead": { allowed: "MEMBER", scope: "write", peopleOnly: true, call: (caller, slug) => caller.conversations.markRead({ project: slug, number: 1, seen: new Date().toISOString() }) },
   "team.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.team.list({ project: slug }) },
   "project.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.project.get({ project: slug }) },
   "project.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.project.update({ project: slug, name: "Renamed by the matrix" }) },
@@ -1539,5 +1534,5 @@ test.each(Object.entries(procedures).map(([name, rule]) => ({ name, rule: rule! 
   if (rule.scope === "read") {
     expect(await procedureOutcome(rule.call(await callerAs(readKey), fixture.slug))).toBe("ok");
   }
-  expect(await procedureOutcome(rule.call(await callerAs(writeKey), fixture.slug))).toBe("ok");
+  expect(await procedureOutcome(rule.call(await callerAs(writeKey), fixture.slug))).toBe(rule.peopleOnly ? "FORBIDDEN" : "ok");
 });

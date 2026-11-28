@@ -325,7 +325,7 @@ test("past the plan's history, an upgrade is offered only while some plan would 
 
   actAs(owner);
   // The tab doesn't say a hidden conversation's subject either; on a plan that shows it, it does.
-  const tab = async (number: number) => (await conversationMetadata({ params: Promise.resolve({ project: project.slug, number: String(number) }) } as never)).title;
+  const tab = async (number: number) => (await conversationMetadata({ params: Promise.resolve({ project: project.slug, number: String(number) }), searchParams: Promise.resolve({}) } as never)).title;
   expect(await tab(1)).toBe("Inbox");
   await plan("pro");
   expect(await tab(1)).toBe("Subject 1");

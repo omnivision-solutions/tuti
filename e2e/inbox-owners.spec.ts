@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { expect, test } from "./fixtures";
-import { apiFor, createProject, expectMoreView, holdActions, signUp } from "./helpers";
+import { apiFor, createProject, expectMoreView, holdActions, signUp, trpcRequest } from "./helpers";
 
 // Wide enough for the Inbox's views beside its list.
 test.use({ viewport: { width: 1440, height: 900 } });
@@ -127,7 +127,9 @@ test("a conversation the AI has says so and offers Take over where the reply box
 
   // Take over: while it saves the button keeps the focus; then it's the team's, still open here, the cursor in the reply.
   const release = await holdActions(owner);
+  const takingOver = trpcRequest(owner, "conversations.update");
   await takeOver.click();
+  await takingOver;
   await expect(takeOver).toBeDisabled();
   await expect(takeOver).toBeFocused();
   await release();
