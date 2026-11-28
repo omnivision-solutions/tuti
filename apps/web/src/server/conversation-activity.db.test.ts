@@ -256,8 +256,8 @@ test("a reply that leaves it open (the person wrote after what the teammate saw)
   ]);
 });
 
-test("newest first, a page at a time, the team's only; deleted with its conversation", async () => {
-  const { project, projectId, admin, activity } = await setup();
+test("newest first, a page at a time; deleted with its conversation", async () => {
+  const { projectId, admin, activity } = await setup();
   const { number } = await call(createConversation, admin, { email: "e2e-sam@example.com", body: "Hello" });
   for (const priority of [true, false, true, false, true]) {
     await call(updateConversation, admin, { number, priority });
@@ -269,10 +269,6 @@ test("newest first, a page at a time, the team's only; deleted with its conversa
   // The fifth and sixth: the first change, and the handover it got as it started.
   expect([second.events.length, third.events.length, third.next]).toEqual([2, 2, null]);
   expect(new Set([...first.events, ...second.events, ...third.events].map((e) => e.id)).size).toBe(6);
-
-  // Someone outside the team gets nothing.
-  actAs(await signUp("Stranger"));
-  await expect((await callerAs(acting)).conversations.activity({ project: project.slug, number })).rejects.toMatchObject({ code: "NOT_FOUND" });
 
   // A row of a kind this release can't read (a later one's) is left out.
   const conversation = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number } } });

@@ -62,7 +62,7 @@ export type Person = { userId: string | null; email: string | null; name?: strin
  * properties and groups, posts and votes, and their other conversations. `besides`: the conversation it's beside, left
  * out of theirs. `all`: on their own page, all of each (up to 500), without the conversations' latest messages.
  */
-export async function personDetails(projectId: string, person: Person, { besides, all = false }: { besides?: number; all?: boolean } = {}) {
+async function personDetails(projectId: string, person: Person, { besides, all = false }: { besides?: number; all?: boolean } = {}) {
   // ponytail: all of them up to 500 on their own page (the count says how many), pages of them if anyone has more.
   const take = all ? 500 : SHOWN;
   const { userId, email } = person;

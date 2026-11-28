@@ -141,6 +141,7 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await expect(details.getByRole("link", { name: "Inviting a teammate" })).toBeVisible();
   const other = details.getByRole("region", { name: "Other conversations", exact: true }).getByRole("listitem");
   await expect(other).toContainText(/\d+ \w+ · Closed · #4/);
+  await expect(other.locator(".bg-status-closed")).toBeVisible();
   await expect(other).toContainText("Thanks, that worked. We’re all set!");
   await checkpoint(owner, "section-expanded-dark", { fullPage: false });
   // At 1280px the views' pane leaves no room for the details beside the conversation: they're in a sheet.
@@ -176,6 +177,9 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await owner.keyboard.press("Escape");
   await expect(linkDialog).toBeHidden();
   await expect(sheet.getByRole("button", { name: "Link a post to this conversation" })).toBeFocused();
+  // The dense 32px close target.
+  await expect(sheet.getByRole("button", { name: "Close", exact: true })).toHaveCSS("height", "32px");
+  await expect(sheet.getByRole("button", { name: "Close", exact: true })).toHaveCSS("width", "32px");
   await sheet.getByRole("button", { name: "Close", exact: true }).click();
   await expect(sheet).toBeHidden();
   await expect(title.getByRole("button", { name: "Show details" })).toBeFocused();

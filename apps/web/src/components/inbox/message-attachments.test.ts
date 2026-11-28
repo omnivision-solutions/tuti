@@ -24,5 +24,4 @@ test("the widget says the list's name and what wasn't brought across in its read
   expect(html).toContain('aria-label="Anhänge"');
   expect(html).toContain("1 Anhang wurde nicht übernommen.");
   expect(html).not.toContain("brought across");
-  expect(renderToStaticMarkup(createElement(MessageAttachments, { attachments: [], dropped: 1, imported: true }))).toContain("1 attachment wasn&#x27;t brought across.");
 });

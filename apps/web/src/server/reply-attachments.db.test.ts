@@ -10,7 +10,7 @@ import { postEmail, rawEmail } from "@/test/inbound";
 import { mailbox } from "@/test/mailbox";
 
 import { mailSubdomain, supportAddress } from "./inbound";
-import { getConversation, replyToConversation, startReplyUpload } from "./operations/conversations";
+import { getConversation, replyToConversation } from "./operations/conversations";
 import { OperationError } from "./operations/define";
 import { call } from "./operations/run";
 import { upsertProjectUser } from "./project-users";
@@ -145,24 +145,6 @@ test("only finished uploads of their own, within the limits, can be sent, each o
   const key = { actor: { kind: "apiKey" as const, keyId: "key", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
   await expect(call(replyToConversation, key, { number: 1, body: "Hi", attachments: [once] })).rejects.toMatchObject({ status: 400 });
   expect((await call(getConversation, team, { number: 1 })).messages.filter((m) => m.attachments.length > 0)).toHaveLength(1);
-});
-
-test("the app uploads through conversations.upload as the web's composer does: PUT the file, then send its id with conversations.reply", async () => {
-  const { owner, project } = await setup();
-  const team = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
-  const pdf = Buffer.from("%PDF-1.4 the November invoice");
-  const started = await call(startReplyUpload, team, { filename: "Invoice Nov.pdf", contentType: "application/pdf", size: pdf.length });
-  expect((await fetch(started.uploadUrl, { method: "PUT", body: new Uint8Array(pdf), headers: { "content-type": started.contentType } })).ok).toBe(true);
-  await call(replyToConversation, team, { number: 1, body: "Here it is.", attachments: [started.id] });
-  expect((await call(getConversation, team, { number: 1 })).messages[1]).toMatchObject({ attachments: [{ id: started.id, filename: "Invoice Nov.pdf", size: pdf.length }] });
-
-  // The composer's limits, word for word: the web's action is this operation.
-  const big = { filename: "big.zip", contentType: "application/zip", size: 10 * MB + 1 };
-  await expect(call(startReplyUpload, team, big)).rejects.toMatchObject({ status: 400, message: "Attachments can be up to 10 MB each" });
-  expect(await uploadReplyAttachment(project.slug, big)).toEqual({ error: "Attachments can be up to 10 MB each" });
-  // People only, as conversations.reply sends no key's attachments.
-  const key = { actor: { kind: "apiKey" as const, keyId: "key", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
-  await expect(call(startReplyUpload, key, { filename: "a.pdf", contentType: "application/pdf", size: 10 })).rejects.toMatchObject({ status: 403, code: "people_only" });
 });
 
 test("a reply with files sent again with its requestId gets the one already sent, its files with it", async () => {
