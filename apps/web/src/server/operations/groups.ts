@@ -1,5 +1,6 @@
 import { Prisma, prisma } from "@tuti/db";
 import { lockProject } from "@tuti/jobs";
+import { planIncludes } from "@tuti/shared";
 import { pictureUrl } from "@tuti/shared/media-links";
 import { z } from "zod";
 
@@ -176,6 +177,65 @@ export async function groupsWithReaders(projectId: string, key?: string): Promis
 const viewOf = async (projectId: string, key: string) => (await groupsWithReaders(projectId, key))[0]!;
 
 const notFound = (key: string) => new OperationError(404, "not_found", `There's no group “${key}”`);
+
+/** How many users the group dialog lists beside the conditions. */
+const PREVIEW_USERS = 50;
+
+/**
+ * Settings → Groups, page-shaped (internal): the names of the properties the project's users have, for the dialog,
+ * and whether the plan includes groups' content (private portals).
+ */
+export const getGroupsSettings = defineOperation({
+  name: "settings.groups",
+  title: "Get the groups settings",
+  summary: "Settings → Groups: the users' property names, and whether the plan includes content for groups.",
+  method: "GET",
+  internal: true,
+  scope: "read",
+  access: "admin",
+  input: z.object({}),
+  output: z.object({ properties: z.array(z.string()), privatePortal: z.boolean() }),
+  run: async ({ projectId }) => {
+    const [properties, { plan }] = await Promise.all([propertyNames(projectId), prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } })]);
+    return { properties, privatePortal: planIncludes(plan, "privatePortal") };
+  },
+});
+
+/**
+ * The group dialog's preview (internal): how many of the project's users a group with these conditions would have now,
+ * and the first 50. Changes nothing, yet a POST, like spam.try: a group's conditions (up to 10 of up to 50 values each)
+ * go past what a URL carries (Node's 16 KB, a proxy's 8 KB), so they travel in the body.
+ */
+export const previewGroup = defineOperation({
+  name: "groups.preview",
+  title: "Preview a group",
+  summary: "Who a group with these conditions (all, or any, matching) would have now: how many, and the first 50.",
+  method: "POST",
+  internal: true,
+  scope: "read",
+  access: "admin",
+  input: z.object({ conditions: groupConditions, match: groupMatch.default("all") }),
+  output: z.object({ readers: z.number(), users: z.array(z.object({ id: z.string(), name: z.string(), email: z.string().nullable(), avatar: z.string().nullable() })) }),
+  run: ({ projectId }, { conditions, match }) => matchingUsers(projectId, { match, conditions }, PREVIEW_USERS),
+});
+
+/** The group dialog's suggested values for a condition (internal): what the project's users have for `property`, the most common first. */
+export const suggestGroupValues = defineOperation({
+  name: "groups.values",
+  title: "Suggest a property's values",
+  summary: "The values the project's users have for a property, the most common first, for a group's condition.",
+  method: "GET",
+  internal: true,
+  scope: "read",
+  access: "admin",
+  input: z.object({ property: z.string().max(1000) }),
+  output: z.object({ values: z.array(z.string()) }),
+  run: async ({ projectId }, { property }) => {
+    // Names compare exactly and trimmed, like conditions'; none for no name, or one longer than a property can be.
+    const name = property.trim();
+    return { values: name === "" || name.length > 64 ? [] : await propertyValues(projectId, name) };
+  },
+});
 
 export const listGroups = defineOperation({
   name: "groups.list",

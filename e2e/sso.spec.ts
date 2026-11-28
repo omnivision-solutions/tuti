@@ -290,7 +290,13 @@ test("a collection for one reader group: people the app signs in with that group
   await firstCondition.getByLabel("Value").fill("enterprise");
   await groupDialog.getByLabel("Description").fill("On the Enterprise plan");
   await checkpoint(owner, "team-settings-new-group", { fullPage: false });
+  // Saved through tRPC (groups.create), not a server action; maybe batched with the dialog's preview in one request.
+  const groupSaved = owner.waitForRequest((request) => {
+    const { pathname } = new URL(request.url());
+    return pathname.includes("/api/trpc/") && pathname.split("/api/trpc/")[1]!.split(",").includes("groups.create");
+  });
   await groupDialog.getByRole("button", { name: "Add group" }).click();
+  await groupSaved;
   await expect(owner.getByText("Group added")).toBeVisible();
   // How many are in it, what it's for and its rule.
   await expect(groups).toContainText("0 users · On the Enterprise plan");
@@ -676,6 +682,12 @@ test("a group from conditions: readers whose properties match read its collectio
   await dialog.getByRole("button", { name: "Save" }).click();
   await expect(owner.getByText("Group saved")).toBeVisible();
   await expect(groups).toContainText("2 users");
+  // Deleted (nothing uses it): gone from the list, which the page brings again after the save.
+  await groups.getByRole("button", { name: "Actions for Pro or seatless" }).click();
+  await owner.getByRole("menuitem", { name: "Delete" }).click();
+  await owner.getByRole("alertdialog", { name: "Delete Pro or seatless?" }).getByRole("button", { name: "Delete" }).click();
+  await expect(owner.getByText("Pro or seatless deleted")).toBeVisible();
+  await expect(groups.getByRole("button", { name: "Actions for Pro or seatless" })).toHaveCount(0);
 
   // A collection for it, with an article.
   await api("/collections", { name: "Pro guides", groups: ["pro-customers"] });
