@@ -183,10 +183,17 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await visitor.goto("/portal/feedback/feature-requests");
   await visitor.getByRole("button", { name: "New post" }).click();
   await visitor.getByLabel("Title").fill("Dark mode on our site");
+  // An image in it, uploaded through the path (the site forwards only <path>/*): its tRPC calls under it.
+  const uploadCall = visitor.waitForRequest((request) => request.url().includes("/api/trpc/uploads.create"));
+  await visitor.locator('input[type="file"]').setInputFiles({ name: "dark.png", mimeType: "image/png", buffer: await visitor.screenshot({ clip: { x: 0, y: 0, width: 200, height: 120 } }) });
+  expect((await uploadCall).url().startsWith(`${siteUrl()}/portal/api/trpc/`)).toBe(true);
+  const inEditor = visitor.getByRole("textbox", { name: "Details" }).locator("img");
+  await expect.poll(() => inEditor.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
   await visitor.getByRole("button", { name: "Submit post" }).click();
   await visitor.getByRole("link", { name: "Dark mode on our site" }).click();
   await visitor.waitForURL((url) => url.origin === siteUrl() && url.pathname.startsWith("/portal/feedback/feature-requests/"));
   await expect(visitor.getByRole("heading", { name: "Dark mode on our site" })).toBeVisible();
+  await expect(visitor.getByRole("main").locator("img").filter({ hasNot: visitor.locator("[data-slot=avatar-image]") }).first()).toBeVisible();
   await checkpoint(visitor, "portal-on-site-signed-in");
   await visitor.getByRole("button", { name: "Account" }).click();
   await visitor.getByRole("menuitem", { name: "Sign out" }).click();
