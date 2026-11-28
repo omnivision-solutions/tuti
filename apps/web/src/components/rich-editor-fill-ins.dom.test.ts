@@ -9,7 +9,7 @@ vi.mock("@/server/rewrite", () => ({ rewriteText: vi.fn() }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }));
 vi.mock("@/lib/upload-image", () => ({ uploadImage: vi.fn(), uploadFile: vi.fn() }));
 vi.mock("@/server/images", () => ({ generateImage: vi.fn() }));
-vi.mock("@/server/media", () => ({ uploadStatus: vi.fn() }));
+vi.mock("@/components/trpc", () => ({ useTRPCClient: () => ({}) }));
 
 const { RichEditor } = await import("./rich-editor");
 

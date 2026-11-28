@@ -327,6 +327,12 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await expect(suggestions.getByRole("link", { name: /Dark mode/ })).toHaveAttribute("target", "_blank");
   await checkpoint(ada, "widget-similar-while-typing");
   await widget.getByLabel("Title").fill("Export to CSV");
+  // With an image, uploaded through tRPC from the widget (its own provider, for the portal's signed-in reader).
+  const uploaded = ada.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/api/trpc/uploads.create"));
+  await widget.locator('input[type="file"]').setInputFiles({ name: "csv.png", mimeType: "image/png", buffer: await ada.screenshot({ clip: { x: 0, y: 0, width: 200, height: 120 } }) });
+  await uploaded;
+  const inEditor = widget.getByRole("textbox", { name: "Details" }).locator("img");
+  await expect.poll(() => inEditor.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
   await widget.getByRole("button", { name: "Submit post" }).click();
   await expect(widget.getByText("Feedback posted")).toBeVisible();
   await checkpoint(ada, "widget-posted");

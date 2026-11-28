@@ -19,7 +19,7 @@ import {
   updatePortal,
 } from "./operations/portal";
 import { call } from "./operations/run";
-import { canReadPortal } from "./portal-access";
+import { canReadPortal } from "@/server/auth/portal-readers";
 import { confirmSignInLink, emailSignInLink } from "./sign-in-link";
 
 /**

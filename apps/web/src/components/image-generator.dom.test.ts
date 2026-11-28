@@ -7,8 +7,8 @@ const generateImage = vi.fn();
 const uploadImage = vi.fn();
 vi.mock("@/server/images", () => ({ generateImage }));
 let uploadStatusHeld: Promise<unknown> | null = null;
-vi.mock("@/server/media", () => ({
-  uploadStatus: async (id: string) => uploadStatusHeld ?? ({ status: "READY", src: `https://media.example/${id}-full.png`, download: `https://media.example/${id}-download.webp`, urls: {}, width: 1200, height: 630 }),
+vi.mock("@/components/trpc", () => ({
+  useTRPCClient: () => ({ uploads: { status: { query: async ({ mediaId: id }: { mediaId: string }) => uploadStatusHeld ?? ({ status: "READY", src: `https://media.example/${id}-full.png`, download: `https://media.example/${id}-download.webp`, urls: {}, width: 1200, height: 630 }) } } }),
 }));
 vi.mock("@/lib/upload-image", () => ({ uploadImage }));
 
@@ -108,7 +108,7 @@ test("an uploaded reference joins the end; a pasted image is uploaded too", asyn
   const file = new File(["x"], "logo.png", { type: "image/png" });
   Object.defineProperty(input, "files", { value: [file], configurable: true });
   await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
-  expect(uploadImage).toHaveBeenCalledWith("acme", file);
+  expect(uploadImage).toHaveBeenCalledWith(expect.anything(), "acme", file);
   expect(references()).toEqual(["https://media.example/ref1.png", "https://media.example/up1.png"]);
   const paste = new Event("paste", { bubbles: true }) as Event & { clipboardData: unknown };
   paste.clipboardData = { types: ["Files"], files: [new File(["y"], "shot.png", { type: "image/png" })] };

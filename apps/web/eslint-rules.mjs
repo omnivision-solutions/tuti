@@ -76,6 +76,9 @@ const OPERATION_INTERNALS = new Set(["runOperation", "legacyRun", "procedureFor"
 const EXEMPT = [
   // Serve operations rather than call them: REST, MCP, the spec, the API docs.
   { files: /^src\/app\/api\/(v1|mcp|docs)\//, imports: /^server\/(api-auth|operations\/.+|trpc\/context)\.ts$/ },
+  // Routes that stay routes (T10) acting for the team: the caller from the context function (the cookie session), then
+  // createCaller. Autopilot's email buttons.
+  { files: /^src\/app\/app\/\(workspace\)\/\[project\]\/autopilot\/\[id\]\/act\/route\.ts$/, imports: /^server\/(session|trpc\/context)\.ts$/ },
   // Left as they are: the job endpoints, the public widget feed, signed email links, webhooks, health, widget.js, media,
   // plans, the licence refresh, AppSumo's redirect, the sign-in card.
   {
@@ -88,10 +91,11 @@ const EXEMPT = [
   { files: /^src\/app\/api\/live\/route\.ts$/, imports: /^server\/(api-auth|live|session|trpc\/context)\.ts$/ },
   // Signing in itself, built from server/auth: Better Auth's handler and the hand-offs on both sides.
   { files: /^src\/app\/(api\/auth\/|portal\/\[project\]\/\(site\)\/(continue|sso)\/route\.ts$|app\/\(account-pages\)\/auth\/continue\/page\.tsx$)/, imports: /^server\/auth\// },
-  // proxy.ts: its gate in front of a private portal (the reader and team function) and its routing reads.
+  // proxy.ts: its gate in front of a private portal (the reader and team function, server/auth/portal-readers.ts) and
+  // its routing reads.
   {
     files: /^src\/proxy\.ts$/,
-    imports: /^server\/(custom-domains|docs-queries|portal-access|portal-redirects|language-addresses|auth\/preview-session|operations\/site)\.ts$/,
+    imports: /^server\/(custom-domains|docs-queries|portal-redirects|language-addresses|auth\/portal-readers|auth\/preview-session)\.ts$/,
   },
 ];
 

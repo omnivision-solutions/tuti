@@ -5,7 +5,8 @@ import { verifySsoToken } from "@/server/auth/sso";
 import { changelogSeenAt, latestAnnouncedAt, markChangelogSeen } from "@/server/operations/changelog-seen";
 import { OperationError } from "@/server/operations/define";
 import { call } from "@/server/operations/run";
-import { canReadPortal, readerOf } from "@/server/portal-access";
+import { readerOf } from "@/server/portal-access";
+import { canReadPortal } from "@/server/auth/portal-readers";
 import { unseenRepliesOf } from "@/server/widget-person";
 
 /**

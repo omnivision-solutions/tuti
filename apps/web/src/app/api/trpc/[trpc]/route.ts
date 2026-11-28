@@ -2,6 +2,7 @@ import { log } from "@tuti/shared";
 import { TRPCError } from "@trpc/server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 
+import { baseFrom } from "@/lib/portal-base";
 import { CLIENT_HEADER, ContextError, requestContext } from "@/server/trpc/context";
 import { appRouter } from "@/server/trpc/router";
 
@@ -17,8 +18,11 @@ function handler(request: Request) {
     return Response.json({ error: { message: "Send one call per request" } }, { status: 400 });
   }
   let retryAfter: string | undefined;
+  // Under a path of a team's site (acme.com/portal/api/trpc/…; see proxy.ts) the request can still have that path.
+  const base = baseFrom(request.headers);
+  const underBase = !!base && new URL(request.url).pathname.startsWith(`${base}/api/trpc/`);
   return fetchRequestHandler({
-    endpoint: "/api/trpc",
+    endpoint: underBase ? `${base}/api/trpc` : "/api/trpc",
     req: request,
     router: appRouter,
     createContext: async () => {

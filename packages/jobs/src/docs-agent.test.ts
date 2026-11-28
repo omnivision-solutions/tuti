@@ -1,11 +1,9 @@
+import { startModelFake } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { decideDocs, oneHome, outlineMarkdown, readDecision } from "./docs-agent";
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-  vi.unstubAllGlobals();
-});
+afterEach(() => vi.unstubAllEnvs());
 
 test("the outline: a line each, whatever a title or a name holds (a line break would start a heading or an item of its own)", () => {
   const outline = outlineMarkdown({
@@ -25,31 +23,6 @@ test("the outline: a line each, whatever a title or a name holds (a line break w
     "## New articles waiting for the team's approval",
     "- Exports ## Not waiting (new:w1)",
   ]);
-});
-
-test("the agent's first request: a new product area gets its own collection, and every changed file is listed with its size", async () => {
-  vi.stubEnv("OPENAI_API_KEY", "sk-or-test");
-  const bodies: { messages: { content: string }[] }[] = [];
-  vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
-    bodies.push(JSON.parse(String(init.body)) as (typeof bodies)[number]);
-    return Response.json({ choices: [{ message: { content: JSON.stringify({ summary: "", edits: [], new_articles: [] }) } }] });
-  });
-  const pr = {
-    ...{ title: "Dark mode", body: "", labels: [], author: "octo", mergedAt: "2026-11-06T10:00:00Z", mergeCommit: "abc", commits: [] },
-    files: [
-      { path: "pnpm-lock.yaml", status: "modified", additions: 900, deletions: 850, left: "lockfile" as const },
-      { path: "src/theme.ts", status: "added", additions: 2, deletions: 0 },
-    ],
-    diff: "--- src/theme.ts (added, +2 -0)\n+export const dark = true;",
-  };
-  await decideDocs(pr, { projectId: "p1", repository: { unavailable: "test" } }, async () => {}, {
-    fixture: { outline: "", articles: [], collections: [], run: async () => "" },
-  });
-  const [system, user] = bodies[0]!.messages;
-  expect(system!.content).toContain("When the task belongs to a product area that no collection is about");
-  expect(system!.content).toContain("propose a new collection named for that area, with a Lucide icon, rather than a loosely related existing one");
-  const state = JSON.parse(user!.content.slice(0, user!.content.indexOf("\n\nThe help center"))) as { pull_request: { files: string[] } };
-  expect(state.pull_request.files).toEqual(["pnpm-lock.yaml (modified, +900 -850, not shown: lockfile)", "src/theme.ts (added, +2 -0)"]);
 });
 
 const HELP_CENTER = {
@@ -130,20 +103,41 @@ test("the agent's answer: an edit or a new article that names no fact the answer
   expect(decision.newArticles).toEqual([]);
 });
 
-test("the agent is told to list the facts a reader would miss, to give a missing fact one home, and to correct wrong text everywhere", async () => {
-  vi.stubEnv("OPENAI_API_KEY", "sk-or-test");
-  const systems: string[] = [];
-  vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
-    systems.push((JSON.parse(String(init.body)) as { messages: { content: string }[] }).messages[0]!.content);
-    return Response.json({ choices: [{ message: { content: JSON.stringify({ summary: "", facts: [], edits: [], new_articles: [] }) } }] });
-  });
-  const pr = { title: "Members", body: "", labels: [], author: "octo", mergedAt: "2026-11-18T10:00:00Z", mergeCommit: "abc", commits: [], files: [], diff: "", diffComplete: true };
-  await decideDocs(pr, { projectId: "p1", repository: { unavailable: "test" } }, async () => {}, { fixture: { outline: "", ...HELP_CENTER, run: async () => "" } });
-  expect(systems[0]).toContain("Which facts would a reader of the help center miss, or be misled about?");
-  expect(systems[0]).toContain("A fact that's missing gets one home: the one article a reader would look in first.");
-  expect(systems[0]).toContain("Wrong text is corrected wherever it stands: every article that says it gets its edit, however many there are.");
-  expect(systems[0]).toContain('"facts": [{"id": "f1", "text"');
-  expect(systems[0]).toContain("when no article or draft is, the fact isn't an edit to the nearest one, it belongs in a new article (4).");
-  expect(systems[0]).toContain("When you can't tell which (an article is near the task, not about it), name the fact for the edit and for the new article, each with its probability.");
-  expect(systems[0]).toContain('"facts": ["<the id of each fact this edit is for: at least one>"]');
+test("the agent's first request: its rules (a new product area's collection, facts with one home, wrong text corrected everywhere), and every changed file with its size", async () => {
+  const model = await startModelFake();
+  try {
+    for (const [name, value] of Object.entries(model.env)) {
+      vi.stubEnv(name, value);
+    }
+    model.reply(JSON.stringify({ summary: "", facts: [], edits: [], new_articles: [] }));
+    const pr = {
+      ...{ title: "Dark mode", body: "", labels: [], author: "octo", mergedAt: "2026-11-06T10:00:00Z", mergeCommit: "abc", commits: [] },
+      files: [
+        { path: "pnpm-lock.yaml", status: "modified", additions: 900, deletions: 850, left: "lockfile" as const },
+        { path: "src/theme.ts", status: "added", additions: 2, deletions: 0 },
+      ],
+      diff: "--- src/theme.ts (added, +2 -0)\n+export const dark = true;",
+    };
+    await decideDocs(pr, { projectId: "p1", repository: { unavailable: "test" } }, async () => {}, { fixture: { outline: "", ...HELP_CENTER, run: async () => "" } });
+    model.done();
+    expect(model.requests).toHaveLength(1);
+    const { system, user } = model.requests[0]!;
+    for (const rule of [
+      "When the task belongs to a product area that no collection is about",
+      "propose a new collection named for that area, with a Lucide icon, rather than a loosely related existing one",
+      "Which facts would a reader of the help center miss, or be misled about?",
+      "A fact that's missing gets one home: the one article a reader would look in first.",
+      "Wrong text is corrected wherever it stands: every article that says it gets its edit, however many there are.",
+      '"facts": [{"id": "f1", "text"',
+      "when no article or draft is, the fact isn't an edit to the nearest one, it belongs in a new article (4).",
+      "When you can't tell which (an article is near the task, not about it), name the fact for the edit and for the new article, each with its probability.",
+      '"facts": ["<the id of each fact this edit is for: at least one>"]',
+    ]) {
+      expect(system).toContain(rule);
+    }
+    const state = JSON.parse(user.slice(0, user.indexOf("\n\nThe help center"))) as { pull_request: { files: string[] } };
+    expect(state.pull_request.files).toEqual(["pnpm-lock.yaml (modified, +900 -850, not shown: lockfile)", "src/theme.ts (added, +2 -0)"]);
+  } finally {
+    await model.close();
+  }
 });

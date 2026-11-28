@@ -1,3 +1,4 @@
+import { TrpcProvider } from "@/components/trpc";
 import { prisma } from "@tuti/db";
 import { BookOpenIcon, ChevronRightIcon, FileTextIcon, HouseIcon, LightbulbIcon, MegaphoneIcon, MessageCircleIcon, SearchIcon } from "lucide-react";
 import type { Metadata } from "next";
@@ -166,6 +167,8 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
 
   return (
     <PortalBaseProvider base={base} slug={slug} prefix={prefix}>
+      {/* What the widget saves or uploads goes through /api/trpc (a signed-in reader's images in posts and comments). */}
+      <TrpcProvider base={base}>
       {intl(
       <WithAssistant assistant={assistant}>
       <WidgetHomeVisitor projectSlug={slug} enabled={tab === "home" && !whatsNew} portalReader={tab === "home" && !whatsNew ? await portalReaderHome(project.id) : null}>
@@ -271,6 +274,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
       </WidgetHomeVisitor>
       </WithAssistant>,
       )}
+      </TrpcProvider>
     </PortalBaseProvider>
   );
 }

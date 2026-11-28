@@ -66,7 +66,9 @@ test("a German conversation: the customer's message read in English, the reply p
   const reply = `Thanks! A fix is on its way (${slug}).`;
   const inGerman = `Danke! Eine Lösung ist unterwegs (${slug}).`;
   await nextModelReply(translated(inGerman), reply);
+  const previewing = trpcRequest(owner, "conversations.translateReply");
   await owner.getByRole("textbox", { name: "Reply" }).fill(reply);
+  await previewing;
   const preview = owner.locator(".inbox-reply-translation");
   await expect(preview).toContainText("They'll get it in Deutsch");
   await expect(preview).toContainText(inGerman);
@@ -75,6 +77,22 @@ test("a German conversation: the customer's message read in English, the reply p
   await expect(preview).toBeVisible();
   await checkpoint(owner, "reply-preview-phone");
   await owner.setViewportSize({ width: 1440, height: 900 });
+
+  // A preview in a language that's no longer theirs (sent here as French, as if they'd written in it since): refused,
+  // said so, and the preview asked for again.
+  await owner.route("**/*", (route) => {
+    const request = route.request();
+    return new URL(request.url()).pathname.split("/api/trpc/")[1]?.split(",").includes("conversations.reply")
+      ? route.fallback({ postData: request.postData()?.replace('"language":"de"', '"language":"fr"') })
+      : route.fallback();
+  });
+  await nextModelReply(translated(inGerman), reply);
+  const askedAgain = trpcRequest(owner, "conversations.translateReply");
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(owner.getByText("Their language changed since this preview: check the new one, then send again.")).toBeVisible();
+  await askedAgain;
+  await owner.unroute("**/*");
+  await expect(preview).toContainText(inGerman);
 
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   await expect(owner.getByText("Sent", { exact: true })).toBeVisible();
@@ -114,7 +132,10 @@ test("a German conversation: the customer's message read in English, the reply p
   await nextModelReply("Not a translation", late);
   await owner.getByRole("textbox", { name: "Reply" }).fill(late);
   await expect(preview).toBeHidden();
+  // Refused, the reply box reads their language for its "Send in English".
+  const [sending, reading] = [trpcRequest(owner, "conversations.reply"), trpcRequest(owner, "inbox.language")];
   await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await Promise.all([sending, reading]);
   await expect(preview).toContainText("Couldn't translate it into Deutsch");
   await preview.getByRole("button", { name: "Send in English" }).click();
   await expect(messages.getByRole("listitem").last()).toContainText(late);

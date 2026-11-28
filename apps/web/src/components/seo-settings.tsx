@@ -44,10 +44,10 @@ export function SeoSettings({
     "SEO saved",
     (data) => ({ seo: { title: text(data, "seoTitle").trim(), description: text(data, "seoDescription").trim(), image: text(data, "seoImageUrl") || null } }),
     uploading > 0,
+    (data) => ({ seo: { title: text(data, "seoTitle"), description: text(data, "seoDescription") }, seoImage: text(data, "seoImage") || null }),
   );
   return (
     <form {...form} className="flex flex-col gap-4">
-      <input type="hidden" name="part" value="seo" />
       <SettingsCard>
         <SettingRow label="Page title" htmlFor="seo-title">
           <Input id="seo-title" name="seoTitle" defaultValue={title} maxLength={titleMax} placeholder={name} autoComplete="off" />

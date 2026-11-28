@@ -566,19 +566,6 @@ const matrix: Matrix = {
     },
   },
   inbox: {
-    replyInConversation: { allowed: "MEMBER", call: (slug) => inbox.replyInConversation(slug, 1, "Thanks!") },
-    // Translation is off in the fixture: no preview, and the model isn't asked.
-    previewReplyTranslation: { allowed: "MEMBER", call: (slug) => inbox.previewReplyTranslation(slug, 1, "Thanks!") },
-    // Nothing in the docs is close to what was asked: no draft (and why), and the model isn't asked.
-    draftReplyWithAi: {
-      allowed: "MEMBER",
-      call: (slug) => inbox.draftReplyWithAi(slug, 1),
-    },
-    uploadReplyAttachment: {
-      allowed: "MEMBER",
-      call: (slug) => inbox.uploadReplyAttachment(slug, { filename: "invoice.pdf", contentType: "application/pdf", size: 1000 }),
-    },
-    findArticlesToInsert: { allowed: "MEMBER", call: (slug) => inbox.findArticlesToInsert(slug, 1, "Getting started") },
     // Off: the fixture has it on (for escalateDocs), so a refused write would show.
     setSupportInbox: { allowed: "ADMIN", call: (slug) => inbox.setSupportInbox(slug, false) },
     setTranslation: { allowed: "ADMIN", call: (slug) => inbox.setTranslation(slug, { teamLanguage: "en" }) },
@@ -613,14 +600,6 @@ const matrix: Matrix = {
     removePostLink: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.removePostLink(slug, f.postId, f.linkId) },
   },
   media: {
-    // Anyone who may post in the project may upload; finishing and status are the uploader's own.
-    createUpload: {
-      allowed: "signed in",
-      refusesSsoUsers: true,
-      call: (slug) => media.createUpload(slug, { type: "image/png", size: 1000 }),
-    },
-    finishUpload: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => media.finishUpload(f.mediaId) },
-    uploadStatus: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => media.uploadStatus(f.mediaId) },
     // Their own avatar, from their own upload.
     setAvatar: { allowed: "signed in", call: () => media.setAvatar(null) },
   },
@@ -1445,15 +1424,17 @@ test.each(cases)("$name", async ({ name, rule }) => {
  */
 type Caller = Awaited<ReturnType<typeof callerAs>>;
 /**
- * `peopleOnly`: a key, even a read and write one, is refused (`people_only`). `seed`: what the call acts on, put there
- * before the refused calls (so the snapshot shows they left it) and again before the read and write key's call (after
- * the allowed one took it away).
+ * `peopleOnly`: a key, even a read and write one, is refused (`people_only`). `uploadersOwn`: the uploader's own (the
+ * fixture's upload is the allowed actor's), so anyone else, a portal's reader too, is refused. `seed`: what the call acts
+ * on, put there before the refused calls (so the snapshot shows they left it) and again before the read and write key's
+ * call (after the allowed one took it away).
  */
 type ProcedureCase = Omit<Case, "call" | "takesIds"> & {
   scope: "read" | "write";
   peopleOnly?: boolean;
+  uploadersOwn?: true;
   seed?: (fixture: Fixture) => Promise<unknown>;
-  call: (caller: Caller, slug: string) => Promise<unknown>;
+  call: (caller: Caller, slug: string, fixture: Fixture) => Promise<unknown>;
 };
 
 /** Conversation #1 linked to post #1, for Unlink. */
@@ -1468,6 +1449,8 @@ const linkFirstPost = async (fixture: Fixture) => {
 const procedures: { [N in OperationName]?: ProcedureCase } = {
   "aiFirst.get": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.aiFirst.get({ project: slug }) },
   "aiFirst.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.aiFirst.update({ project: slug, widget: false, email: true, name: "Ada" }) },
+  "branding.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.branding.get({ project: slug }) },
+  "branding.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.branding.update({ project: slug, seo: { title: "Matrix" } }) },
   "changelog.update": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.changelog.update({ project: slug, number: 1, title: "Renamed by the matrix" }) },
   // Owners only (plans are off here, so every project has Advanced tuning).
   "codeChangesTuning.update": { allowed: "OWNER", scope: "write", call: (caller, slug) => caller.codeChangesTuning.update({ project: slug, "decide.rounds": 6 }) },
@@ -1476,6 +1459,20 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   // The team's names and roles, and the project's own setup: the team's (a key counts as the team), never anyone signed in.
   // The Inbox's list pane, and a teammate's own "Email me new conversations" (a key: its creator's).
   "inbox.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.list({ project: slug, q: "Post", overview: true }) },
+  // The reply box: Send, its preview (translation is off in the fixture: no preview, and the model isn't asked), Draft
+  // with AI (nothing in the docs is close: no draft, and the model isn't asked), a file for it (people only), Insert
+  // article's search, and the conversation's language after a reply couldn't be translated.
+  "conversations.reply": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.reply({ project: slug, number: 1, body: "Thanks!" }) },
+  "conversations.translateReply": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.translateReply({ project: slug, number: 1, body: "Thanks!" }) },
+  "conversations.suggestReply": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.suggestReply({ project: slug, number: 1 }) },
+  "conversations.upload": {
+    allowed: "MEMBER",
+    scope: "write",
+    peopleOnly: true,
+    call: (caller, slug) => caller.conversations.upload({ project: slug, filename: "invoice.pdf", contentType: "application/pdf", size: 1000 }),
+  },
+  "conversations.articles": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.conversations.articles({ project: slug, number: 1, q: "Getting started" }) },
+  "inbox.language": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.language({ project: slug, number: 1 }) },
   "inbox.newConversationEmails": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.inbox.newConversationEmails({ project: slug, on: false }) },
   // The Inbox's conversation page: what it reads, and its buttons (status, assignee, snooze, spam, priority, take over and
   // hand back are all conversations.update), Summarize, Try again on a translation, and marking it read.
@@ -1502,9 +1499,15 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   "conversations.markRead": { allowed: "MEMBER", scope: "write", peopleOnly: true, call: (caller, slug) => caller.conversations.markRead({ project: slug, number: 1, seen: new Date().toISOString() }) },
   // /api/live's check, as the stream opens and at each keepalive.
   "live.inbox": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.live.inbox({ project: slug }) },
+  // What an Autopilot email's button acts on (the act route).
+  "codeChanges.button": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.codeChanges.button({ project: slug, id: "none", actions: [] }) },
   "team.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.team.list({ project: slug }) },
   "project.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.project.get({ project: slug }) },
   "project.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.project.update({ project: slug, name: "Renamed by the matrix" }) },
+  // Anyone who may post in the project may upload; finishing and status are the uploader's own. A person's, never a key's.
+  "uploads.create": { allowed: "signed in", refusesSsoUsers: true, peopleOnly: true, scope: "write", call: (caller, slug) => caller.uploads.create({ project: slug, type: "image/png", size: 1000 }) },
+  "uploads.finish": { allowed: "signed in", refusesSsoUsers: true, peopleOnly: true, uploadersOwn: true, scope: "write", call: (caller, slug, f) => caller.uploads.finish({ project: slug, mediaId: f.mediaId }) },
+  "uploads.status": { allowed: "signed in", refusesSsoUsers: true, peopleOnly: true, uploadersOwn: true, scope: "read", call: (caller, slug, f) => caller.uploads.status({ project: slug, mediaId: f.mediaId }) },
   "votes.set": { allowed: "signed in", refusesSsoUsers: true, scope: "write", call: (caller, slug) => caller.votes.set({ project: slug, number: 1, voted: true }) },
 };
 
@@ -1535,14 +1538,17 @@ test.each(Object.entries(procedures).map(([name, rule]) => ({ name, rule: rule! 
   const before = await snapshot();
 
   for (const actor of refusedActors({ ...rule, call: async () => {} })) {
-    expect({ actor, outcome: await procedureOutcome(rule.call(await callerAs(userFor(actor)), fixture.slug)) }).toEqual({ actor, outcome: expect.stringMatching(REFUSED) });
+    expect({ actor, outcome: await procedureOutcome(rule.call(await callerAs(userFor(actor)), fixture.slug, fixture)) }).toEqual({ actor, outcome: expect.stringMatching(REFUSED) });
   }
-  // A teammate naming another project's slug, and keys naming a project not theirs.
-  expect(await procedureOutcome(rule.call(await callerAs(users.OWNER), otherProject.slug))).toMatch(REFUSED);
-  expect(await procedureOutcome(rule.call(await callerAs(writeKey), otherProject.slug))).toMatch(REFUSED);
-  expect(await procedureOutcome(rule.call(await callerAs(otherKey), fixture.slug))).toMatch(REFUSED);
+  // A teammate naming another project's slug (for the team's procedures: anyone signed in may act in another project), and
+  // keys naming a project not theirs.
+  if (rule.allowed !== "signed in" && rule.allowed !== "public") {
+    expect(await procedureOutcome(rule.call(await callerAs(users.OWNER), otherProject.slug, fixture))).toMatch(REFUSED);
+  }
+  expect(await procedureOutcome(rule.call(await callerAs(writeKey), otherProject.slug, fixture))).toMatch(REFUSED);
+  expect(await procedureOutcome(rule.call(await callerAs(otherKey), fixture.slug, fixture))).toMatch(REFUSED);
   if (rule.scope === "write") {
-    expect(await procedureOutcome(rule.call(await callerAs(readKey), fixture.slug))).toBe("FORBIDDEN");
+    expect(await procedureOutcome(rule.call(await callerAs(readKey), fixture.slug, fixture))).toBe("FORBIDDEN");
   }
   expect(await snapshot()).toEqual(before);
 
@@ -1552,8 +1558,8 @@ test.each(Object.entries(procedures).map(([name, rule]) => ({ name, rule: rule! 
   await onPortal(reader, { id: fixture.projectId, slug: fixture.slug });
   // As the portal left things: a refused call changes nothing of it.
   const asPortal = await snapshot();
-  const asReader = await procedureOutcome(rule.call(await callerAs(reader), fixture.slug));
-  if (rule.allowed === "signed in" || rule.allowed === "public") {
+  const asReader = await procedureOutcome(rule.call(await callerAs(reader), fixture.slug, fixture));
+  if ((rule.allowed === "signed in" || rule.allowed === "public") && !rule.uploadersOwn) {
     expect(asReader).toBe("ok");
   } else {
     expect(asReader).toMatch(REFUSED);
@@ -1562,10 +1568,11 @@ test.each(Object.entries(procedures).map(([name, rule]) => ({ name, rule: rule! 
   request.host = "";
 
   rule.before?.();
-  expect(await procedureOutcome(rule.call(await callerAs(userFor(allowedActor({ ...rule, call: async () => {} }))), fixture.slug))).toBe("ok");
+  expect(await procedureOutcome(rule.call(await callerAs(userFor(allowedActor({ ...rule, call: async () => {} }))), fixture.slug, fixture))).toBe("ok");
+  const byKey = rule.peopleOnly ? "FORBIDDEN" : "ok";
   if (rule.scope === "read") {
-    expect(await procedureOutcome(rule.call(await callerAs(readKey), fixture.slug))).toBe("ok");
+    expect(await procedureOutcome(rule.call(await callerAs(readKey), fixture.slug, fixture))).toBe(byKey);
   }
   await rule.seed?.(fixture);
-  expect(await procedureOutcome(rule.call(await callerAs(writeKey), fixture.slug))).toBe(rule.peopleOnly ? "FORBIDDEN" : "ok");
+  expect(await procedureOutcome(rule.call(await callerAs(writeKey), fixture.slug, fixture))).toBe(byKey);
 });

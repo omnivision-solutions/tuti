@@ -7,7 +7,7 @@ vi.mock("@/server/images", () => ({}));
 vi.mock("@/server/rewrite", () => ({}));
 vi.mock("@/server/branding", () => ({}));
 vi.mock("@/server/widget", () => ({}));
-vi.mock("@/server/media", () => ({}));
+vi.mock("@/components/trpc", () => ({ useTRPCClient: () => ({}) }));
 
 const { publishSummary, WhoSeesIt } = await import("./changelog");
 

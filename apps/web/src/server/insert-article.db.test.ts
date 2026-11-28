@@ -3,11 +3,10 @@ import { FAKE_OPENAI_KEY, startOpenAIFake } from "@tuti/testkit";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { anyArticleToSend, readerToSend, searchDocs } from "@/server/docs-search";
-import { findArticlesToInsert } from "@/server/inbox";
 import { listArticlesToInsert } from "@/server/operations/conversations";
 import { createArticle, deleteArticle, publishArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, callerAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 /** "Insert article" in a reply: which articles it offers, and where their links go. */
 
@@ -48,7 +47,9 @@ async function shown(number: number) {
   return anyArticleToSend(project.id, await readerToSend(project.id, userId));
 }
 
-const titles = async (number: number, q = "refunds") => (await findArticlesToInsert(project.slug, number, q)).articles?.map((a) => a.title).sort();
+/** Insert article's search, as the reply box asks it (conversations.articles through tRPC). */
+const findArticlesToInsert = async (slug: string, number: number, q: string) => (await callerAs(owner)).conversations.articles({ project: slug, number, q });
+const titles = async (number: number, q = "refunds") => (await findArticlesToInsert(project.slug, number, q)).articles.map((a) => a.title).sort();
 
 test("offers published articles they can be sent a link to: listed or unlisted, never hidden, AI-only, drafts or deleted ones", async () => {
   const number = await conversation(1, false);
@@ -130,5 +131,5 @@ test("conversations.articles offers the app what the reply box's Insert article 
   expect(await call(listArticlesToInsert, as(), { number: signedIn, q: "  " })).toEqual({ articles: [] });
   await expect(call(listArticlesToInsert, as(), { number: 9, q: "refunds" })).rejects.toMatchObject({ status: 404 });
   // The web's picker says so too, where it used to show an empty list.
-  expect(await findArticlesToInsert(project.slug, 9, "refunds")).toEqual({ error: "There's no conversation #9" });
+  await expect(findArticlesToInsert(project.slug, 9, "refunds")).rejects.toThrow("There's no conversation #9");
 });

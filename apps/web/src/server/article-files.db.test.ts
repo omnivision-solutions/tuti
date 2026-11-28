@@ -7,19 +7,19 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { readContent } from "@/server/content";
 import { articleMarkdown } from "@/server/docs-queries";
-import { createUpload, finishUpload } from "@/server/media";
 import { mediaUrls } from "@/server/media-urls";
 import { updateBranding } from "@/server/operations/branding";
 import { createChangelogEntry } from "@/server/operations/changelog";
 import { createArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, uploadsAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 /** File attachments in articles: the team's uploads, checked by name and content, kept by the content using them, and only ever downloaded. */
 
 let s3: S3Fake;
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
+const { createUpload, finishUpload } = await uploadsAs(() => project.slug);
 
 beforeAll(async () => {
   s3 = await startS3Fake();

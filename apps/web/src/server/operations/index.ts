@@ -22,9 +22,10 @@ import {
   updateConversation,
 } from "./conversations";
 import { getConversationActivity } from "./conversation-activity";
-import { findPostsToLink, getInboxList, setNewConversationEmails } from "./inbox";
+import { findPostsToLink, getConversationLanguage, getInboxList, setNewConversationEmails } from "./inbox";
 import { getInboxConversation } from "./inbox-conversation";
 import { getInboxLive } from "./live";
+import { getCodeChangeButton } from "./code-change-button";
 import { getConversationPerson } from "./conversation-person";
 import { getNotificationSettings, registerDevice, removeDevice, updateNotificationSettings } from "./devices";
 import { checkEmailDomainOperation, getSupportSettings, removeEmailDomain, setEmailDomain, updateSupportSettings } from "./support";
@@ -99,6 +100,7 @@ import { getBoardTranslations, getCollectionTranslations, getTabTranslations, up
 import { getChangelogTranslation, saveChangelogTranslation } from "./changelog-translations";
 import { getTranslation, keepTranslationUpToDate, publishTranslation, saveTranslation, updateTranslationSections } from "./translations";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
+import { createUpload, finishUpload, getUploadStatus } from "./uploads";
 import { getUsage } from "./usage";
 import { getAiModels, updateAiModels } from "./ai-models";
 import { getCodeChangesTuning, updateCodeChangesTuning } from "./code-changes-tuning";
@@ -122,8 +124,10 @@ export const all = [
   listTeam,
   listInboxViews,
   getInboxList,
+  getConversationLanguage,
   setNewConversationEmails,
   getInboxLive,
+  getCodeChangeButton,
   listAssignees,
   listConversations,
   markConversationRead,
@@ -330,6 +334,9 @@ export const all = [
   getScreenshots,
   takeChangelogScreenshots,
   takeArticleScreenshots,
+  createUpload,
+  finishUpload,
+  getUploadStatus,
 ] as const;
 
 /** Every operation, each a tRPC procedure (server/trpc/router.ts). */

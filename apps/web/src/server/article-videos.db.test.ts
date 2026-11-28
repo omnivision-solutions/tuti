@@ -6,17 +6,17 @@ import { configFile, type S3Fake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { articleMarkdown } from "@/server/docs-queries";
-import { createUpload, finishUpload } from "@/server/media";
 import { mediaUrls } from "@/server/media-urls";
 import { createArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, uploadsAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 /** Videos in articles: the team's uploads, by the file attachments' path, checked by content, played in place. */
 
 let s3: S3Fake;
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
+const { createUpload, finishUpload } = await uploadsAs(() => project.slug);
 
 beforeAll(async () => {
   s3 = await startS3Fake();

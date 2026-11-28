@@ -1,19 +1,44 @@
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
+import { TRPCError } from "@trpc/server";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { widgetToken } from "@/server/auth/widget-session";
-import { actAs, addMember, createProject, signUp } from "@/test/helpers";
+import { actAs as signIn, addMember, callerAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
 import { mailbox } from "@/test/mailbox";
 
-import { replyInConversation, uploadReplyAttachment } from "./inbox";
 import { mailSubdomain, supportAddress } from "./inbound";
 import { getConversation, replyToConversation, startReplyUpload } from "./operations/conversations";
+import { OperationError } from "./operations/define";
 import { call } from "./operations/run";
 import { upsertProjectUser } from "./project-users";
 import { widgetConversation, widgetStartConversation } from "./widget-inbox";
+
+/** Who the reply box's calls below act as. */
+let acting: TestUser | null = null;
+const actAs = (user: TestUser | null) => {
+  acting = user;
+  signIn(user);
+};
+
+/** A call from the reply box, through tRPC: what it returns, or the refusal's message. */
+async function fromReplyBox<T>(run: (caller: Awaited<ReturnType<typeof callerAs>>) => Promise<T>): Promise<T | { error: string }> {
+  try {
+    return await run(await callerAs(acting));
+  } catch (error) {
+    if (error instanceof TRPCError && error.cause instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
+}
+const uploadReplyAttachment = (slug: string, file: { filename: string; contentType: string; size: number }) => fromReplyBox((caller) => caller.conversations.upload({ project: slug, ...file }));
+const replyInConversation = async (slug: string, number: number, body: string, note: boolean, attachments: string[]) => {
+  const sent = await fromReplyBox((caller) => caller.conversations.reply({ project: slug, number, body, note, ...(attachments.length > 0 && { attachments }) }));
+  return "error" in sent ? sent : {};
+};
 
 /** The team's attachments in replies (docs/plan.md, Support inbox, item 9): uploaded, sent with the reply, emailed as attachments. */
 

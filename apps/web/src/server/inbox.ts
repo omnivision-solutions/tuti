@@ -5,167 +5,15 @@ import { log } from "@tuti/shared";
 import { ses } from "@tuti/shared/ses";
 import { emailConfigured, emailDomainTestEmail, sendEmail } from "@tuti/email";
 import { sesTenantHeaders } from "@tuti/jobs";
-import { z } from "zod";
 
 import type { FormState } from "./form-state";
-import { getMembership } from "./membership";
 import { OperationError } from "./operations";
-import {
-  listArticlesToInsert,
-  replyToConversation,
-  startReplyUpload,
-  translateReply,
-} from "./operations/conversations";
-import { asAdmin, asTeam, call } from "./operations/run";
-import { getSession } from "./session";
+import { asAdmin, call } from "./operations/run";
 import { supportDomain } from "./inbound";
 import { requirePlan } from "./operations/plan";
 import { checkEmailDomainOperation, removeEmailDomain, setEmailDomain, updateSupportSettings } from "./operations/support";
-import { suggestReply } from "./operations/support-ai";
 
-/** The team's actions in the support inbox (any team role), through the conversations operations. */
-
-const number = z.coerce.number().int().positive();
-
-function conversationNumber(value: unknown) {
-  const parsed = number.safeParse(value);
-  if (!parsed.success) {
-    throw new OperationError(400, "invalid_input", "Unknown conversation");
-  }
-  return parsed.data;
-}
-
-
-export async function replyInConversation(
-  projectSlug: string,
-  conversation: number,
-  body: string,
-  note = false,
-  /** Files uploaded for it (uploadReplyAttachment), sent with it. */
-  attachments: string[] = [],
-  /** Send and close: the reply closes the conversation. */
-  close = false,
-  /** When the latest message on the page was written: the user writing after it keeps the conversation open. */
-  seen?: string,
-  /**
-   * Where the conversation is translated: the preview the team saw (previewReplyTranslation), sent as it is; or
-   * "untranslated", the team choosing to send it as written ("Send in English"). Neither: translated as it's sent.
-   */
-  translation?: { text: string; language: string } | "untranslated",
-): Promise<FormState & { notice?: string; translation?: "outdated" | "failed"; language?: string }> {
-  let keptOpen: boolean | undefined;
-  let translationProblem: "outdated" | "failed" | undefined;
-  // The customer's language a failed translation was into: its failure is shown for that language only.
-  let failedLanguage: string | undefined;
-  const result = await asTeam(projectSlug, "Only the project's team can reply", async (context) => {
-    try {
-      const sent = await call(replyToConversation, context, {
-        number: conversationNumber(conversation),
-        body: String(body),
-        note: note === true,
-        ...(Array.isArray(attachments) && attachments.length > 0 && { attachments: attachments.map(String) }),
-        ...(close === true && { close: true }),
-        ...(typeof seen === "string" && { seen }),
-        ...(translation === "untranslated"
-          ? { untranslated: true }
-          : translation && typeof translation === "object" && { translation: String(translation.text), language: String(translation.language) }),
-      });
-      keptOpen = "keptOpen" in sent && sent.keptOpen === true;
-    } catch (error) {
-      // The composer answers these: a new preview (the customer's language changed), or "Send in English".
-      if (error instanceof OperationError && (error.code === "translation_outdated" || error.code === "translation_failed")) {
-        translationProblem = error.code === "translation_outdated" ? "outdated" : "failed";
-        if (translationProblem === "failed") {
-          const found = await prisma.conversation.findUnique({
-            where: { projectId_number: { projectId: context.projectId, number: conversationNumber(conversation) } },
-            select: { language: true },
-          });
-          failedLanguage = found?.language ?? undefined;
-        }
-        // Why, without the API's advice (the composer has "Send in English").
-        throw new OperationError(error.status, error.code, error.message.replace(/ Send it untranslated.*$/, ""));
-      }
-      throw error;
-    }
-  });
-  // A reply that left it open (they wrote again since): said, so nobody moves on thinking it's done or waiting on them.
-  return { ...result, ...(keptOpen && { notice: "Sent, and kept open: they wrote again since" }), ...(translationProblem && { translation: translationProblem }), ...(failedLanguage && { language: failedLanguage }) };
-}
-
-/**
- * A reply as the customer would get it, for the composer's preview (conversations.translateReply): null where it goes
- * as written (translation off, or they write in the team's language).
- */
-export async function previewReplyTranslation(
-  projectSlug: string,
-  conversation: number,
-  body: string,
-): Promise<{ error: string } | { preview: null } | { preview: { text: string; language: string } } | { failed: string }> {
-  const [session, membership] = await Promise.all([getSession(), getMembership(projectSlug)]);
-  if (!session || !membership) {
-    return { error: "Only the project's team can reply" };
-  }
-  try {
-    const result = await call(translateReply, { actor: { kind: "user", userId: session.user.id }, projectId: membership.project.id }, { number: conversationNumber(conversation), body: String(body) });
-    return result.status === "translated" ? { preview: { text: result.text!, language: result.language! } } : result.status === "failed" ? { failed: result.error! } : { preview: null };
-  } catch (error) {
-    if (error instanceof OperationError) {
-      return { error: error.message };
-    }
-    throw error;
-  }
-}
-
-
-/** Starts uploading a file for a reply (conversations.upload): where the browser PUTs it, and its id for replyInConversation. */
-export async function uploadReplyAttachment(projectSlug: string, file: { filename: string; contentType: string; size: number }): Promise<{ error: string } | { id: string; contentType: string; uploadUrl: string }> {
-  const [session, membership] = await Promise.all([getSession(), getMembership(projectSlug)]);
-  if (!session || !membership) {
-    return { error: "Only the project's team can attach files" };
-  }
-  try {
-    return await call(startReplyUpload, { actor: { kind: "user", userId: session.user.id }, projectId: membership.project.id }, file);
-  } catch (error) {
-    if (error instanceof OperationError) {
-      return { error: error.message };
-    }
-    throw error;
-  }
-}
-
-
-
-
-
-
-
-
-
-/** "Insert article" in a reply (conversations.articles): the articles matching what's typed that the conversation's person can be sent. */
-export async function findArticlesToInsert(
-  projectSlug: string,
-  conversation: number,
-  q: string,
-): Promise<{ error?: string; articles?: { slug: string; title: string; url: string }[] }> {
-  const [session, membership] = await Promise.all([getSession(), getMembership(projectSlug)]);
-  if (!session || !membership) {
-    return { error: "Only the project's team can insert articles" };
-  }
-  try {
-    return await call(
-      listArticlesToInsert,
-      { actor: { kind: "user", userId: session.user.id }, projectId: membership.project.id },
-      { number: conversationNumber(conversation), q: String(q).trim().slice(0, 200) },
-    );
-  } catch (error) {
-    if (error instanceof OperationError) {
-      return { error: error.message };
-    }
-    throw error;
-  }
-}
-
-
+/** Settings → Inbox and email's actions (owners and admins), till that screen moves onto the router (T3). */
 
 /** Settings → Inbox and email: turns the inbox on or off (owners and admins). */
 export async function setSupportInbox(projectSlug: string, on: boolean): Promise<FormState> {
@@ -252,40 +100,5 @@ export async function sendEmailDomainTest(projectSlug: string): Promise<FormStat
       throw new OperationError(502, "email_failed", `The test email couldn't be sent: ${String(error).slice(0, 200)}`);
     }
   });
-}
-
-
-/**
- * A reply drafted from the docs for the reply box (conversations.suggestReply): the draft, or why there
- * isn't one (the docs don't cover it, the project is out of credits, the AI failed).
- */
-export async function draftReplyWithAi(
-  projectSlug: string,
-  conversation: number,
-): Promise<{ error: string } | { draft: string } | { draft: null; reason: string }> {
-  const [session, membership] = await Promise.all([getSession(), getMembership(projectSlug)]);
-  if (!session || !membership) {
-    return { error: "Only the project's team can draft replies" };
-  }
-  try {
-    const suggested = await call(suggestReply, { actor: { kind: "user", userId: session.user.id }, projectId: membership.project.id }, { number: conversationNumber(conversation) });
-    if (suggested.status === "suggested") {
-      return { draft: suggested.draft };
-    }
-    return {
-      draft: null,
-      reason:
-        suggested.status === "no_answer"
-          ? "Your docs don't cover what they asked, so there's no draft"
-          : suggested.status === "unavailable"
-            ? "This project is out of credits"
-            : "The AI couldn't draft a reply: try again",
-    };
-  } catch (error) {
-    if (error instanceof OperationError) {
-      return { error: error.message };
-    }
-    throw error;
-  }
 }
 
