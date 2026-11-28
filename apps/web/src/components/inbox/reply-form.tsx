@@ -19,8 +19,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { insertAt, linkToInsert, type Opened } from "@/lib/insert-link";
 import { useShortcutLabel } from "@/lib/shortcut-keys";
 import { nativeLanguageName } from "@/lib/language-name";
-import { previewAfter, previewToShow, type ReplyPreview, wantsPreview } from "@/lib/reply-preview";
-import { draftReplyWithAi, previewReplyTranslation, replyInConversation, uploadReplyAttachment } from "@/server/inbox";
+import { previewAfter, previewToShow, type ReplyPreview, wantsPreview, withoutAdvice } from "@/lib/reply-preview";
+import { errorMessage, useTRPCClient } from "@/components/trpc";
+import { TRPCClientError } from "@trpc/client";
 
 type Kind = "reply" | "note";
 
@@ -85,6 +86,7 @@ export function ReplyForm({
   translated?: { language: string; teamLanguage: string };
 }) {
   const router = useRouter();
+  const trpc = useTRPCClient();
   const [kind, setKind] = useState<Kind>("reply");
   // The tab they're on now, for a draft that finishes after they've moved.
   const current = useRef<Kind>("reply");
@@ -104,7 +106,18 @@ export function ReplyForm({
       notice: [...again(gone, "attached too long ago to send"), ...again(unfinished, "didn't finish uploading")].join(" ") || undefined,
     };
   });
-  const files = useUploads((file) => uploadReplyAttachment(projectSlug, file), restored.files);
+  // Uploaded straight to storage, from where conversations.upload says (it's the reply's, until it's sent).
+  const files = useUploads(
+    // The server's refusal in its words; one that didn't reach it is the uploads' own "Couldn't upload it".
+    (file) =>
+      trpc.conversations.upload.mutate({ project: projectSlug, ...file }).catch((error: unknown) => {
+        if (error instanceof TRPCClientError && error.shape) {
+          return { error: error.message };
+        }
+        throw error;
+      }),
+    restored.files,
+  );
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
   const [drafting, startDrafting] = useTransition();
@@ -150,7 +163,12 @@ export function ReplyForm({
     let stale = false;
     // Once they stop typing for a moment: each preview is a model call (the project's credits).
     const timer = setTimeout(async () => {
-      const result = await previewReplyTranslation(projectSlug, number, toTranslate).catch(() => ({ failed: "The translation couldn't be fetched" }));
+      type Result = { error: string } | { failed: string } | { preview: { text: string; language: string } | null };
+      const result: Result = await trpc.conversations.translateReply.mutate({ project: projectSlug, number, body: toTranslate }).then(
+        (preview): Result =>
+          preview.status === "translated" ? { preview: { text: preview.text!, language: preview.language! } } : preview.status === "failed" ? { failed: preview.error! } : { preview: null },
+        (error: unknown): Result => (error instanceof TRPCClientError && error.shape ? { error: error.message } : { failed: "The translation couldn't be fetched" }),
+      );
       if (stale) {
         return;
       }
@@ -170,7 +188,7 @@ export function ReplyForm({
       stale = true;
       clearTimeout(timer);
     };
-  }, [projectSlug, number, toTranslate, translated?.language, previewAgain, askForPreview]);
+  }, [projectSlug, number, toTranslate, translated?.language, previewAgain, askForPreview, trpc]);
   const errorId = useId();
   const shortcutId = useId();
   const pausedId = useId();
@@ -200,7 +218,21 @@ export function ReplyForm({
   const draft = () =>
     startDrafting(async () => {
       setNotice(undefined);
-      const result = await draftReplyWithAi(projectSlug, number).catch(() => ({ error: "The AI couldn't draft a reply: try again" }));
+      const result = await trpc.conversations.suggestReply.mutate({ project: projectSlug, number }).then(
+        (suggested) =>
+          suggested.status === "suggested"
+            ? { draft: suggested.draft! }
+            : {
+                draft: null,
+                reason:
+                  suggested.status === "no_answer"
+                    ? "Your docs don't cover what they asked, so there's no draft"
+                    : suggested.status === "unavailable"
+                      ? "This project is out of credits"
+                      : "The AI couldn't draft a reply: try again",
+              },
+        (error: unknown) => ({ error: errorMessage(error, "The AI couldn't draft a reply: try again") }),
+      );
       if ("error" in result) {
         setNotice(result.error);
       } else if (result.draft === null) {
@@ -232,6 +264,41 @@ export function ReplyForm({
     setDrafts((drafts) => ({ ...drafts, reply: `${text.slice(0, start)}${insert}${text.slice(end)}` }));
   };
 
+  /**
+   * Sends it (conversations.reply): `{ error }`, or what the composer says after. Kept open (they wrote again since);
+   * not translated, which the composer answers with a new preview (their language changed) or "Send in English", in the
+   * language the conversation has now (the page may have been loaded before the project translated).
+   */
+  const reply = async ({ text, note, attached, close, translation }: { text: string; note: boolean; attached: string[]; close: boolean; translation?: { text: string; language: string } | "untranslated" }) => {
+    try {
+      const sent = await trpc.conversations.reply.mutate({
+        project: projectSlug,
+        number,
+        body: text,
+        note,
+        ...(attached.length > 0 && { attachments: attached }),
+        ...(close && { close: true }),
+        ...(replySeen && { seen: replySeen }),
+        ...(translation === "untranslated" ? { untranslated: true } : translation && { translation: translation.text, language: translation.language }),
+      });
+      return { notice: "keptOpen" in sent && sent.keptOpen === true ? "Sent, and kept open: they wrote again since" : undefined };
+    } catch (error) {
+      const code = error instanceof TRPCClientError ? (error.data as { code?: string } | undefined)?.code : undefined;
+      if (code !== "translation_outdated" && code !== "translation_failed") {
+        return { error: errorMessage(error, "Couldn't reach Tuti. Try again.") };
+      }
+      const why = withoutAdvice(errorMessage(error));
+      if (code === "translation_outdated") {
+        return { error: why, translation: "outdated" as const };
+      }
+      const language = await trpc.inbox.language.query({ project: projectSlug, number }).then(
+        (found) => found.language ?? undefined,
+        () => undefined,
+      );
+      return { error: why, translation: "failed" as const, language };
+    }
+  };
+
   const send = (close = false, untranslated = false) =>
     startTransition(async () => {
       const sending = kind;
@@ -243,7 +310,7 @@ export function ReplyForm({
       // Closed with it, it's done with: out of the view, the next one opens. Only answered (waiting on them now), it stays
       // open, the reply there to read, though it's left the view (Needs reply), as Featurebase and Intercom do.
       const moved = close && sending === "reply" ? actOn(number, true) : () => {};
-      const result = await replyInConversation(projectSlug, number, text, sending === "note", attached, close && sending === "reply", replySeen, translation);
+      const result = await reply({ text, note: sending === "note", attached, close: close && sending === "reply", translation });
       // Not translated: said in the preview, beside "Send in English".
       setError(result.translation === "outdated" ? "Their language changed since this preview: check the new one, then send again." : result.translation === "failed" ? undefined : result.error);
       setNotice(result.notice);
@@ -262,6 +329,9 @@ export function ReplyForm({
         toast.error("Not sent: it couldn't be translated");
       }
       if (!result.error) {
+        // The page with the reply in it, as the server action's refresh did. Another conversation opened meanwhile
+        // waits for this transition (React finishes them together), so it's still this page.
+        router.refresh();
         // Only what was sent: anything added meanwhile stays. (Still here: a row opened meanwhile waits for the reply.)
         setDrafts((current) => ({ ...current, [sending]: current[sending] === text ? "" : current[sending] }));
         files.sent(attached);

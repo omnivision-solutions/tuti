@@ -566,19 +566,6 @@ const matrix: Matrix = {
     },
   },
   inbox: {
-    replyInConversation: { allowed: "MEMBER", call: (slug) => inbox.replyInConversation(slug, 1, "Thanks!") },
-    // Translation is off in the fixture: no preview, and the model isn't asked.
-    previewReplyTranslation: { allowed: "MEMBER", call: (slug) => inbox.previewReplyTranslation(slug, 1, "Thanks!") },
-    // Nothing in the docs is close to what was asked: no draft (and why), and the model isn't asked.
-    draftReplyWithAi: {
-      allowed: "MEMBER",
-      call: (slug) => inbox.draftReplyWithAi(slug, 1),
-    },
-    uploadReplyAttachment: {
-      allowed: "MEMBER",
-      call: (slug) => inbox.uploadReplyAttachment(slug, { filename: "invoice.pdf", contentType: "application/pdf", size: 1000 }),
-    },
-    findArticlesToInsert: { allowed: "MEMBER", call: (slug) => inbox.findArticlesToInsert(slug, 1, "Getting started") },
     // Off: the fixture has it on (for escalateDocs), so a refused write would show.
     setSupportInbox: { allowed: "ADMIN", call: (slug) => inbox.setSupportInbox(slug, false) },
     setTranslation: { allowed: "ADMIN", call: (slug) => inbox.setTranslation(slug, { teamLanguage: "en" }) },
@@ -1476,6 +1463,20 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   // The team's names and roles, and the project's own setup: the team's (a key counts as the team), never anyone signed in.
   // The Inbox's list pane, and a teammate's own "Email me new conversations" (a key: its creator's).
   "inbox.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.list({ project: slug, q: "Post", overview: true }) },
+  // The reply box: Send, its preview (translation is off in the fixture: no preview, and the model isn't asked), Draft
+  // with AI (nothing in the docs is close: no draft, and the model isn't asked), a file for it (people only), Insert
+  // article's search, and the conversation's language after a reply couldn't be translated.
+  "conversations.reply": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.reply({ project: slug, number: 1, body: "Thanks!" }) },
+  "conversations.translateReply": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.translateReply({ project: slug, number: 1, body: "Thanks!" }) },
+  "conversations.suggestReply": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.suggestReply({ project: slug, number: 1 }) },
+  "conversations.upload": {
+    allowed: "MEMBER",
+    scope: "write",
+    peopleOnly: true,
+    call: (caller, slug) => caller.conversations.upload({ project: slug, filename: "invoice.pdf", contentType: "application/pdf", size: 1000 }),
+  },
+  "conversations.articles": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.conversations.articles({ project: slug, number: 1, q: "Getting started" }) },
+  "inbox.language": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.language({ project: slug, number: 1 }) },
   "inbox.newConversationEmails": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.inbox.newConversationEmails({ project: slug, on: false }) },
   // The Inbox's conversation page: what it reads, and its buttons (status, assignee, snooze, spam, priority, take over and
   // hand back are all conversations.update), Summarize, Try again on a translation, and marking it read.

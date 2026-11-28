@@ -22,7 +22,7 @@ import {
   updateConversation,
 } from "./conversations";
 import { getConversationActivity } from "./conversation-activity";
-import { findPostsToLink, getInboxList, setNewConversationEmails } from "./inbox";
+import { findPostsToLink, getConversationLanguage, getInboxList, setNewConversationEmails } from "./inbox";
 import { getInboxConversation } from "./inbox-conversation";
 import { getInboxLive } from "./live";
 import { getConversationPerson } from "./conversation-person";
@@ -122,6 +122,7 @@ export const all = [
   listTeam,
   listInboxViews,
   getInboxList,
+  getConversationLanguage,
   setNewConversationEmails,
   getInboxLive,
   listAssignees,
