@@ -1424,6 +1424,8 @@ type ProcedureCase = Omit<Case, "call" | "takesIds"> & {
   peopleOnly?: boolean;
   uploadersOwn?: true;
   seed?: (fixture: Fixture) => Promise<unknown>;
+  /** Takes ids of the project's rows: another project's team, with its own slug and this project's ids, changes nothing. */
+  takesIds?: true;
   call: (caller: Caller, slug: string, fixture: Fixture) => Promise<unknown>;
 };
 
@@ -1492,7 +1494,14 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   // What an Autopilot email's button acts on (the act route).
   "codeChanges.button": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.codeChanges.button({ project: slug, id: "none", actions: [] }) },
   "spam.get": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.spam.get({ project: slug }) },
-  "spam.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.spam.update({ project: slug, addRules: [{ field: "subject_or_body", matcher: "contains", value: "facebook admin" }] }) },
+  // Removing a rule by its id: the fixture's, put back before each call that may remove it.
+  "spam.update": {
+    allowed: "ADMIN",
+    scope: "write",
+    takesIds: true,
+    seed: (f) => prisma.spamRule.upsert({ where: { id: f.spamRuleId }, create: { id: f.spamRuleId, projectId: f.projectId, field: "subject", matcher: "contains", value: "matrix" }, update: {} }),
+    call: (caller, slug, f) => caller.spam.update({ project: slug, removeRules: [f.spamRuleId] }),
+  },
   "spam.try": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.spam.try({ project: slug, name: "Kim", sender: "e2e-matrix-kim@example.com", subject: "Hi", text: "Hello" }) },
   "support.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.support.get({ project: slug }) },
   "team.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.team.list({ project: slug }) },
@@ -1541,6 +1550,10 @@ test.each(Object.entries(procedures).map(([name, rule]) => ({ name, rule: rule! 
   }
   expect(await procedureOutcome(rule.call(await callerAs(writeKey), otherProject.slug, fixture))).toMatch(REFUSED);
   expect(await procedureOutcome(rule.call(await callerAs(otherKey), fixture.slug, fixture))).toMatch(REFUSED);
+  if (rule.takesIds) {
+    // Their own project's slug, with this project's ids: allowed there, but never on this project's rows.
+    expect(await procedureOutcome(rule.call(await callerAs(users.outsider), otherProject.slug, fixture))).not.toBe("ok");
+  }
   if (rule.scope === "write") {
     expect(await procedureOutcome(rule.call(await callerAs(readKey), fixture.slug, fixture))).toBe("FORBIDDEN");
   }
