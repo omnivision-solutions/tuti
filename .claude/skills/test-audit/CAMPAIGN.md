@@ -10,7 +10,7 @@ work. Each step ends on its done line; don't start the next one early.
 
 Pin a `main` SHA. Record the area's test and test-support line counts (`*.test.ts`,
 `*.db.test.ts`, `e2e/*.spec.ts`, helpers and fakes it alone uses) and each test file's result
-at that SHA (`pnpm test`, `pnpm test:db <files>`, its journeys through `buildslot`). Keep
+at that SHA (`pnpm test`, `pnpm test:db <files>`, `pnpm test:e2e <its journeys>`). Keep
 failures in their own list: they may be product bugs (step 7), not stale tests. Note any file
 CI has seen flake (SKILL.md, Flaky tests).
 

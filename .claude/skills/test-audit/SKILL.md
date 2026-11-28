@@ -94,8 +94,8 @@ or deleting the test, mocking real I/O away, weakening an assertion (`toContain`
 
 1. **Reproduce first.** Find the failure in CI (`gh run view <id> --log-failed`, the
    `playwright-report-*` artifact's trace). Then make it fail locally on purpose:
-   `E2E_CPU_THROTTLE=4`, `--repeat-each=20 --workers=3`, or delay the event you suspect (a
-   slow route with `page.route`, a delayed job, a fake's latency). Through `buildslot`.
+   `E2E_CPU_THROTTLE=4 pnpm test:e2e e2e/<file>.spec.ts --repeat-each=20 --workers=3`, or delay
+   the event you suspect (a slow route with `page.route`, a delayed job, a fake's latency).
    For Vitest: `pnpm exec vitest run <file> --repeats=50` or `--sequence.shuffle`.
 2. **Name the race:** what the test assumed had happened, and what can happen first. Common
    ones here: asserting before a save, a toast, a live stream's update or a navigation lands;
@@ -117,7 +117,7 @@ or deleting the test, mocking real I/O away, weakening an assertion (`toContain`
 - Delete the production seams a deletion frees, and helpers or fakes nothing uses any more.
 - An area mid-migration (docs/plan.md's open items, e.g. "One way in") is about to have its
   tests rewritten: audit it once its item is ticked.
-- Run the owner's tests and their siblings (`pnpm test`, `pnpm test:db <files>`, the journeys
-  through `buildslot`), `pnpm typecheck` and `pnpm lint`.
+- Run the owner's tests and their siblings (`pnpm test`, `pnpm test:db <files>`,
+  `pnpm test:e2e <files>`), `pnpm typecheck` and `pnpm lint`.
 - The PR reports: what was removed and why (by category), the contracts kept and their keepers,
   test lines and production lines removed separately, bugs found, follow-ups.
