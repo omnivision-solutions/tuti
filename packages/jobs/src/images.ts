@@ -62,10 +62,20 @@ export async function imageUploaded(input: JobInput<"imageUploaded">, log: JobLo
     const size = files.reduce((sum, f) => sum + f.body.byteLength, 0);
     // Only from PROCESSING: a job queued twice may run twice at once, and the first to finish decides. Ready before the
     // original goes, so a second run that then can't read it finds this one's outcome.
-    await prisma.media.updateMany({
+    const { count } = await prisma.media.updateMany({
       where: { id: media.id, status: "PROCESSING" },
       data: { status: "READY", width: info.width, height: info.height, size },
     });
+    if (count === 0) {
+      // Another run settled it first. Its files have these keys only if it's READY at the same width (keys come from
+      // the id and widths); otherwise what this run wrote is nobody's.
+      const settled = await prisma.media.findUnique({ where: { id: media.id }, select: { status: true, width: true } });
+      if (settled?.status !== "READY" || settled.width !== info.width) {
+        await Promise.all(files.map((f) => storage.delete(f.key).catch(() => {})));
+      }
+      log.warn(`media ${media.id} was settled by another run, skipping`);
+      return { skipped: true };
+    }
     await storage.delete(original).catch((error: unknown) => log.warn(`media ${media.id}: deleting its original failed: ${String(error)}`));
     log.info(`media ${media.id}: ${info.width}x${info.height}, ${files.length} files, ${size} bytes`);
     return { ready: true, width: info.width, height: info.height, files: files.length };
