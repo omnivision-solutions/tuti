@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { DetailSection } from "@/components/inbox/detail-section";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { findPostsToLink, linkPostToConversation } from "@/server/inbox";
+import { errorMessage, useTRPCClient } from "@/components/trpc";
 
 /** The top bar's "More actions" that shows (one on phones, one from tablet width up): "Link a post…" is behind it. */
 const moreActions = () => [...document.querySelectorAll<HTMLButtonElement>('button[aria-label="More actions"]')].find((button) => button.checkVisibility());
@@ -21,10 +21,15 @@ const moreActions = () => [...document.querySelectorAll<HTMLButtonElement>('butt
 /** Links a post to the conversation (or unlinks it), saying so, and the page refreshes with it. */
 function useLink(projectSlug: string, number: number) {
   const router = useRouter();
+  const trpc = useTRPCClient();
   const [pending, startTransition] = useTransition();
   const link = (post: number, linked: boolean, done?: (ok: boolean) => void) =>
     startTransition(async () => {
-      const result = await linkPostToConversation(projectSlug, number, post, linked).catch(() => ({ error: "Couldn't reach Tuti. Try again." }));
+      const input = { project: projectSlug, number, post };
+      const result = await (linked ? trpc.conversations.linkPost.mutate(input) : trpc.conversations.unlinkPost.mutate(input)).then(
+        () => ({ error: null }),
+        (error: unknown) => ({ error: errorMessage(error, "Couldn't reach Tuti. Try again.") }),
+      );
       if (result.error) {
         toast.error(result.error);
       } else {
@@ -182,7 +187,8 @@ export function ConversationPosts({
 export function LinkPostButton({ projectSlug, number, linked, inline = false }: { projectSlug: string; number: number; linked: number[]; inline?: boolean }) {
   const [open, setOpen] = useState(false);
   const { pending, link } = useLink(projectSlug, number);
-  const search = usePostSearch((q) => findPostsToLink(projectSlug, q));
+  const trpc = useTRPCClient();
+  const search = usePostSearch((q) => trpc.inbox.findPosts.query({ project: projectSlug, q: q.slice(0, 200) }).catch((error: unknown) => ({ error: errorMessage(error, "Couldn't reach Tuti. Try again.") })));
   return (
     <Dialog
       open={open}

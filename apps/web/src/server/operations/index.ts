@@ -22,7 +22,7 @@ import {
   updateConversation,
 } from "./conversations";
 import { getConversationActivity } from "./conversation-activity";
-import { getInboxList, setNewConversationEmails } from "./inbox";
+import { findPostsToLink, getInboxList, setNewConversationEmails } from "./inbox";
 import { getInboxConversation } from "./inbox-conversation";
 import { getConversationPerson } from "./conversation-person";
 import { getNotificationSettings, registerDevice, removeDevice, updateNotificationSettings } from "./devices";
@@ -134,6 +134,7 @@ export const all = [
   getConversation,
   getInboxConversation,
   getConversationPerson,
+  findPostsToLink,
   getConversationActivity,
   createConversation,
   replyToConversation,

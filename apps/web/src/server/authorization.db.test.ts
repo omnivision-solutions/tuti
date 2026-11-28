@@ -578,9 +578,6 @@ const matrix: Matrix = {
       allowed: "MEMBER",
       call: (slug) => inbox.uploadReplyAttachment(slug, { filename: "invoice.pdf", contentType: "application/pdf", size: 1000 }),
     },
-    linkPostToConversation: { allowed: "MEMBER", call: (slug) => inbox.linkPostToConversation(slug, 1, 1, true) },
-    loadConversationActivity: { allowed: "MEMBER", call: (slug) => inbox.loadConversationActivity(slug, 1, "all") },
-    findPostsToLink: { allowed: "MEMBER", call: (slug) => inbox.findPostsToLink(slug, "Post") },
     findArticlesToInsert: { allowed: "MEMBER", call: (slug) => inbox.findArticlesToInsert(slug, 1, "Getting started") },
     // Off: the fixture has it on (for escalateDocs), so a refused write would show.
     setSupportInbox: { allowed: "ADMIN", call: (slug) => inbox.setSupportInbox(slug, false) },
@@ -1460,6 +1457,12 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   // The Inbox's conversation page: what it reads, and its buttons (status, assignee, snooze, spam, priority, take over and
   // hand back are all conversations.update), Summarize, Try again on a translation, and marking it read.
   "inbox.conversation": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.conversation({ project: slug, number: 1 }) },
+  // Its details beside it (who it's with is inbox.conversation's `person`): its Activity, and its posts (Link a post's
+  // search, Link and Unlink).
+  "conversations.activity": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.conversations.activity({ project: slug, number: 1 }) },
+  "inbox.findPosts": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.findPosts({ project: slug, q: "Post" }) },
+  "conversations.linkPost": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.linkPost({ project: slug, number: 1, post: 1 }) },
+  "conversations.unlinkPost": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.unlinkPost({ project: slug, number: 1, post: 1 }) },
   "conversations.update": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.update({ project: slug, number: 1, status: "closed" }) },
   // Twice: the teammate's call and the read and write key's.
   "conversations.summarize": {

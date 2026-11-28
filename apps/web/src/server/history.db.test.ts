@@ -14,6 +14,7 @@ import { OperationError } from "./operations/define";
 import ConversationPage, { generateMetadata as conversationMetadata } from "@/app/app/(workspace)/[project]/inbox/[number]/page";
 import TeamPostPage from "@/app/app/(workspace)/[project]/p/[number]/page";
 import { PersonPanel } from "@/components/inbox/person-panel";
+import { type Person, personPanel } from "@/server/operations/conversation-person";
 
 import { searchApp } from "./app-search";
 import { removeMember } from "./team";
@@ -23,6 +24,10 @@ import { call } from "./operations/run";
 import { listUsers } from "./operations/users";
 import { upsertProjectUser } from "./project-users";
 import { widgetConversation, widgetConversations, widgetStartConversation } from "./widget-inbox";
+
+/** The panel as a page renders it, its data built by personPanel (as the Users page does; the Inbox reads it with inbox.conversation). */
+const Panel = async ({ projectId, person, besides, page, ...props }: { projectId: string; slug: string; person: Person; besides?: number; page?: boolean }) =>
+  PersonPanel({ ...props, besides, page, details: await personPanel(projectId, person, { besides, all: page }) });
 
 // The post page's client parts, rendered here without Next's router.
 vi.mock("next/navigation", async (original) => ({
@@ -141,7 +146,7 @@ test("search, a person's conversations and a post's linked ones leave out what's
   await prisma.conversationPost.create({ data: { conversationId: old.id, postId: post.id } });
   actAs(owner);
   const found = async (q: string) => ((await searchApp(project.slug, q)).results ?? []).filter((r) => r.kind === "conversation").map((r) => r.title);
-  const panel = async () => renderToStaticMarkup(await PersonPanel({ projectId: project.id, slug: project.slug, person: { userId, email: null, emailVerified: false } }));
+  const panel = async () => renderToStaticMarkup(await Panel({ projectId: project.id, slug: project.slug, person: { userId, email: null, emailVerified: false } }));
   const postPage = async () =>
     renderToStaticMarkup(await TeamPostPage({ params: Promise.resolve({ project: project.slug, number: "1" }), searchParams: Promise.resolve({}) } as never));
 

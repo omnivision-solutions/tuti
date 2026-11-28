@@ -6,8 +6,12 @@ import { PersonPanel } from "@/components/inbox/person-panel";
 import { upsertProjectUser } from "@/server/project-users";
 import { createProject, signUp } from "@/test/helpers";
 
-import { getConversationPerson, type Person, personDetails } from "./conversation-person";
+import { getConversationPerson, type Person, personDetails, personPanel } from "./conversation-person";
 import { call } from "./run";
+
+/** The panel as a page renders it, its data built by personPanel (as the Users page does; the Inbox reads it with inbox.conversation). */
+const Panel = async ({ projectId, person, besides, page, ...props }: { projectId: string; slug: string; person: Person; besides?: number; page?: boolean }) =>
+  PersonPanel({ ...props, besides, page, details: await personPanel(projectId, person, { besides, all: page }) });
 
 type Project = Awaited<ReturnType<typeof createProject>>;
 
@@ -81,7 +85,7 @@ test("conversations.person gives one of the project's users as the panel shows t
   });
   // The web's panel beside conversation #1 shows the same words.
   const html = renderToStaticMarkup(
-    await PersonPanel({ projectId: project.id, slug: project.slug, person: { userId, email: null, emailVerified: true }, besides: 1 }),
+    await Panel({ projectId: project.id, slug: project.slug, person: { userId, email: null, emailVerified: true }, besides: 1 }),
   );
   for (const text of ["Sam Lee", "id sam-1", "MRR", "$1,200", "Business plan", "Dark mode", "Export to CSV", "Where is my invoice?"]) {
     expect(html).toContain(text);
@@ -138,6 +142,6 @@ test("conversations.person gives someone with neither an account nor an address 
   const result = await both(project, owner, 1, { userId: null, email: null, emailVerified: false, name: null });
   expect(result).toMatchObject({ name: null, email: null, account: false, conversations: [], conversationCount: 0 });
   // Nor beside it in the web's panel.
-  const html = renderToStaticMarkup(await PersonPanel({ projectId: project.id, slug: project.slug, person: { userId: null, email: null, emailVerified: false }, besides: 1 }));
+  const html = renderToStaticMarkup(await Panel({ projectId: project.id, slug: project.slug, person: { userId: null, email: null, emailVerified: false }, besides: 1 }));
   expect(html).not.toContain("Conversation 2");
 });

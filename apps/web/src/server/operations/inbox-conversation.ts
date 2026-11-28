@@ -29,7 +29,8 @@ import { postsLikeConversation } from "../post-lists";
 import { onlineUntil, presenceKey } from "../presence";
 import { spamChoices } from "../spam";
 import { activityOutput, conversationActivity } from "./conversation-activity";
-import { assignableTeam, conversationNumber, conversationPerson, teamMemberId } from "./conversations";
+import { personPanel, personPanelOutput } from "./conversation-person";
+import { assignableTeam, conversationNumber, conversationPerson, MAX_SEARCH_LENGTH, teamMemberId, VIEW_NAMES } from "./conversations";
 import { defineOperation, OperationError } from "./define";
 import { answersEnabled } from "./docs-ask";
 import { projectSlug } from "./read";
@@ -64,7 +65,13 @@ export const getInboxConversation = defineOperation({
   scope: "read",
   access: "team",
   errors: [404],
-  input: z.object({ number: conversationNumber, messages: z.number().int().min(1).default(1) }),
+  input: z.object({
+    number: conversationNumber,
+    messages: z.number().int().min(1).default(1),
+    /** The Inbox list beside it: its view, or a search's results. Their other conversations in it open beside it there. */
+    view: z.enum(VIEW_NAMES).default("open"),
+    q: z.string().trim().max(MAX_SEARCH_LENGTH).default(""),
+  }),
   output: z.object({
     projectId: z.string(),
     me: z.string(),
@@ -125,6 +132,8 @@ export const getInboxConversation = defineOperation({
         ai: z.boolean(),
         aiPaused: z.boolean(),
         canRetryTranslation: z.boolean(),
+        /** Who it's with, as the panel beside it shows them (personPanel). */
+        panel: personPanelOutput,
         reply: z.object({
           emailed: z.boolean(),
           draftWithAi: z.enum(["on", "off", "paused"]),
@@ -392,6 +401,8 @@ export const getInboxConversation = defineOperation({
         aiPaused: paused,
         // Try again runs only where it can: translation on, and AI on the server.
         canRetryTranslation: translation.translate && aiEnabled(),
+        // Read with the rest, so the panel is of the conversation the page shows.
+        panel: await personPanel(projectId, { ...conversation, name: person.name }, { besides: number, inbox: { userId: me, view: input.view, q: input.q } }),
         reply: {
           emailed: repliesEmailed,
           draftWithAi: answersEnabled() ? (paused ? ("paused" as const) : ("on" as const)) : ("off" as const),

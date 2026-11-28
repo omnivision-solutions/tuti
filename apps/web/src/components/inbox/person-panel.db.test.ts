@@ -10,6 +10,11 @@ import { createProject, signUp } from "@/test/helpers";
 import { maybeUser } from "@/server/operations/conversation-person";
 
 import { PersonPanel } from "./person-panel";
+import { type Person, personPanel } from "@/server/operations/conversation-person";
+
+/** The panel as a page renders it, its data built by personPanel (as the Users page does; the Inbox reads it with inbox.conversation). */
+const Panel = async ({ projectId, person, besides, page, ...props }: { projectId: string; slug: string; person: Person; besides?: number; page?: boolean }) =>
+  PersonPanel({ ...props, besides, page, details: await personPanel(projectId, person, { besides, all: page }) });
 
 test("the hint finds the project's user whatever the capitals in their saved address, and only in that project", async () => {
   const project = await createProject(await signUp());
@@ -38,7 +43,7 @@ test("a user's page lists what they did with every account that is them, as User
   const accounts = await userAccounts(project.id, { userId, email: "e2e-bea@example.com" });
   expect(accounts.sort()).toEqual([userId, portal.id].sort());
   const html = renderToStaticMarkup(
-    await PersonPanel({ projectId: project.id, slug: project.slug, person: { userId, email: "e2e-bea@example.com", emailVerified: true, accounts } }),
+    await Panel({ projectId: project.id, slug: project.slug, person: { userId, email: "e2e-bea@example.com", emailVerified: true, accounts } }),
   );
   expect(html).toContain("Dark mode");
   expect(html).toContain("Invoices");
@@ -51,7 +56,7 @@ test("someone who marked the project's email as spam says so: replies aren't ema
   const ids = await Promise.all([project, other].map((p) => upsertProjectUser(p.id, "ann-3", { name: "Ann Ash", email: "E2E-Ann@example.com" })));
   // Their page in Users, and beside a conversation in the Inbox.
   const panel = async (p: typeof project, userId: string, page: boolean) =>
-    renderToStaticMarkup(await PersonPanel({ projectId: p.id, slug: p.slug, person: { userId, email: null, emailVerified: true }, page }));
+    renderToStaticMarkup(await Panel({ projectId: p.id, slug: p.slug, person: { userId, email: null, emailVerified: true }, page }));
   const notice = "Marked your email as spam, so replies aren&#x27;t emailed to them any more.";
   expect(await panel(project, ids[0]!, true)).not.toContain(notice);
   // As SES's complaint saves it: lowercase.
@@ -67,13 +72,13 @@ test("Inbox shows every property under an open Customer details, with no Company
   const panel = async (externalId: string, properties: Record<string, string | number>) => {
     const userId = await upsertProjectUser(project.id, externalId, { name: externalId, properties });
     const props = { projectId: project.id, slug: project.slug, person: { userId, email: null, emailVerified: true }, besides: 1 };
-    const html = renderToStaticMarkup(await PersonPanel(props));
+    const html = renderToStaticMarkup(await Panel(props));
     const sections = [...html.matchAll(/<details([^>]*)>([\s\S]*?)<\/details>/g)];
     const values = (body: string) => [...body.matchAll(/<dd[^>]*>([^<]*)<\/dd>/g)].map((m) => m[1]);
     expect(sections.map(([, , body]) => body!.match(/<span class="min-w-0 flex-1">([^<]*)</)?.[1])).toEqual(["Customer details", "Other conversations"]);
     const [customer] = sections;
     expect(customer![1]).toContain("open");
-    const page = renderToStaticMarkup(await PersonPanel({ ...props, page: true }));
+    const page = renderToStaticMarkup(await Panel({ ...props, page: true }));
     expect(values(page).sort()).toEqual(Object.values(properties).map(String).sort());
     return values(customer![2]!);
   };
@@ -87,7 +92,7 @@ test("a user the project's app deleted shows as Deleted user, with no address (t
   const userId = await upsertProjectUser(project.id, "dee-4", { name: "Dee Dot", email: "e2e-dee@example.com" });
   await call(deleteUser, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { user: "dee-4" });
   // Beside a conversation, where the panel names them.
-  const html = renderToStaticMarkup(await PersonPanel({ projectId: project.id, slug: project.slug, person: { userId, email: null, emailVerified: true } }));
+  const html = renderToStaticMarkup(await Panel({ projectId: project.id, slug: project.slug, person: { userId, email: null, emailVerified: true } }));
   expect(html).toContain("Deleted user");
   expect(html).not.toContain(".invalid");
   expect(html).not.toContain("e2e-dee");

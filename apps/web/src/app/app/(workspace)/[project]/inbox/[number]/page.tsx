@@ -7,7 +7,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 
-import { ConversationPane, inboxPages, InboxPanes, inboxHref, inboxQuery, inboxView } from "@/components/inbox/inbox-panes";
+import { ConversationPane, inboxPages, InboxPanes, inboxHref, inboxQuery, inboxView, type View } from "@/components/inbox/inbox-panes";
 import { MarkRead } from "@/components/inbox/mark-read";
 import { EarlierMessages } from "@/components/inbox/load-more";
 import { DetailsToggle, DetailsPanel } from "@/components/inbox/conversation-details";
@@ -64,18 +64,18 @@ const RUN_MS = 5 * 60_000;
  * The conversation as inbox.conversation reads it, once per request for the tab's title and the page. The team's only:
  * anyone else, or a number that isn't one, gets a 404.
  */
-const read = cache(async (slug: string, param: string, messages: number) => {
+const read = cache(async (slug: string, param: string, messages: number, view: View = "open", q = "") => {
   const number = Number(param);
   if (!Number.isInteger(number) || number < 1) {
     notFound();
   }
-  return (await serverCaller()).inbox.conversation({ project: slug, number, messages });
+  return (await serverCaller()).inbox.conversation({ project: slug, number, messages, view, q });
 });
 
 /** The tab: the conversation's subject (one past the plan's history: the Inbox's). */
 export async function generateMetadata(props: PageProps<"/app/[project]/inbox/[number]">): Promise<Metadata> {
   const [{ project: slug, number }, searchParams] = await Promise.all([props.params, props.searchParams]);
-  const { conversation } = await read(slug, number, inboxPages(searchParams.messages));
+  const { conversation } = await read(slug, number, inboxPages(searchParams.messages), inboxView(searchParams.view), inboxQuery(searchParams.q));
   return { title: conversation ? pageTitle(conversation.subject) : "Inbox" };
 }
 
@@ -90,7 +90,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const pages = inboxPages(searchParams.page);
   const q = inboxQuery(searchParams.q);
   const messagePages = inboxPages(searchParams.messages);
-  const { projectId, me, admin, past, conversation } = await read(slug, param, messagePages);
+  const { me, admin, past, conversation } = await read(slug, param, messagePages, view, q);
   if (!conversation) {
     return (
       <InboxPanes slug={slug} view={view} open={Number(param)} pages={pages} q={q}>
@@ -345,11 +345,10 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             )}
           </div>
           <PersonPanel
-            projectId={projectId}
             slug={slug}
-            person={{ userId: conversation.userId, email: conversation.email, emailVerified: conversation.emailVerified, name: person.name }}
+            details={conversation.panel}
             besides={conversation.number}
-            inbox={{ view, pages, userId: me, q }}
+            inbox={{ view, pages, q }}
           />
           <ConversationActivity
             projectSlug={slug}

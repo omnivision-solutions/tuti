@@ -14,8 +14,8 @@ const { TRPCProvider: Provider, useTRPC, useTRPCClient } = createTRPCContext<App
 /** The procedures for React Query (`useQuery(trpc.aiFirst.get.queryOptions(…))`), and the plain client for saves. */
 export { useTRPC, useTRPCClient };
 
-/** A failed call's message, as the server said it (an OperationError's), for the form's error line; else (offline, a proxy's page) a plain one. */
-export const errorMessage = (error: unknown) => (error instanceof TRPCClientError && error.shape ? error.message : "Something went wrong. Try again.");
+/** A failed call's message, as the server said it (an OperationError's), for the form's error line; else (offline, a proxy's page) `otherwise`. */
+export const errorMessage = (error: unknown, otherwise = "Something went wrong. Try again.") => (error instanceof TRPCClientError && error.shape ? error.message : otherwise);
 
 /**
  * What the browser fetches or saves goes through /api/trpc (pages read on the server, server/trpc/server.ts). `base`:
