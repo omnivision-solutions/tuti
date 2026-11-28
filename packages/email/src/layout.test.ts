@@ -18,7 +18,7 @@ import { emailPausedTeamEmail } from "./email-paused-email";
 import { verifyEmail } from "./verify-email";
 import { autopilotEmail } from "./autopilot-email";
 import { inviteEmail } from "./invite-email";
-import { accentColors, Buttons, colors, Diff, type EmailBrand, Eyebrow, Note, POWERED_BY_URL, Stats, Title } from "./layout";
+import { accentColors, Buttons, colors, Diff, type EmailBrand, Eyebrow, Note, Stats, Title } from "./layout";
 import { shippedEmail } from "./shipped-email";
 import { statusEmail } from "./status-email";
 import { verifyAllEmail } from "./verify-all-email";
@@ -28,6 +28,8 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+/** The badge's link: Tuti's site, no project in it. */
+const BADGE = 'href="https://tuti.so/?utm_source=email&amp;utm_medium=powered_by&amp;utm_campaign=badge"';
 const shipped = { projectName: "Acme", postTitle: "Dark mode", postUrl: "https://acme.example/p/1", unsubscribeUrl: "https://acme.example/u" };
 
 test("emails on a project's behalf show its name and initial at the top, not Tuti's mark; Tuti's own show the mark and the part of Tuti", async () => {
@@ -68,24 +70,15 @@ test("a project's logo and name sit centred over the card; Tuti's own mark stays
   expect(team).toContain('width="100%"');
 });
 
-test("every email ends with Powered by tuti, linking to Tuti's site with no project in it, unless the project hides it", async () => {
+test("every email ends with Powered by tuti, linking to Tuti's site with no project in it (shown or hidden per project: below)", async () => {
   vi.stubEnv("APP_URL", "https://tuti.example");
-  const link = 'href="https://tuti.so/?utm_source=email&amp;utm_medium=powered_by&amp;utm_campaign=badge"';
-  expect(POWERED_BY_URL).toBe("https://tuti.so/?utm_source=email&utm_medium=powered_by&utm_campaign=badge");
-
-  const shown = await render(shippedEmail({ ...shipped, poweredBy: true }).body);
-  expect(shown).toContain(link);
-  // Grey beside the team's colours.
-  expect(shown).toContain('src="https://tuti.example/api/email-powered-by.png"');
+  // Grey beside the team's colours; shown when the project doesn't say.
+  expect(await render(shippedEmail(shipped).body)).toContain('src="https://tuti.example/api/email-powered-by.png"');
   expect(await render(shippedEmail(shipped).body, { plainText: true })).toContain("Powered by");
-
-  const hidden = await render(shippedEmail({ ...shipped, poweredBy: false }).body);
-  expect(hidden).not.toContain("Powered by");
-  expect(hidden).not.toContain("tuti.so");
 
   // Tuti's own emails always have it, in Tuti's colours.
   const invite = await render(inviteEmail({ inviterName: "Ann", projectName: "Acme", roleLabel: "Member", url: "https://tuti.example/i" }).body);
-  expect(invite).toContain(link);
+  expect(invite).toContain(BADGE);
   expect(invite).toContain('src="https://tuti.example/api/email-powered-by-tuti.png"');
 
   // Without the app's address (or with one that isn't a URL), the words instead of the picture.
@@ -192,7 +185,7 @@ test("every email to a project's customers drops Powered by tuti when the projec
   }
   for (const [name, email] of Object.entries(emails(true))) {
     const html = await render(email.body);
-    expect({ name, badge: html.includes(`href="${POWERED_BY_URL.replaceAll("&", "&amp;")}"`) }).toEqual({ name, badge: true });
+    expect({ name, badge: html.includes(BADGE) }).toEqual({ name, badge: true });
   }
   // The portal's logo heads every one of them, as the portal's header does.
   const logo = { url: "https://tuti.example/api/media/m1/480.webp?s=x", width: 480, height: 120 };

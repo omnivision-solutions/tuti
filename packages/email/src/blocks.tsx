@@ -25,7 +25,7 @@ export const STATUS_PILLS: Record<PostStatus, { label: string; color: string; fi
 /** People's initials' colours (the app's `avatar-*` tokens, as hex), picked by the first letter as AvatarFallback does. */
 const AVATAR_COLORS = ["#925651", "#83623a", "#456f4e", "#356d73", "#486491", "#785480"];
 
-export function avatarColor(name: string) {
+function avatarColor(name: string) {
   return AVATAR_COLORS[(name.normalize("NFD").trim().toUpperCase().charCodeAt(0) || 0) % AVATAR_COLORS.length]!;
 }
 

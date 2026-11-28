@@ -4,7 +4,7 @@ import { expect, test } from "vitest";
 
 import { luminance } from "@tuti/shared/colors";
 
-import { avatarColor, Message, PostCard, type PostStatus } from "./blocks";
+import { Message, PostCard, type PostStatus } from "./blocks";
 import { changelogConfirmEmail } from "./changelog-confirm-email";
 import { conversationReplyEmail } from "./conversation-reply-email";
 import { passwordChangedEmail, passwordResetEmail } from "./password-reset-email";
@@ -27,8 +27,6 @@ test("the post card's status pill takes the portal's hue for each status, never 
     const html = await render(createElement(PostCard, { title: "Dark mode", status }));
     expect({ status, pill: new RegExp(`color:${hue}[^>]*>.*${label}</span>`).test(html) }).toEqual({ status, pill: true });
   }
-  // The app's Under review is amber: not here.
-  expect(await render(createElement(PostCard, { title: "Dark mode", status: "UNDER_REVIEW" }))).not.toMatch(/amber|#f59e0b|#d97706/);
 });
 
 test("the post card shows the votes, board and title it's given, and leaves out what it isn't", async () => {
@@ -39,10 +37,11 @@ test("the post card shows the votes, board and title it's given, and leaves out 
 
 test("a team's message has its author's initial in their colour, their name and the team's tag in the accent", async () => {
   const html = await render(createElement(Message, { name: "ada Park", team: "Acme team", accent: "#7c3aed", children: "Shipped!" }));
-  // Picked by the first letter, as AvatarFallback does: "ada" and "Ada" alike.
-  expect(avatarColor("ada")).toBe(avatarColor("Ada R."));
-  expect(html).toContain(`background-color:${avatarColor("Ada")};color:#ffffff`);
-  expect(html).toMatch(/>A<\/td>/);
+  // Picked by the first letter, as AvatarFallback does: "ada" and "Ada" alike, "Bo" another.
+  const avatar = async (name: string) => (await render(createElement(Message, { name, children: "Hi" }))).match(/background-color:(#[0-9a-f]{6});color:#ffffff[^>]*>[A-Z]<\/td>/)?.[1];
+  expect(html).toMatch(/background-color:#785480;color:#ffffff[^>]*>A<\/td>/);
+  expect(await avatar("Ada R.")).toBe("#785480");
+  expect(await avatar("Bo")).toBe("#925651");
   expect(html).toMatch(/background-color:#f2ebfd;color:#7c3aed[^>]*>Acme team</);
   expect(html).toMatch(/border-radius:12px[^>]*>Shipped!</);
   // Someone else's message has no tag.

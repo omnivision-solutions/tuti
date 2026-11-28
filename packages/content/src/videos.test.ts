@@ -39,7 +39,7 @@ describe("uploaded videos", () => {
   test("render as the browser's own player, loading nothing until played; without a signed link they're left out", () => {
     const html = renderToStaticMarkup(createElement(RichText, { doc: doc(video()), mediaUrls: signed }));
     expect(html).toBe('<div><div class="rich-video"><video src="https://storage.example/m/video?sig=1" controls="" preload="metadata" playsInline=""></video></div></div>');
-    expect(renderToStaticMarkup(createElement(RichText, { doc: doc(video()) }))).not.toContain("<video");
+    expect(renderToStaticMarkup(createElement(RichText, { doc: doc(video()) }))).toBe("<div></div>");
   });
 
   test("Markdown links the video's file; without one, nothing", () => {
