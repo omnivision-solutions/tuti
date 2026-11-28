@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
-import { prisma } from "@tuti/db";
-import { seenAs } from "@tuti/jobs";
+import type { PostStatus } from "@tuti/db";
 import { ExternalLinkIcon, MessageSquareIcon, PlusIcon } from "lucide-react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 
 import { HidesTabBar } from "@/components/app-sidebar";
 import { CopyButton } from "@/components/copy-button";
@@ -24,16 +22,12 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { SampleBadge } from "@/components/sample-badge";
-import { asking, initial, timeAgo } from "@/lib/format";
+import { initial, timeAgo } from "@/lib/format";
 import { storedPropertyFormats } from "@/lib/property-formats";
 import { cn } from "@/lib/utils";
-import { storedRule } from "@tuti/shared/group-conditions";
 import { sortFilter } from "@/lib/post-filter-options";
 import { nextPageHref, parsePostFilters, STATUS_PARAMS, TEAM_SORTS } from "@/lib/post-filters";
-import { portalAddress } from "@/server/custom-domains";
-import { getMembership } from "@/server/membership";
-import { emailedOnMove } from "@/server/operations/code-changes";
-import { teamPostCounts, teamPosts, voterTotals } from "@/server/post-lists";
+import { serverCaller } from "@/server/trpc/server";
 import { VisibilityBadge } from "@/components/visibility-badge";
 
 export const metadata: Metadata = { title: "Feedback" };
@@ -54,10 +48,6 @@ const first = (value: string | string[] | undefined) => (Array.isArray(value) ? 
 
 export default async function FeedbackPage(props: PageProps<"/app/[project]/feedback">) {
   const { project: slug } = await props.params;
-  const membership = await getMembership(slug);
-  if (!membership) {
-    notFound();
-  }
   const searchParams = await props.searchParams;
   const duplicatesOnly = first(searchParams.show) === "duplicates";
   // No status: Needs triage; one without a tab (Closed, say): All. The duplicates tab: every status.
@@ -65,26 +55,27 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
   const tab = duplicatesOnly ? "duplicates" : TABS.some(([key]) => key === status) ? status : "all";
   const filters = parsePostFilters({ ...searchParams, status: duplicatesOnly ? "all" : tab }, TEAM_SORTS);
   const q = first(searchParams.q)?.trim().slice(0, 255) || undefined;
-  const project = await prisma.project.findUniqueOrThrow({
-    where: { id: membership.project.id },
-    select: {
-      id: true,
-      askingProperty: true,
-      propertyFormats: true,
-      boards: { orderBy: { createdAt: "asc" }, select: { slug: true, name: true } },
-      readerGroups: { orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true, conditions: true, match: true } },
-    },
-  });
-  const board = project.boards.some((b) => b.slug === filters.board) ? filters.board : undefined;
-  const formats = storedPropertyFormats(project.propertyFormats);
+  const caller = await serverCaller();
+  // The team's (others get a 404): the posts, the tabs' counts, the filters' boards and groups; the portal's address.
+  const [list, { portalUrl: portal }] = await Promise.all([
+    caller.feedback.list({
+      project: slug,
+      status: filters.status,
+      duplicates: duplicatesOnly || undefined,
+      board: filters.board,
+      group: first(searchParams.group),
+      q,
+      sort: filters.sort,
+      page: filters.page,
+    }),
+    caller.project.get({ project: slug }),
+  ]);
+  const { posts, more } = list;
+  const board = list.board ?? undefined;
+  const formats = storedPropertyFormats(list.propertyFormats);
   // Who's asking: the posts a reader group voted for.
-  const group = project.readerGroups.find((g) => g.key === first(searchParams.group));
-  const scope = { board, q, group: group && storedRule(group) };
-  const [{ posts, more }, counts] = await Promise.all([teamPosts(project.id, filters, { ...scope, duplicatesOnly }), teamPostCounts(project.id, scope)]);
-  // Who's asking, and how many moving each one to each status that emails does (asked first, from its row or picked
-  // with others: none for a move that emails nobody, to Completed when it's completed already, say).
-  const [totals, moves] = await Promise.all([voterTotals(project.id, project.askingProperty, posts.map((post) => post.id)), emailedOnMove(project.id, posts)]);
-  const emailing = (post: (typeof posts)[number]) => moves.get(post.id) ?? {};
+  const group = list.groups.find((g) => g.key === list.group);
+  const counts = { ...list.counts, of: (status: PostStatus) => list.counts.statuses[status] };
 
   // All, when it mixes statuses: the posts grouped by status in the tabs' order, each group most voted first (as listed);
   // only once it's all loaded, so each group's count is all of them and Load more doesn't add rows to groups above it.
@@ -142,18 +133,15 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
 
   // A post open beside the list: the menu only where there's room for three panes.
   // Its counts the list's own when they're across every board.
-  const [menu, portal] = await Promise.all([
-    feedbackMenu({
-      project: membership.project,
-      view: tab,
-      board,
-      counts: !board && !q && !group ? counts : undefined,
-      className: cn(open !== null && "@max-[80rem]/app:hidden!"),
-    }),
-    portalAddress(slug),
-  ]);
+  const menu = await feedbackMenu({
+    project: { slug },
+    view: tab,
+    board,
+    counts: !board && !q && !group ? counts : undefined,
+    className: cn(open !== null && "@max-[80rem]/app:hidden!"),
+  });
   // The view's name: the board's, filtered to one, else the tab's.
-  const title = (board && project.boards.find((b) => b.slug === board)?.name) ?? (tab === "all" ? "All posts" : tabs.find((t) => t.key === tab)!.title);
+  const title = (board && list.boards.find((b) => b.slug === board)?.name) ?? (tab === "all" ? "All posts" : tabs.find((t) => t.key === tab)!.title);
 
   return (
     // One queue for the page's status changes (useInOrder): a post's row menu and the pane's Status land in the order made.
@@ -164,12 +152,12 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
       {/* A post open beside the list has the phone's screen to itself: no tab bar. */}
       {open !== null && <HidesTabBar />}
       {/* Rows picked for Set status, Move to board and Merge, the bar over the header's row once some are. */}
-      <FeedbackSelection listKey={listKey.toString()} listed={listed.map((post) => ({ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample, visibility: seenAs(post), authorId: post.authorId }))}>
+      <FeedbackSelection listKey={listKey.toString()} listed={listed.map((post) => ({ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: post.emails, sample: post.sample, visibility: post.visibility, authorId: post.authorId }))}>
         {/* The list and, beside it, the post a row opened. Under the shell's 48rem (where the window scrolls, not the
             panes: FeedbackKeys keeps the list's place) one or the other; from there up both, so the list's pane is never
             hidden while it holds its own scroll. */}
         <Pane aria-label="Feedback" className={cn(open !== null && "@max-[48rem]/app:hidden")}>
-          <FeedbackBulk projectSlug={slug} boards={project.boards}>
+          <FeedbackBulk projectSlug={slug} boards={list.boards}>
             <PaneHeader
               title={title}
               // The statuses as pills, keeping the board, the search and the sort, in a row of their own under the title (six
@@ -195,16 +183,16 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                           name: "board",
                           label: "Board",
                           value: board ?? "all",
-                          options: [{ value: "all", label: "All boards" }, ...project.boards.map((b) => ({ value: b.slug, label: b.name }))],
+                          options: [{ value: "all", label: "All boards" }, ...list.boards.map((b) => ({ value: b.slug, label: b.name }))],
                         },
-                        ...(project.readerGroups.length > 0
+                        ...(list.groups.length > 0
                           ? [
                               {
                                 name: "group",
                                 label: "Voters",
                                 // "*" can't be a group's key (a group named "All" has "all").
                                 value: group?.key ?? "*",
-                                options: [{ value: "*", label: "All voters" }, ...project.readerGroups.map((g) => ({ value: g.key, label: `Voted by ${g.name}` }))],
+                                options: [{ value: "*", label: "All voters" }, ...list.groups.map((g) => ({ value: g.key, label: `Voted by ${g.name}` }))],
                               },
                             ]
                           : []),
@@ -281,9 +269,9 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                           key={post.id}
                           postId={post.id}
                           selected={post.number === open}
-                          select={<SelectPost post={{ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample, visibility: seenAs(post), authorId: post.authorId }} />}
+                          select={<SelectPost post={{ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: post.emails, sample: post.sample, visibility: post.visibility, authorId: post.authorId }} />}
                           votes={<VoteBox count={post.voteCount} />}
-                          board={post.board.name}
+                          board={post.board}
                           title={
                             <Link href={withPost(post.number)} scroll={false} aria-current={post.number === open ? "true" : undefined} className="hover:underline">
                               {post.title}
@@ -292,12 +280,12 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                           badges={
                             <>
                               {post.sample && <SampleBadge />}
-                              <VisibilityBadge visibility={seenAs(post)} />
-                              {post._count.duplicateSuggestions > 0 && <Badge variant="highlight">Possible duplicate</Badge>}
+                              <VisibilityBadge visibility={post.visibility} />
+                              {post.possibleDuplicate && <Badge variant="highlight">Possible duplicate</Badge>}
                             </>
                           }
                           // A line of it is shown: no more than that goes into the page.
-                          excerpt={post.body.trim().slice(0, 200) || undefined}
+                          excerpt={post.excerpt ?? undefined}
                           meta={
                             <>
                               <span className="inline-flex min-w-0 items-center gap-1.5">
@@ -308,8 +296,8 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                                 <span className="truncate text-foreground/80">{post.author.name}</span>
                               </span>
                               <span aria-hidden>·</span>
-                              <time dateTime={post.createdAt.toISOString()} className="whitespace-nowrap">
-                                {timeAgo(post.createdAt)}
+                              <time dateTime={post.createdAt} className="whitespace-nowrap">
+                                {timeAgo(new Date(post.createdAt))}
                               </time>
                               {post.commentCount > 0 && (
                                 <>
@@ -321,10 +309,10 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                                   </span>
                                 </>
                               )}
-                              {totals.has(post.id) && (
+                              {post.asking && (
                                 <>
                                   <span aria-hidden>·</span>
-                                  <span>{asking(totals.get(post.id)!, project.askingProperty!, formats)}</span>
+                                  <span>{post.asking}</span>
                                 </>
                               )}
                             </>
@@ -345,7 +333,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                               projectSlug={slug}
                               number={post.number}
                               status={post.status}
-                              completing={{ title: post.title, emails: emailing(post) }}
+                              completing={{ title: post.title, emails: post.emails }}
                               badge={mixedUngrouped}
                             />
                           }
@@ -382,7 +370,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
       {open !== null && (
         <Pane className="@min-[48rem]/app:w-[22rem] @min-[48rem]/app:flex-none @min-[60rem]/app:w-[26rem] @min-[76rem]/app:w-[30rem]">
           <PaneBody key={open} className="p-4 @min-[48rem]/app:p-5">
-            <FeedbackPane projectSlug={slug} projectId={project.id} askingProperty={project.askingProperty} formats={formats} number={open} close={withPost(null)} />
+            <FeedbackPane projectSlug={slug} projectId={list.projectId} askingProperty={list.askingProperty} formats={formats} number={open} close={withPost(null)} />
           </PaneBody>
         </Pane>
       )}

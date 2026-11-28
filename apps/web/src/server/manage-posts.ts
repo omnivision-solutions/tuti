@@ -1,14 +1,12 @@
 "use server";
 
 import { prisma } from "@tuti/db";
-import { z } from "zod";
 
 import type { FormState } from "./form-state";
 import { OperationError } from "./operations";
 import { removeLink } from "./operations/links";
 import { mergePost as mergeOperation, updatePost } from "./operations/manage";
 import { dismissDuplicate as dismissOperation } from "./operations/more";
-import { toApiStatus } from "./operations/read";
 import { asTeam, call, postNumberOf } from "./operations/run";
 import type { Visibility } from "./post-visibility";
 
@@ -51,19 +49,6 @@ export async function setPostVisibility(projectSlug: string, postId: string, vis
   return asTeam(projectSlug, "Only the project's team can change who sees a post", async (context) =>
     call(updatePost, context, { number: await postNumberOf(context.projectId, postId), visibility: String(visibility) as Visibility }),
   );
-}
-
-const statusSchema = z.enum(["OPEN", "UNDER_REVIEW", "PLANNED", "IN_PROGRESS", "COMPLETED", "CLOSED"]);
-
-export async function changePostStatus(projectSlug: string, postId: string, status: string): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can change a post's status", async (context) => {
-    const parsed = statusSchema.safeParse(status);
-    if (!parsed.success) {
-      throw new OperationError(400, "invalid_input", "Unknown status");
-    }
-    const number = await postNumberOf(context.projectId, postId);
-    return call(updatePost, context, { number, status: toApiStatus(parsed.data) });
-  });
 }
 
 /** Merges a duplicate into another post (see the posts.merge operation). No undo. */

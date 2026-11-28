@@ -155,13 +155,14 @@ describe("the records are real: the owner sees each page that opens one", () => 
   });
 });
 
-test("Feedback shows the team's posts to the team, and is not found for anyone else", async () => {
+test("Feedback shows the team's posts to the team, is not found for anyone else, and sends someone signed out to sign in", async () => {
   actAs(member);
   await expect(FeedbackPage(props("[project]/feedback/page.tsx") as never)).resolves.toBeTruthy();
-  for (const who of [null, outsider]) {
-    actAs(who);
-    await expect(FeedbackPage(props("[project]/feedback/page.tsx") as never)).rejects.toMatchObject({ digest: "NEXT_HTTP_ERROR_FALLBACK;404" });
-  }
+  actAs(outsider);
+  await expect(FeedbackPage(props("[project]/feedback/page.tsx") as never)).rejects.toMatchObject({ digest: "NEXT_HTTP_ERROR_FALLBACK;404" });
+  // As every page reading through serverCaller(): the sign-in page.
+  actAs(null);
+  await expect(FeedbackPage(props("[project]/feedback/page.tsx") as never)).rejects.toMatchObject({ digest: expect.stringMatching(/^NEXT_REDIRECT;replace;\/app\/auth\/sign-in;/) });
 });
 
 test("Settings' layout (settings.access) shows its page to owners and admins, and is not found for anyone else", async () => {

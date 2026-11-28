@@ -167,6 +167,7 @@ import {
   verifyDomain,
 } from "./domain";
 import { updateEmailPreferences } from "./email-preferences";
+import { getFeedbackList } from "./feedback-list";
 import { listGithubRepositories } from "./github";
 import {
   finishGithubConnect,
@@ -570,6 +571,7 @@ export const all = [
   updateTabTranslation,
   getBoardsPage,
   getFeedbackMenu,
+  getFeedbackList,
   createBoard,
   updateBoard,
   setBoardOff,

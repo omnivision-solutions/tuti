@@ -550,11 +550,6 @@ const matrix: Matrix = {
     setPostOwner: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.setPostOwner(slug, f.postId, null) },
     setPostEta: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.setPostEta(slug, f.postId, "2026-12") },
     setPostVisibility: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.setPostVisibility(slug, f.postId, "private") },
-    changePostStatus: {
-      allowed: "MEMBER",
-      takesIds: true,
-      call: (slug, f) => managePosts.changePostStatus(slug, f.postId, "PLANNED"),
-    },
     mergePost: {
       allowed: "MEMBER",
       takesIds: true,
@@ -1441,6 +1436,8 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
     call: (caller, slug) => caller.conversations.upload({ project: slug, filename: "invoice.pdf", contentType: "application/pdf", size: 1000 }),
   },
   "customize.preview": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.customize.preview({ project: slug, path: "/" }) },
+  // Feedback's list, the team's.
+  "feedback.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.feedback.list({ project: slug }) },
   // Feedback's menu, beside its list, the Roadmap, Boards and a post.
   "feedback.menu": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.feedback.menu({ project: slug }) },
   // Connecting GitHub (the /api/github routes): owners and admins, as Settings → Integrations. A state that isn't ours
