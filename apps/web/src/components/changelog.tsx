@@ -14,6 +14,7 @@ import {
   createContext,
   type ReactNode,
   useActionState,
+  useCallback,
   useContext,
   useEffect,
   useId,
@@ -126,7 +127,8 @@ const CHANGELOG_FORM = "changelog-form";
 const ASK_AI_BUTTON = "ask-ai";
 /**
  * Draft with AI wrote the text before Ask AI was there to take the keyboard's focus back (it shows once the page has the
- * new text, which may come after the dialog closes): that entry's Ask AI takes it as it appears (lateFocus).
+ * new text, which may come after the dialog closes), or the new text made the form, and its Ask AI, again: that entry's
+ * Ask AI takes it as it appears (lateFocus), if the focus went with the old one.
  */
 const askAiFocus = lateFocus();
 export const ChangelogSavingContext = createContext<{
@@ -662,6 +664,10 @@ export function ChangelogForm({
   const editor = useRef<Editor | null>(null);
   /** The editor's Ask AI on the whole text, for the header's button. */
   const askWhole = useRef<(() => void) | null>(null);
+  // Called as Ask AI's button is made, not on every render: a render with the old button (Draft with AI's dialog
+  // closing) would use up the focus meant for the one the new text makes.
+  const entryNumber = entry?.number;
+  const takeAskAiFocus = useCallback((button: HTMLButtonElement | null) => askAiFocus.take(button, entryNumber), [entryNumber]);
   const askPausedId = useId();
   const shipsId = useId();
   // Changes not saved yet: the AI helpers edit the saved text, and accepting would lose them.
@@ -749,7 +755,7 @@ export function ChangelogForm({
               {/* Off, it still takes focus and says why: read with it (and its title on hover). */}
               <Button
                 id={ASK_AI_BUTTON}
-                ref={(button: HTMLButtonElement | null) => askAiFocus.take(button, entry?.number)}
+                ref={takeAskAiFocus}
                 type="button"
                 variant="outline"
                 size="sm"
@@ -2161,8 +2167,9 @@ export function ChangelogEntryActions({
             disabled={busy || locked}
             onClick={() =>
               run(draftChangelogEntry, "Drafted with AI", () => {
-                // Not there yet (the text was unwritten): it takes the focus once it shows.
-                if (!document.getElementById(ASK_AI_BUTTON)) askAiFocus.expect(number);
+                // Not there yet (the text was unwritten), or about to be made again (the new text remounts the form, often
+                // after the dialog has given the focus back to the button it replaces): it takes the focus as it shows.
+                askAiFocus.expect(number);
                 setDrafting(false);
               })
             }
