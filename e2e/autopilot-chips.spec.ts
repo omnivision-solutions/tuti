@@ -294,7 +294,7 @@ test("an edit the previous release wrote, while its pull request is analysed aga
     }
   });
   for (const done of ["requestfinished", "requestfailed"] as const) {
-    owner.on(done, (request) => {
+    owner.on(done as "requestfinished", (request) => {
       if (refresh(request)) {
         inFlight -= 1;
       }

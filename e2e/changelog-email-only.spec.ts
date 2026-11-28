@@ -18,12 +18,12 @@ test("an email-only entry: the team marks it in the editor, it's emailed to subs
   await api("/changelog-subscribers", { emails: [kim] });
   await api("/changelog", { title: "Pricing change", body: "Plans cost less from May." });
 
-  // In the editor's Goes to: all three on for a draft; the changelog list off, saved, makes it email only.
+  // In the editor's Published in: all three on for a draft; the changelog list off, saved, makes it email only.
   await team.goto(`/app/${slug}/changelog/1`);
-  const goesTo = team.getByRole("group", { name: "Goes to" });
+  const goesTo = team.getByRole("group", { name: "Published in" });
   const list = goesTo.getByRole("switch", { name: "Changelog list" });
   const popup = goesTo.getByRole("switch", { name: "Widget" });
-  const email = goesTo.getByRole("switch", { name: "Email announcement" });
+  const email = goesTo.getByRole("switch", { name: "Email" });
   for (const each of [list, popup, email]) {
     await expect(each).toBeChecked();
   }
@@ -65,14 +65,14 @@ test("an email-only entry: the team marks it in the editor, it's emailed to subs
   await visitor.goto("/changelog/1");
   await expect(visitor.getByRole("heading", { name: "Page not found" })).toBeVisible();
 
-  // Published: Goes to says what happened, nothing to change but the list.
+  // Published: Published in says what happened, nothing to change but the list.
   await team.reload();
   await expect(email).toBeChecked();
   await expect(email).toBeDisabled();
   await expect(email).toHaveAccessibleDescription("Sent to 1 subscriber");
 });
 
-test("an owner publishes a release note without email: Email announcement off, no subscriber is emailed, and the popup turned off and on comes back as it was", async ({ browser }, testInfo) => {
+test("an owner publishes a release note without email: Email off, no subscriber is emailed, and the popup turned off and on comes back as it was", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -83,10 +83,10 @@ test("an owner publishes a release note without email: Email announcement off, n
   await api("/changelog-subscribers", { emails: [kim] });
   await api("/changelog", { title: "Quiet fix", body: "Exports keep their dates." });
   await team.goto(`/app/${slug}/changelog/1`);
-  const goesTo = team.getByRole("group", { name: "Goes to" });
+  const goesTo = team.getByRole("group", { name: "Published in" });
   const list = goesTo.getByRole("switch", { name: "Changelog list" });
   const popup = goesTo.getByRole("switch", { name: "Widget" });
-  const email = goesTo.getByRole("switch", { name: "Email announcement" });
+  const email = goesTo.getByRole("switch", { name: "Email" });
   // The list off and on again: the popup is back on, as it was.
   await list.uncheck();
   await expect(popup).not.toBeChecked();

@@ -499,7 +499,7 @@ test("the changelog comes across from Featurebase: its entries on the portal at 
   await expect(visitor.getByRole("img", { name: "Dark mode", exact: true })).toBeVisible();
 
   // In the app: the entry Featurebase emailed says so, and isn't emailed again; the one it didn't, says that.
-  const email = owner.getByRole("group", { name: "Goes to" }).getByRole("switch", { name: "Email announcement" });
+  const email = owner.getByRole("group", { name: "Published in" }).getByRole("switch", { name: "Email" });
   await owner.goto(`/app/${slug}/changelog/1`);
   await expect(email).toBeChecked();
   await expect(email).toHaveAccessibleDescription("Sent from Featurebase");

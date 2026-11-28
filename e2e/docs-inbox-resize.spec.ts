@@ -348,7 +348,7 @@ for (const pane of [
       await expect(handle).toHaveAttribute("aria-valuemax", String(pane.max));
       await team.getByRole("button", { name: "Show details", exact: true }).click();
       await expect(handle).toHaveAttribute("aria-valuemax", String(initialMax));
-      const withSidebar = pane.name === "docs tree" ? 1200 : 1440;
+      const withSidebar = 1440;
       await team.setViewportSize({ width: withSidebar, height: 900 });
       await team.getByRole("button", { name: "Toggle Sidebar", exact: true }).first().click();
       await expect(team.locator('[data-slot="sidebar"][data-state]')).toHaveAttribute("data-state", "expanded");

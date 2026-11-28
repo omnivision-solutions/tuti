@@ -5,7 +5,7 @@ import { FAKE_FERNDESK_KEY } from "@tuti/testkit";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { createProject, moreView, newPerson, signUp } from "./helpers";
+import { apiFor, createProject, moreView, newPerson, signUp } from "./helpers";
 
 test("in the first run the team comes from Ferndesk: a bad key is refused, a good one brings its help center and changelog to the portal, its users as Users and its helpdesk's and AI conversations to the Inbox", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
@@ -148,17 +148,23 @@ test("changelog entries published in Ferndesk come as drafts by default; publish
   await expect(owner.getByRole("status").filter({ hasText: "Ferndesk" })).toContainText("2 changelog entries as drafts", { timeout: 15_000 });
 
   // Published in Ferndesk on 2 April 2024: old news, so it keeps that date and goes out quietly.
+  // Linked to a post, it still completes it: going out quietly only skips the popup and the subscribers' email.
+  const api = await apiFor(owner, slug);
+  await api("/posts", { board: "feature-requests", title: "Exports" });
+  await api("/changelog/1", { posts: [1] }, "PATCH");
   await owner.goto(`/app/${slug}/changelog/1`);
+  await expect(owner.getByRole("complementary", { name: "Entry settings" })).toContainText("Publishing completes linked posts.");
   // The popup and the email are off, each saying why.
-  const goesTo = owner.getByRole("group", { name: "Goes to" });
-  for (const name of ["Widget", "Email announcement"]) {
+  const goesTo = owner.getByRole("group", { name: "Published in" });
+  for (const name of ["Widget", "Email"]) {
     await expect(goesTo.getByRole("switch", { name })).not.toBeChecked();
     await expect(goesTo.getByRole("switch", { name })).toBeDisabled();
     await expect(goesTo.getByRole("switch", { name })).toHaveAccessibleDescription("Published 2 April 2024, before the import");
   }
   await owner.getByRole("button", { name: "Publish", exact: true }).click();
   const dialog = owner.getByRole("alertdialog");
-  await expect(dialog).toContainText("It goes on your portal and in your widget. Published before you imported it, it keeps that date (2 April 2024) and isn't announced.");
+  await expect(dialog).toContainText("It goes on your portal and in your widget, completes 1 post");
+  await expect(dialog).toContainText("Published before you imported it, it keeps that date (2 April 2024) and isn't announced.");
   await checkpoint(owner, "publish-imported-entry");
   await dialog.getByRole("button", { name: "Publish" }).click();
   await expect(owner.getByText("Published without announcing")).toBeVisible();
