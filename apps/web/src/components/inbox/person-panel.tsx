@@ -4,7 +4,8 @@ import { UserIcon, MessagesSquareIcon } from "lucide-react";
 import { DetailSection } from "@/components/inbox/detail-section";
 import type { ReactNode } from "react";
 
-import { inboxHref, inInboxView, type View } from "@/components/inbox/inbox-panes";
+import { inboxHref, type View } from "@/components/inbox/inbox-panes";
+import { inInboxView } from "@/server/operations/conversations";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { Badge } from "@/components/ui/badge";
 import { ConversationStatusText } from "./conversation-status";

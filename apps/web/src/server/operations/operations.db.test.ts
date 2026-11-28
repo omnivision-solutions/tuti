@@ -11,9 +11,9 @@ import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 import { DELETE, GET, PATCH, POST } from "@/app/api/v1/[...path]/route";
 import { createApiKey } from "@/server/api-keys";
 import { upsertProjectUser } from "@/server/project-users";
-import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
+import { actAs, callerAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 
-import { type OperationName, operations, type PublicOperation } from "./index";
+import { allOperations, type OperationName, operations, type PublicOperation } from "./index";
 import { errorStatuses } from "./openapi";
 
 /**
@@ -161,6 +161,9 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "comments.like": (f) => ({ number: 1, id: f.commentId, liked: true }),
   "posts.update": () => ({ number: 1, status: "planned" }),
   "conversations.views": () => ({}),
+  // Internal (the app's only, through tRPC): run through the caller as a teammate, below.
+  "inbox.list": () => ({ q: "matrix", overview: true }),
+  "inbox.newConversationEmails": () => ({ on: false }),
   "conversations.assignees": () => ({}),
   // People only: every key is refused (below).
   "conversations.upload": () => ({ filename: "matrix.pdf", contentType: "application/pdf", size: 1000 }),
@@ -690,7 +693,22 @@ async function everyTable(): Promise<Record<string, string>> {
 }
 
 test("every operation is in this matrix", () => {
-  expect(operations.map((o) => o.name).sort()).toEqual(Object.keys(cases).sort());
+  expect(allOperations.map((o) => o.name).sort()).toEqual(Object.keys(cases).sort());
+});
+
+/**
+ * Internal operations (the app's only: not in REST, MCP or the docs) through the caller, as the app calls them: the
+ * project's owner can run each, and a GET leaves every table as it was. Who's refused is the authorization matrix's.
+ */
+test.each(allOperations.filter((operation) => operation.internal).map((operation) => ({ name: operation.name, operation })))("$name (internal)", async ({ operation }) => {
+  const fixture = await createFixture("domain");
+  const [group, name] = operation.name.split(".") as [string, string];
+  const caller = (await callerAs(owner)) as unknown as Record<string, Record<string, (input: unknown) => Promise<unknown>>>;
+  const untouched = operation.method === "GET" ? await everyTable() : null;
+  await caller[group]![name]!({ project: project.slug, ...cases[operation.name as OperationName](fixture) });
+  if (untouched) {
+    expect(await everyTable()).toEqual(untouched);
+  }
 });
 
 test.each(operations.map((operation) => ({ name: operation.name, operation })))("$name", async ({ operation }) => {

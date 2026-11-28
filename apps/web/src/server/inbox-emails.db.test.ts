@@ -2,10 +2,9 @@ import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
 import { expect, test } from "vitest";
 
-import { addMember, actAs, createProject, signUp } from "@/test/helpers";
+import { addMember, callerAs, createProject, signUp } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
-import { setNewConversationEmails } from "./inbox";
 import { createConversation, replyToConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 
@@ -25,8 +24,7 @@ const to = (address: string) =>
 
 test("a new conversation is emailed to every team member with \"Email me new conversations\" on, which they can turn off", async () => {
   const { owner, project, member, key } = await setup();
-  actAs(member);
-  expect(await setNewConversationEmails(project.slug, false)).toEqual({});
+  expect(await (await callerAs(member)).inbox.newConversationEmails({ project: project.slug, on: false })).toEqual({ on: false });
 
   await call(createConversation, key, { user: { id: "user-42", name: "Sam" }, subject: "Export is broken", body: "The button does nothing." });
   expect(to(owner.email)).toEqual(["New conversation: Export is broken"]);
