@@ -319,7 +319,7 @@ test("Publish now on an update decided between the button's read and the act say
   expect(await click(c.id, signAutopilotButton(owner.id, c.id, `publish:${a}`)!)).toBe(`/app/${project.slug}/autopilot/activity/${c.id}?done=already&button=publish&update=${a}`);
 });
 
-test("Publish now whose update went before a failure counts it as done", async () => {
+test("the button counts an update as done when Publish now fails after it went (`saved: true`)", async () => {
   const c = await change();
   vi.spyOn(log, "error").mockImplementation(() => {});
   // The operation fails after the update went (`saved: true`).
