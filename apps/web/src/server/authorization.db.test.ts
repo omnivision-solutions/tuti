@@ -1038,6 +1038,9 @@ beforeAll(async () => {
   await prisma.ssoIdentity.create({
     data: { projectId: otherProject.id, externalId: "ext-1", userId: users.ssoUser.id },
   });
+  // Its own conversation #1: a call naming it (another project's slug) that skipped the project check would find one,
+  // so it's the check that refuses it, not a 404 for a number it hasn't got.
+  await prisma.conversation.create({ data: { projectId: otherProject.id, number: 1, subject: "Theirs", origin: "API", email: "e2e-theirs@example.com" } });
 });
 
 afterAll(() => Promise.all([s3.close(), receiver.close(), model.close(), dns.close(), site.close(), githubFake.close(), stripe.close(), featurebaseFake.close(), ses.close(), browserUse.close()]));
@@ -1441,8 +1444,26 @@ test.each(cases)("$name", async ({ name, rule }) => {
  * by a read and write key. Screens add theirs here as they move onto the router (docs/plan.md, "One way in").
  */
 type Caller = Awaited<ReturnType<typeof callerAs>>;
-/** `peopleOnly`: a key, even a read and write one, is refused (`people_only`). */
-type ProcedureCase = Omit<Case, "call" | "takesIds"> & { scope: "read" | "write"; peopleOnly?: boolean; call: (caller: Caller, slug: string) => Promise<unknown> };
+/**
+ * `peopleOnly`: a key, even a read and write one, is refused (`people_only`). `seed`: what the call acts on, put there
+ * before the refused calls (so the snapshot shows they left it) and again before the read and write key's call (after
+ * the allowed one took it away).
+ */
+type ProcedureCase = Omit<Case, "call" | "takesIds"> & {
+  scope: "read" | "write";
+  peopleOnly?: boolean;
+  seed?: (fixture: Fixture) => Promise<unknown>;
+  call: (caller: Caller, slug: string) => Promise<unknown>;
+};
+
+/** Conversation #1 linked to post #1, for Unlink. */
+const linkFirstPost = async (fixture: Fixture) => {
+  const [conversation, post] = await Promise.all([
+    prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId: fixture.projectId, number: 1 } }, select: { id: true } }),
+    prisma.post.findUniqueOrThrow({ where: { projectId_number: { projectId: fixture.projectId, number: 1 } }, select: { id: true } }),
+  ]);
+  await prisma.conversationPost.createMany({ data: [{ conversationId: conversation.id, postId: post.id }], skipDuplicates: true });
+};
 
 const procedures: { [N in OperationName]?: ProcedureCase } = {
   "aiFirst.get": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.aiFirst.get({ project: slug }) },
@@ -1464,7 +1485,7 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   "conversations.activity": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.conversations.activity({ project: slug, number: 1 }) },
   "inbox.findPosts": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.findPosts({ project: slug, q: "Post" }) },
   "conversations.linkPost": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.linkPost({ project: slug, number: 1, post: 1 }) },
-  "conversations.unlinkPost": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.unlinkPost({ project: slug, number: 1, post: 1 }) },
+  "conversations.unlinkPost": { allowed: "MEMBER", scope: "write", seed: linkFirstPost, call: (caller, slug) => caller.conversations.unlinkPost({ project: slug, number: 1, post: 1 }) },
   "conversations.update": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.update({ project: slug, number: 1, status: "closed" }) },
   // Twice: the teammate's call and the read and write key's.
   "conversations.summarize": {
@@ -1508,6 +1529,7 @@ test.each(Object.entries(procedures).map(([name, rule]) => ({ name, rule: rule! 
   };
   // Another project's key, naming this project.
   const otherKey = { apiKeyId: (await prisma.apiKey.create({ data: { projectId: otherProject.id, name: "Other", scope: "WRITE", keyHash: crypto.randomUUID(), prefix: "tuti_o", createdById: users.outsider.id } })).id };
+  await rule.seed?.(fixture);
   const before = await snapshot();
 
   for (const actor of refusedActors({ ...rule, call: async () => {} })) {
@@ -1526,11 +1548,14 @@ test.each(Object.entries(procedures).map(([name, rule]) => ({ name, rule: rule! 
   const reader = await signUp("Portal reader");
   await prisma.teamMember.create({ data: { projectId: fixture.projectId, userId: reader.id, role: "OWNER" } });
   await onPortal(reader, { id: fixture.projectId, slug: fixture.slug });
+  // As the portal left things: a refused call changes nothing of it.
+  const asPortal = await snapshot();
   const asReader = await procedureOutcome(rule.call(await callerAs(reader), fixture.slug));
   if (rule.allowed === "signed in" || rule.allowed === "public") {
     expect(asReader).toBe("ok");
   } else {
     expect(asReader).toMatch(REFUSED);
+    expect(await snapshot()).toEqual(asPortal);
   }
   request.host = "";
 
@@ -1539,5 +1564,6 @@ test.each(Object.entries(procedures).map(([name, rule]) => ({ name, rule: rule! 
   if (rule.scope === "read") {
     expect(await procedureOutcome(rule.call(await callerAs(readKey), fixture.slug))).toBe("ok");
   }
+  await rule.seed?.(fixture);
   expect(await procedureOutcome(rule.call(await callerAs(writeKey), fixture.slug))).toBe(rule.peopleOnly ? "FORBIDDEN" : "ok");
 });
