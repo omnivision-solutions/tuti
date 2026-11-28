@@ -7,8 +7,8 @@ import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest"
 const generateImage = vi.fn();
 vi.mock("@/server/images", () => ({ generateImage }));
 vi.mock("@/server/rewrite", () => ({}));
-vi.mock("@/server/media", () => ({
-  uploadStatus: async (id: string) => ({ status: "READY", src: `https://media.example/${id}-full.png`, download: "x", urls: { [`m/${id}/960.webp`]: `https://media.example/${id}-960.webp` }, width: 1000, height: 500 }),
+vi.mock("@/components/trpc", () => ({
+  useTRPCClient: () => ({ uploads: { status: { query: async ({ mediaId: id }: { mediaId: string }) => ({ status: "READY", src: `https://media.example/${id}-full.png`, download: "x", urls: { [`m/${id}/960.webp`]: `https://media.example/${id}-960.webp` }, width: 1000, height: 500 }) } } }),
 }));
 const toast = Object.assign(vi.fn(), { error: vi.fn() });
 vi.mock("sonner", () => ({ toast }));

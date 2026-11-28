@@ -10,8 +10,10 @@ import { conversationCompanies } from "../inbox-companies";
 import { inboxStats } from "../inbox-stats";
 import { searchPosts } from "../post-lists";
 import {
+  conversationNumber,
   conversationPerson,
   conversationsMatching,
+  findConversation,
   latestMessages,
   matchedMessages,
   MAX_SEARCH_LENGTH,
@@ -196,4 +198,26 @@ export const findPostsToLink = defineOperation({
   run: async ({ projectId }, { q }) => ({
     posts: (await searchPosts(projectId, q)).map(({ id, number, title, voteCount }) => ({ id, number, title, voteCount })),
   }),
+});
+
+/**
+ * The customer's language, as the conversation has it now: for the reply box after a reply couldn't be translated (its
+ * page may have been loaded before the project translated), so the failure shows with "Send in English".
+ */
+export const getConversationLanguage = defineOperation({
+  name: "inbox.language",
+  title: "Get a conversation's language",
+  summary: "The language a conversation's customer writes in, where it's known.",
+  method: "GET",
+  internal: true,
+  scope: "read",
+  access: "team",
+  errors: [404],
+  input: z.object({ number: conversationNumber }),
+  output: z.object({ language: z.string().nullable() }),
+  run: async ({ projectId }, { number }) => {
+    // Visible only as the Inbox shows it (findConversation: not past the plan's history).
+    const { id } = await findConversation(projectId, number);
+    return prisma.conversation.findUniqueOrThrow({ where: { id }, select: { language: true } });
+  },
 });

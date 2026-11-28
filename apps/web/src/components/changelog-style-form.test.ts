@@ -7,7 +7,7 @@ vi.mock("@/server/images", () => ({}));
 vi.mock("@/server/rewrite", () => ({}));
 vi.mock("@/server/branding", () => ({}));
 vi.mock("@/server/widget", () => ({}));
-vi.mock("@/server/media", () => ({}));
+vi.mock("@/components/trpc", () => ({ useTRPCClient: () => ({}) }));
 
 const { ChangelogStyleForm, changelogStyleSaved } = await import("./changelog");
 

@@ -6,7 +6,8 @@ import { type Reader, SIGNED_OUT } from "@/lib/read-access";
 import { visibleArticleSql, visibleReferenceSql } from "@/lib/reader-groups";
 
 import { docsContents, everyCollection, translatedInto } from "./docs-queries";
-import { canReadPortal, currentReader, readerOf } from "./portal-access";
+import { currentReader, readerOf } from "./portal-access";
+import { canReadPortal } from "@/server/auth/portal-readers";
 import { portalLanguage } from "./portal-base";
 import { searchTranslatedDocs } from "./translated-search";
 

@@ -20,6 +20,7 @@ CI runs all of them on every PR. Run the ones your change touches before pushing
 ## Tests
 
 - Every change that alters behaviour comes with a test that fails without it. Bug fixes start with that failing test.
+- A test earns its CI time: before adding or keeping one, and before fixing a flaky one, follow `.claude/skills/test-audit/SKILL.md` (one owner per contract, no test-only seams; flakes fixed at their cause, never with timeouts, retries or sleeps).
 - Tests are deterministic and offline. External services get a local fake (see `@tuti/testkit`), never a real key; background jobs run with `JOBS_DRIVER=inline`.
 - Database tests get a fresh database per file, so they need no cleanup. Use the helpers in `apps/web/src/test/helpers.ts` (`signUp`, `actAs`, `createProject`, …) and call server actions directly. Never point tests at a shared or production database.
 - A new server action goes into the authorization matrix (`apps/web/src/server/authorization.db.test.ts`); typecheck fails until it does.

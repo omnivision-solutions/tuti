@@ -8,7 +8,7 @@ import type { WidgetIcon } from "@/lib/widget-icons";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {} }) }));
 vi.mock("@/server/widget", () => ({ saveWidgetSettings: vi.fn() }));
 vi.mock("@/server/branding", () => ({}));
-vi.mock("@/server/media", () => ({}));
+vi.mock("@/components/trpc", () => ({ useTRPCClient: () => ({}) }));
 
 const { saveWidgetSettings } = await import("@/server/widget");
 const { WidgetSettings } = await import("./widget-settings");

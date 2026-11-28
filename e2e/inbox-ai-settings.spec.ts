@@ -5,7 +5,7 @@ import pg from "pg";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";
 import { expect, test } from "./fixtures";
-import { apiFor, createProject, signUp } from "./helpers";
+import { apiFor, createProject, signUp, trpcRequest } from "./helpers";
 import { modelRequests, nextModelReply } from "./model";
 import { similar } from "./openai";
 
@@ -118,7 +118,9 @@ test("an owner sets the Inbox's AI model and instructions for drafts, and a repl
   // A reply drafted with AI: the model is asked with the team's instructions, on the level's model for drafts.
   await nextModelReply(JSON.stringify({ answer: "Billing → Invoices → Export downloads them. Did that help?", sources: ["s1"] }), question);
   await owner.goto(`/app/${slug}/inbox/1`);
+  const drafting = trpcRequest(owner, "conversations.suggestReply");
   await owner.getByRole("button", { name: "Draft with AI" }).click();
+  await drafting;
   await expect(owner.getByRole("textbox", { name: "Reply" })).toHaveValue(/^Billing → Invoices → Export downloads them\. Did that help\?\n\n- Exporting invoices: /);
   const asked = (await modelRequests()).filter((request) => request.user.includes(question));
   expect(asked).toHaveLength(1);

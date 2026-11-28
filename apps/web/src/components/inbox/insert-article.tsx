@@ -6,14 +6,14 @@ import { type RefObject, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { findArticlesToInsert } from "@/server/inbox";
+import { errorMessage, useTRPCClient } from "@/components/trpc";
 
 export type InsertableArticle = { slug: string; title: string; url: string };
 
 const SEARCH_DELAY_MS = 150;
 
 /**
- * "Insert article" in a reply: a search over the articles the conversation's person can be sent (findArticlesToInsert);
+ * "Insert article" in a reply: a search over the articles the conversation's person can be sent (conversations.articles);
  * ↑/↓ choose, Enter or a click picks one for `onPick`. Closing puts the focus back in the reply box (`finalFocus`).
  */
 export function InsertArticleDialog({
@@ -66,6 +66,7 @@ function Search({
   // Why the last search found nothing (it didn't reach the server, or the server said no): not "no match".
   const [failed, setFailed] = useState<string>();
   const [active, setActive] = useState(0);
+  const trpc = useTRPCClient();
   const latest = useRef(0);
   const input = useRef<HTMLInputElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -85,15 +86,16 @@ function Search({
     setSearching(true);
     timer.current = setTimeout(async () => {
       try {
-        const result = await findArticlesToInsert(projectSlug, number, value);
+        const result = await trpc.conversations.articles.query({ project: projectSlug, number, q: value.trim().slice(0, 200) });
         if (asked === latest.current) {
-          setFound(result.articles ?? []);
-          // The server's own words (who may search), for people.
-          setFailed(result.error);
+          setFound(result.articles);
+          setFailed(undefined);
         }
-      } catch {
+      } catch (error) {
         if (asked === latest.current) {
-          setFailed("Couldn't search your articles");
+          setFound([]);
+          // The server's own words (who may search), for people; else it didn't reach it.
+          setFailed(errorMessage(error, "Couldn't search your articles"));
         }
       } finally {
         if (asked === latest.current) {

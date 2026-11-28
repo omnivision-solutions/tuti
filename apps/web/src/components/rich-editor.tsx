@@ -81,6 +81,7 @@ import { type GeneratedImage, ImageGenerator, type ImageEditing, type KeptTries,
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { MIN_GENERATED_SIDE } from "@/lib/image-limits";
+import { useTRPCClient } from "@/components/trpc";
 import { uploadFile, uploadImage, type UploadFailure } from "@/lib/upload-image";
 
 /** What the file picker offers for attachments and videos (the server checks each file too). */
@@ -260,6 +261,7 @@ export function RichEditor({
   /** Someone tried to submit while images were uploading. */
   const [held, setHeld] = useState(false);
   const canUpload = !!uploads;
+  const trpc = useTRPCClient();
   // Files are attached to articles only.
   const canAttach = profile === "article" && !!uploads;
   // The image node reads these as it draws, so uploads add their URLs here first.
@@ -283,7 +285,7 @@ export function RichEditor({
     for (const file of files) {
       setUploading((n) => n + 1);
       // A request that fails outright (offline) is an error too, so the count goes back down.
-      const result = await uploadImage(uploads.projectSlug, file).catch((): UploadFailure => ({ error: "", reason: "failed" }));
+      const result = await uploadImage(trpc, uploads.projectSlug, file).catch((): UploadFailure => ({ error: "", reason: "failed" }));
       setUploading((n) => n - 1);
       if ("error" in result) {
         failed(result, file);
@@ -300,7 +302,7 @@ export function RichEditor({
     for (const file of files) {
       setUploading((n) => n + 1);
       setAttaching((n) => n + 1);
-      const result = await uploadFile(uploads.projectSlug, file).catch((): UploadFailure => ({ error: "", reason: "failed" }));
+      const result = await uploadFile(trpc, uploads.projectSlug, file).catch((): UploadFailure => ({ error: "", reason: "failed" }));
       setUploading((n) => n - 1);
       setAttaching((n) => n - 1);
       if ("error" in result) {

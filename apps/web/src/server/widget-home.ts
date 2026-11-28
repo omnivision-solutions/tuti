@@ -8,7 +8,7 @@ import type { Fresh } from "@/lib/whats-new";
 
 import { changelogSeenAt, freshSince } from "./operations/changelog-seen";
 import { docsContents, popularArticles } from "./docs-queries";
-import { canReadPortal } from "./portal-access";
+import { canReadPortal } from "@/server/auth/portal-readers";
 import { postViewer, visiblePostsSql } from "./post-visibility";
 import { ROADMAP } from "./operations/read";
 import { sessionIn } from "./session";

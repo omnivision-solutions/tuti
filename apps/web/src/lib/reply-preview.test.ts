@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { previewAfter, previewToShow, type ReplyPreview, wantsPreview } from "./reply-preview";
+import { previewAfter, previewToShow, type ReplyPreview, wantsPreview, withoutAdvice } from "./reply-preview";
 
 test("a failed text isn't asked again while its failure shows; edited away and back, it is", () => {
   const failed: ReplyPreview = { for: "Thanks!", failed: "The translation provider didn't answer", language: "de" };
@@ -64,4 +64,11 @@ test("a failure of no known language is shown until the customer's language is k
 test("previews are asked for only on the Reply tab: on Note, the reply's draft isn't previewed unseen", () => {
   expect(wantsPreview(undefined, "Thanks!", false, false)).toBe(false);
   expect(wantsPreview(undefined, "Thanks!", false, true)).toBe(true);
+});
+
+test("a reply that couldn't be translated says why, without the API's advice to send it untranslated", () => {
+  expect(withoutAdvice("The translation provider didn't answer. Try again in a moment. Send it untranslated (untranslated: true), or try again.")).toBe(
+    "The translation provider didn't answer. Try again in a moment.",
+  );
+  expect(withoutAdvice("Out of credits.")).toBe("Out of credits.");
 });
