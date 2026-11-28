@@ -37,3 +37,6 @@ export function previewAfter(shown: ReplyPreview | undefined, next: ReplyPreview
  */
 export const wantsPreview = (shown: ReplyPreview | undefined, text: string | undefined, sending = false, onReply = true) =>
   !!text && onReply && !sending && !shown;
+
+/** A reply that couldn't be translated, as the composer says why: without the API's advice (it has "Send in English"). */
+export const withoutAdvice = (message: string) => message.replace(/ Send it untranslated.*$/, "");

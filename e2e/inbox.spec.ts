@@ -191,7 +191,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(meta(owner)).toContainText("Waiting on user");
 
   // A file that can't start uploading (the server unreachable) says so, and can be removed.
-  await owner.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await owner.route("**/*", (route) => (isSave(route.request()) ? route.abort() : route.fallback()));
   await owner.locator('input[type="file"]').setInputFiles({ name: "broken.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF") });
   await expect(owner.getByRole("list", { name: "Files to send" })).toContainText(/broken\.pdf\s*Couldn't upload it/);
   await owner.unroute("**/*");
@@ -199,7 +199,9 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByRole("list", { name: "Files to send" })).toHaveCount(0);
 
   // A reply with a file: it uploads as it's attached, then goes with the reply.
+  const uploading = trpcRequest(owner, "conversations.upload");
   await owner.locator('input[type="file"]').setInputFiles({ name: "steps.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 the steps") });
+  await uploading;
   await expect(owner.getByRole("list", { name: "Files to send" })).toContainText(/steps\.pdf\s*1 KB/);
   await owner.getByRole("textbox", { name: "Reply" }).fill("These are the steps.");
   await owner.getByRole("button", { name: "Send", exact: true }).click();
@@ -1300,17 +1302,20 @@ test("a reply sent as another conversation opens isn't kept as unsent", async ({
   // The reply is held on its way until the test lets it go: the team moves on while it's still sending.
   let release!: () => void;
   const held = new Promise<void>((resolve) => (release = resolve));
+  const replying = (url: string) => new URL(url).pathname.split("/api/trpc/")[1]?.split(",").includes("conversations.reply") ?? false;
   await owner.route("**/*", async (route) => {
-    if (route.request().headers()["next-action"]) {
+    if (replying(route.request().url())) {
       await held;
     }
     await route.fallback();
   });
-  const sent = owner.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
+  const sending = trpcRequest(owner, "conversations.reply");
+  const sent = owner.waitForResponse((response) => replying(response.url()));
   await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await sending;
   await expect(owner.getByRole("button", { name: "Sending…" })).toBeVisible();
   await other.click();
-  // Still sending: the other conversation opens only once the reply has gone (the router waits for it).
+  // Still sending: the other conversation opens only once the reply has gone (the router's navigation waits for it).
   await expect(owner.getByRole("button", { name: "Sending…" })).toBeVisible();
   release();
   await sent;
@@ -1855,7 +1860,7 @@ test("a reply started before the user wrote again doesn't close it: what the tea
   await expect(meta(owner)).toContainText("Waiting on user");
 
   // A file that couldn't upload, left in the list, isn't a reply started: Sam writing again is seen, and the next reply closes.
-  await owner.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await owner.route("**/*", (route) => (isSave(route.request()) ? route.abort() : route.fallback()));
   await owner.locator('input[type="file"]').setInputFiles({ name: "broken.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF") });
   await expect(owner.getByRole("list", { name: "Files to send" })).toContainText(/broken\.pdf\s*Couldn't upload it/);
   await owner.unroute("**/*");
@@ -2446,7 +2451,8 @@ test("Insert article: a search that doesn't reach the server, or that the server
   const status = dialog.getByRole("status");
 
   // Unreachable: said so, and Try again finds it once it's back.
-  await owner.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  const searching = (route: { request: () => { url: () => string } }) => new URL(route.request().url()).pathname.split("/api/trpc/")[1]?.split(",").includes("conversations.articles") ?? false;
+  await owner.route("**/*", (route) => (searching(route) ? route.abort() : route.fallback()));
   await search.fill("export");
   await expect(status).toHaveText("Couldn't search your articles. Try again");
   await checkpoint(owner, "inbox-insert-article-failed");
@@ -2457,14 +2463,13 @@ test("Insert article: a search that doesn't reach the server, or that the server
   await expect(search).toBeFocused();
 
   // Refused (asked of a project they're not on, as for someone taken off the team): the server's words, with Try again.
-  await owner.route("**/*", (route) => {
-    const request = route.request();
-    return request.headers()["next-action"]
-      ? route.fallback({ postData: request.postData()?.replace(`"${slug}"`, `"${slug}-elsewhere"`) })
-      : route.fallback();
-  });
+  await owner.route("**/*", (route) =>
+    searching(route) ? route.fallback({ url: route.request().url().replace(`%22${slug}%22`, `%22${slug}-elsewhere%22`) }) : route.fallback(),
+  );
+  const asking = trpcRequest(owner, "conversations.articles");
   await search.fill("exporting");
-  await expect(status).toHaveText("Only the project's team can insert articles. Try again");
+  await asking;
+  await expect(status).toHaveText("No such project, or it isn't yours. Try again");
   await owner.unroute("**/*");
   await owner.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);

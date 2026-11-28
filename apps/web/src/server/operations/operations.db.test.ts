@@ -170,6 +170,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "inbox.list": () => ({ q: "matrix", overview: true }),
   "inbox.newConversationEmails": () => ({ on: false }),
   "live.inbox": () => ({}),
+  "inbox.language": () => ({ number: 1 }),
   "conversations.assignees": () => ({}),
   // People only: every key is refused (below).
   "conversations.upload": () => ({ filename: "matrix.pdf", contentType: "application/pdf", size: 1000 }),
