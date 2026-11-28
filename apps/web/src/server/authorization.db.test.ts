@@ -639,9 +639,6 @@ const matrix: Matrix = {
     },
   },
   "portal-settings": {
-    setPortalAccess: { allowed: "ADMIN", call: (slug) => portalSettings.setPortalAccess(slug, "private") },
-    addPortalReaders: { allowed: "ADMIN", call: (slug) => portalSettings.addPortalReaders(slug, {}, form({ emails: "e2e-matrix-reader@example.com" })) },
-    removePortalReader: { allowed: "ADMIN", call: (slug) => portalSettings.removePortalReader(slug, "e2e-reader@example.com") },
     saveRedirect: { allowed: "ADMIN", call: (slug) => portalSettings.saveRedirect(slug, {}, form({ from: "/hc/en-us/articles/1", to: "/docs" })) },
     removeRedirect: { allowed: "ADMIN", takesIds: true, call: (slug, f) => portalSettings.removeRedirect(slug, f.redirectId) },
     saveCustomDomain: { allowed: "ADMIN", call: (slug) => portalSettings.saveCustomDomain(slug, {}, form({ hostname: `help.${slug}.example.org` })) },
@@ -1486,6 +1483,16 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   "portal.access": { allowed: "public", scope: "read", call: (caller, slug) => caller.portal.access({ project: slug }) },
   "portal.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.portal.get({ project: slug }) },
   "portal.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.portal.update({ project: slug, home: "docs" }) },
+  "portalReaders.add": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.portalReaders.add({ project: slug, emails: ["e2e-matrix-reader@example.com"] }) },
+  "portalReaders.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.portalReaders.list({ project: slug }) },
+  // The fixture's reader, by address; put back before the key's call, after the allowed one removed it.
+  "portalReaders.remove": {
+    allowed: "ADMIN",
+    scope: "write",
+    takesIds: true,
+    seed: (f) => prisma.portalReader.upsert({ where: { projectId_email: { projectId: f.projectId, email: "e2e-reader@example.com" } }, create: { projectId: f.projectId, email: "e2e-reader@example.com" }, update: {} }),
+    call: (caller, slug) => caller.portalReaders.remove({ project: slug, email: "e2e-reader@example.com" }),
+  },
   // Similar posts while typing a new one: anyone who can read the portal (a POST: its check may spend credits).
   "posts.similar": { allowed: "public", scope: "read", call: (caller, slug) => caller.posts.similar({ project: slug, title: "Dark mode please" }) },
   "project.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.project.get({ project: slug }) },
@@ -1494,6 +1501,7 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   "settings.access": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.settings.access({ project: slug }) },
   "settings.asking": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.settings.asking({ project: slug }) },
   "settings.groups": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.settings.groups({ project: slug }) },
+  "settings.portal": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.settings.portal({ project: slug }) },
   "spam.get": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.spam.get({ project: slug }) },
   "spam.try": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.spam.try({ project: slug, name: "Kim", sender: "e2e-matrix-kim@example.com", subject: "Hi", text: "Hello" }) },
   // Removing a rule by its id: the fixture's, put back before each call that may remove it.

@@ -38,7 +38,10 @@ test("the team makes the portal private: visitors get sign-in, crawlers stay out
   await owner.keyboard.press("Escape");
   await checkpoint(owner, "settings-access-public");
   await access.click();
+  // Saved through tRPC (portal.update), not a server action.
+  const accessSaved = owner.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/api/trpc/portal.update"));
   await owner.getByRole("option", { name: "Private" }).click();
+  await accessSaved;
   await expect(owner.getByText("Portal is now private")).toBeVisible();
   await expect(access).toHaveAccessibleDescription("Only your team, single sign-on users and the readers below.");
   await more.click();
@@ -122,7 +125,10 @@ test("the team lets someone outside it read the private portal by email: they're
   await expect(add).toContainText("People outside your team who may read the portal, or a whole domain like @acme.com for everyone there.");
   await add.getByLabel("Email addresses").fill(email.toUpperCase());
   await checkpoint(owner, "settings-portal-add-readers", { fullPage: false });
+  // Saved through tRPC (portalReaders.add), not a server action.
+  const readersSaved = owner.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/api/trpc/portalReaders.add"));
   await add.getByRole("button", { name: "Add readers" }).click();
+  await readersSaved;
   await expect(owner.getByText("1 reader added; we emailed them a link")).toBeVisible();
   await expect(add).toBeHidden();
   await expect(readers.getByRole("listitem")).toHaveText([new RegExp(`^${email}Added .* by Olive Owner`)]);
@@ -224,7 +230,10 @@ test("the team lets someone outside it read the private portal by email: they're
   await owner.getByRole("menuitem", { name: "Remove" }).click();
   const confirm = owner.getByRole("alertdialog");
   await expect(confirm).toContainText("They can't read the portal until you add them again.");
+  // Saved through tRPC (portalReaders.remove), not a server action.
+  const readerRemoved = owner.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/api/trpc/portalReaders.remove"));
   await confirm.getByRole("button", { name: "Remove" }).click();
+  await readerRemoved;
   await expect(owner.getByText(`${email} removed`)).toBeVisible();
   await expect(owner.getByRole("heading", { name: "Readers 1", exact: true })).toBeVisible();
   await reader.goto("/roadmap");

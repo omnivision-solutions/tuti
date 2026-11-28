@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { SettingRow } from "@/components/settings-card";
@@ -8,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { UpgradeDialog } from "@/components/upgrade-dialog";
 import type { UpgradePrompt } from "@/lib/upgrade-prompt";
 import type { PortalAccess } from "@/server/operations/portal";
-import { setPortalAccess } from "@/server/portal-settings";
+import { errorMessage, useTRPCClient } from "@/components/trpc";
 
 const ACCESS: Record<PortalAccess, string> = {
   public: "Public",
@@ -27,6 +28,8 @@ const KEPT_OUT = "Everyone else gets the sign-in page; sign-up is off and search
 /** Settings → Access's row. `upgrade`: the plan has no private portal, so choosing Private opens the upgrade prompt and the portal stays as it is. */
 export function PortalAccessSelect({ projectSlug, access, upgrade }: { projectSlug: string; access: PortalAccess; upgrade?: UpgradePrompt }) {
   const [pending, startTransition] = useTransition();
+  const trpc = useTRPCClient();
+  const router = useRouter();
   const [upgrading, setUpgrading] = useState(false);
   const needsId = useId();
   return (
@@ -46,12 +49,16 @@ export function PortalAccessSelect({ projectSlug, access, upgrade }: { projectSl
             return;
           }
           startTransition(async () => {
-            const result = await setPortalAccess(projectSlug, String(value));
-            if (result.error) {
-              toast.error(result.error);
-            } else {
-              toast.success(value === "private" ? "Portal is now private" : "Portal is now public");
+            // Off while it saves (the select is disabled), so a second pick can't overlap this one.
+            try {
+              await trpc.portal.update.mutate({ project: projectSlug, access: value as "public" | "private" });
+            } catch (error) {
+              toast.error(errorMessage(error));
+              return;
             }
+            toast.success(value === "private" ? "Portal is now private" : "Portal is now public");
+            // The page shows the readers once it's private.
+            router.refresh();
           });
         }}
       >

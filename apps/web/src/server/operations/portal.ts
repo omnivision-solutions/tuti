@@ -1,7 +1,7 @@
 import { type Prisma, prisma } from "@tuti/db";
 import { emailConfigured, portalReaderEmail, sendEmail } from "@tuti/email";
 import { emailBrand, lockProject, projectSender, readerEmailLanguage } from "@tuti/jobs";
-import { log } from "@tuti/shared";
+import { log, planIncludes } from "@tuti/shared";
 import { z } from "zod";
 
 import { portalAddress } from "@/server/custom-domains";
@@ -38,6 +38,26 @@ const portalOutput = z
     home: z.enum(HOMES).describe(HOME_LINE).meta({ examples: ["feedback"] }),
   })
   .meta({ id: "PortalSettings", description: "Who may read the portal, and what its home page opens" });
+
+/**
+ * Settings → Access, page-shaped (internal): who may read the portal, and whether the plan includes private portals
+ * (else making it private opens the upgrade prompt, and a portal made private on a plan that had them says what happens).
+ */
+export const getAccessSettings = defineOperation({
+  name: "settings.portal",
+  title: "Get the access settings",
+  summary: "Settings → Access: who may read the portal, and whether the plan includes private portals.",
+  method: "GET",
+  internal: true,
+  scope: "read",
+  access: "admin",
+  input: z.object({}),
+  output: z.object({ access: z.enum(ACCESS), privatePortal: z.boolean() }),
+  run: async ({ projectId }) => {
+    const [{ access }, { plan }] = await Promise.all([portalAccess(projectId), prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } })]);
+    return { access, privatePortal: planIncludes(plan, "privatePortal") };
+  },
+});
 
 export const getPortal = defineOperation({
   name: "portal.get",

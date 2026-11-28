@@ -267,6 +267,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "settings.access": () => ({}),
   "settings.asking": () => ({}),
   "settings.groups": () => ({}),
+  "settings.portal": () => ({}),
   "site.get": () => ({}),
   "site.remove": () => ({}),
   // Like domain.set: admins only in the app.
