@@ -917,6 +917,8 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   await checkpoint(visitor, "portal-board-rows");
   // Under the list, how many are still to come, and a way to share one: it opens New idea's dialog.
   await expect(main.getByText("That's all 3 ideas still to come in Feature requests.")).toBeVisible();
+  // The board's name in the sentence marked with its own language (a translation's, or as here the team's).
+  await expect(main.getByText("That's all 3 ideas still to come in Feature requests.").locator("[lang=en]")).toHaveText("Feature requests");
   await main.getByRole("button", { name: "Share yours" }).click();
   await expect(visitor.getByRole("dialog", { name: "Share an idea" })).toBeVisible();
   await visitor.getByRole("dialog").getByRole("button", { name: "Close" }).click();
@@ -1103,9 +1105,10 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
   const sidebar = ada.getByRole("complementary", { name: "About this board" });
   const boards = sidebar.getByRole("navigation", { name: "Boards" });
   await expect(boards.getByRole("link")).toHaveCount(2);
-  await expect(boards.getByRole("link").first()).toHaveAccessibleName("Feature requests, 3 open ideas");
-  await expect(boards.getByRole("link").last()).toHaveAccessibleName("Bug reports, 1 open idea");
-  await expect(boards.getByRole("link").first()).toHaveText("Feature requests3");
+  // Named by the board (in its own language), then its count. (Chrome puts a space before the comma: the count's a block of its own.)
+  await expect(boards.getByRole("link").first()).toHaveAccessibleName(/^Feature requests ?, 3 open ideas$/);
+  await expect(boards.getByRole("link").last()).toHaveAccessibleName(/^Bug reports ?, 1 open idea$/);
+  await expect(boards.getByRole("link").first().locator("[aria-hidden]")).toHaveText("3");
   await expect(boards.getByRole("link", { name: "Feature requests" })).toHaveAttribute("aria-current", "page");
   await expect(boards.getByRole("link", { name: "Bug reports" })).not.toHaveAttribute("aria-current");
   // The header's row of boards is the sidebar's on wide screens: only one is shown.

@@ -33,6 +33,7 @@ import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains
 import { portalSite, SHARE_IMAGE } from "@/server/portal-metadata";
 import { getSession } from "@/server/session";
 import { PORTAL_BOARDS } from "@/server/post-visibility";
+import { boardNames } from "@/server/portal-labels";
 
 /**
  * What every portal page starts from: the portal's search listing (Customize → SEO), its address (the base of every
@@ -79,7 +80,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   const [project, brand] = await Promise.all([
     prisma.project.findUnique({
       where: { slug },
-      select: { id: true, name: true, widgetOnPortal: true, boards: { where: PORTAL_BOARDS, orderBy: { createdAt: "asc" }, select: { slug: true, name: true } } },
+      select: { id: true, name: true, widgetOnPortal: true, boards: { where: PORTAL_BOARDS, orderBy: { createdAt: "asc" }, select: { slug: true, name: true, description: true, translations: true } } },
     }),
     portalSite(slug).then((site) => site?.brand),
   ]);
@@ -105,6 +106,8 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   // proxy.ts keeps them from the rest; this only hides the parts. Whoever proxy.ts lets in reads them:
   // signed in here, or the reader of Customize's preview or the widget (mayRead), with no session here.
   const canRead = await mayRead(project.id);
+  // Only what the browser shows of each board: its other languages' names (some not live yet) stay on the server.
+  const boards = project.boards.map(await boardNames()).map(({ slug, name, lang }) => ({ slug, name, lang }));
   // An announcement they haven't seen anywhere (here, or in the widget on any device).
   const newChangelog = canRead && !!session && (await hasUnseenAnnouncement(project.id, session.user.id, await currentReader(project.id)));
 
@@ -152,7 +155,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
           <div className="flex min-w-0 max-sm:grow max-sm:basis-0">
             <PortalLogo name={project.name} href={withBase(base, prefix || "/")} />
           </div>
-          {canRead && <PortalParts boards={project.boards} newChangelog={newChangelog} />}
+          {canRead && <PortalParts boards={boards} newChangelog={newChangelog} />}
           {/* On Docs; on phones and tablets a line of its own, the whole width. */}
           {canRead && <DocsSearch askAI={answersEnabled()} />}
           {/* On the right; on phones and tablets the links are in the menu. It doesn't shrink: the logo does.
@@ -169,7 +172,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
               </SignInLink>
             )}
             {/* For everyone: on a private portal's sign-in page it has the team's links (no parts). */}
-            <PortalMenu name={project.name} homeHref={withBase(base, prefix || "/")} boards={canRead ? project.boards : []} parts={canRead} newChangelog={newChangelog} languages={choices} language={language} />
+            <PortalMenu name={project.name} homeHref={withBase(base, prefix || "/")} boards={canRead ? boards : []} parts={canRead} newChangelog={newChangelog} languages={choices} language={language} />
           </div>
         </div>
         </header>

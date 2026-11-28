@@ -225,6 +225,17 @@ test("Feedback, a board and a post in German: their words, counts and times, and
     `INSERT INTO board (id, "projectId", slug, name, "updatedAt") SELECT $2, id, 'bugs', 'Bugs', now() FROM project WHERE slug = $1`,
     [slug, randomUUID()],
   );
+  // The boards' names in German (docs/plan.md L14): Bugs' the team's own; Feature requests' made by AI from its name as it is
+  // (current only for that name and its description, so every place showing it must read both). The same words the labels
+  // job's standing reply writes (e2e/global-setup.ts), so its run alongside leaves what's shown as it is.
+  await query(
+    `UPDATE board b SET translations = CASE b.slug
+       WHEN 'bugs' THEN jsonb_build_object('de', jsonb_build_object('name', 'Fehler', 'description', '', 'auto', false, 'source', NULL))
+       ELSE jsonb_build_object('de', jsonb_build_object('name', 'Funktionswünsche', 'description', '', 'auto', true, 'source', md5(b.name || chr(31) || coalesce(b.description, ''))))
+     END
+     FROM project p WHERE p.id = b."projectId" AND p.slug = $1`,
+    [slug],
+  );
 
   const reader = await signUp(browser, portalUrl(slug), "Rita Reader");
   await reader.setViewportSize({ width: 1280, height: 800 });
@@ -236,7 +247,18 @@ test("Feedback, a board and a post in German: their words, counts and times, and
   await expect(reader.getByText("1 Idee steht noch aus")).toBeVisible();
   await expect(reader.getByText("Noch keine Ideen. Teile die erste.")).toBeVisible();
   await expect(reader.getByRole("link", { name: "Board öffnen" })).toHaveCount(2);
+  // The boards' names in German, marked as German: their cards and pills.
+  for (const name of ["Funktionswünsche", "Fehler"]) {
+    await expect(reader.getByRole("heading", { level: 2, name })).toHaveAttribute("lang", "de");
+    await expect(reader.getByRole("navigation", { name: "Boards" }).getByRole("link", { name: new RegExp(`^${name}`) }).locator("[lang=de]")).toHaveText(name);
+  }
   await checkpoint(reader, "overview-in-german", { fullPage: false });
+  // The English page sends the browser no other language's names (the menu gets only what it shows).
+  expect(await (await reader.request.get("/feedback")).text()).not.toContain("Funktionswünsche");
+  // New post's menu: each board's name in German too.
+  await reader.getByRole("button", { name: "Neuer Beitrag" }).click();
+  await expect(reader.getByRole("menuitem").getByText("Fehler", { exact: true })).toHaveAttribute("lang", "de");
+  await reader.keyboard.press("Escape");
   // Get updates, in its popover.
   await reader.getByRole("button", { name: "Updates erhalten" }).click();
   await expect(reader.getByRole("dialog", { name: "Updates erhalten" }).getByRole("link", { name: "Changelog lesen" })).toBeVisible();
@@ -248,7 +270,8 @@ test("Feedback, a board and a post in German: their words, counts and times, and
   await expect(shipped).toContainText(/^Veröffentlicht am \d+\. \S+:/);
   await expect(shipped.getByRole("link", { name: "CSV export" })).toHaveAttribute("lang", "en");
 
-  // The board: its description, sorts, status filter, search and the idea's vote, in German.
+  // The board: its name in German, its description, sorts, status filter, search and the idea's vote, in German.
+  await expect(reader.getByRole("heading", { level: 1, name: "Funktionswünsche" }).locator("[lang=de]")).toHaveText("Funktionswünsche");
   await expect(reader.getByText("Stimme für die Ideen ab, die dir am wichtigsten sind, oder teile deine eigenen.")).toBeVisible();
   await expect(reader.getByRole("navigation", { name: "Sortieren" }).getByRole("link")).toHaveText(["Im Trend", "Top", "Neu", "Meine"]);
   await expect(reader.getByRole("button", { name: "Status: Noch nicht erledigt, 1 Idee" })).toBeVisible();
@@ -257,9 +280,17 @@ test("Feedback, a board and a post in German: their words, counts and times, and
   // The idea's title is the team's words, in the project's language.
   await expect(reader.getByRole("link", { name: "Dark mode" })).toHaveAttribute("lang", "en");
   await checkpoint(reader, "board-in-german", { fullPage: false });
+  // The sidebar's boards: each named in German, then how many ideas are open (in browse mode too, not only on focus).
+  const sideBoards = reader.getByRole("complementary").getByRole("navigation", { name: "Boards" }).getByRole("link");
+  await expect(sideBoards.first()).toHaveAccessibleName(/^Funktionswünsche ?, 1 offene Idee$/);
+  await expect(sideBoards.first().locator("[lang=de]")).toHaveText("Funktionswünsche");
   await reader.getByRole("button", { name: "Neuer Beitrag" }).click();
   await expect(reader.getByRole("dialog", { name: "Idee teilen" })).toBeVisible();
   await expect(reader.getByRole("textbox", { name: "Titel" })).toHaveAttribute("placeholder", "Kurzer, aussagekräftiger Titel");
+  // A similar idea while typing: its board's name in German, marked as German.
+  await reader.getByRole("textbox", { name: "Titel" }).fill("Dark mode");
+  await expect(reader.getByRole("dialog", { name: "Idee teilen" }).getByRole("listitem").filter({ hasText: "Dark mode" }).getByText("Funktionswünsche", { exact: true })).toHaveAttribute("lang", "de");
+  await reader.getByRole("textbox", { name: "Titel" }).fill("");
   // The editor's own words: a new line's hint, the / menu (filtered by its German names) and the bar over selected text.
   const details = reader.getByRole("dialog", { name: "Idee teilen" }).getByRole("textbox", { name: "Details" });
   await details.click();
@@ -267,23 +298,27 @@ test("Feedback, a board and a post in German: their words, counts and times, and
   await reader.keyboard.press("Enter");
   await expect(details.locator("p.is-empty")).toHaveAttribute("data-placeholder", "Tippe / für Listen, Bilder und mehr");
   await details.pressSequentially("/");
-  const menu = reader.getByRole("listbox", { name: "Blöcke" });
-  await expect(menu.getByRole("option")).toHaveText(["Aufzählung", "Nummerierte Liste", "Codeblock", "Bild", "Video"]);
+  const blocks = reader.getByRole("listbox", { name: "Blöcke" });
+  await expect(blocks.getByRole("option")).toHaveText(["Aufzählung", "Nummerierte Liste", "Codeblock", "Bild", "Video"]);
   await details.pressSequentially("num");
-  await expect(menu.getByRole("option")).toHaveText(["Nummerierte Liste"]);
+  await expect(blocks.getByRole("option")).toHaveText(["Nummerierte Liste"]);
   await checkpoint(reader, "post-editor-menu-in-german", { fullPage: false });
   for (let i = 0; i < 4; i++) await reader.keyboard.press("Backspace");
-  await expect(menu).toBeHidden();
+  await expect(blocks).toBeHidden();
   await reader.keyboard.press("ArrowUp");
   await reader.keyboard.press("Home");
   await reader.keyboard.press("Shift+End");
   await expect(reader.getByRole("toolbar", { name: "Formatierung" }).getByRole("button", { name: "Fett" })).toBeVisible();
   await reader.keyboard.press("Escape");
+  await expect(reader.getByRole("dialog", { name: "Idee teilen" })).toBeHidden();
 
   // The post: its rail, a vote, and a comment posted with its time in German.
   await reader.getByRole("link", { name: "Dark mode" }).click();
   await expect(reader).toHaveURL(/\/de\/feedback\/feature-requests\/dark-mode-1$/);
   const rail = reader.getByRole("complementary", { name: "Über diese Idee" });
+  // Its board, named in German: the way back to it, and the rail's.
+  await expect(reader.getByRole("link", { name: "Funktionswünsche" }).locator("[lang=de]").first()).toBeVisible();
+  await expect(rail.getByText("Funktionswünsche", { exact: true })).toHaveAttribute("lang", "de");
   await rail.getByRole("button", { name: "Abstimmen (1 Stimme)" }).click();
   await expect(rail.getByRole("button", { name: "Abgestimmt (2 Stimmen)" })).toBeVisible();
   const comments = reader.getByRole("region", { name: "Kommentare" });
@@ -312,12 +347,28 @@ test("Feedback, a board and a post in German: their words, counts and times, and
   await expect(comments.getByRole("button", { name: "Kommentar von Rita Reader gefällt mir (0 Likes)" })).toBeVisible();
   await checkpoint(reader, "post-in-german", { fullPage: false });
 
+  // The roadmap: the planned idea's card and the board pills name its board in German.
+  await reader.goto("/de/roadmap");
+  await expect(reader.getByRole("listitem").filter({ hasText: "Dark mode" }).getByText("Funktionswünsche", { exact: true })).toHaveAttribute("lang", "de");
+  await expect(reader.getByRole("link", { name: /^Fehler/ }).locator("[lang=de]")).toHaveText("Fehler");
+
   // On a phone.
   await reader.setViewportSize({ width: 390, height: 844 });
   await reader.goto("/de/feedback/feature-requests");
   await expect(reader.getByRole("button", { name: "Neuer Beitrag" })).toBeVisible();
+  // The menu's boards, named in German.
+  await reader.getByRole("button", { name: "Menü" }).click();
+  const menu = reader.getByRole("dialog", { name: "Menü" });
+  await expect(menu.getByRole("link", { name: "Funktionswünsche" })).toHaveAttribute("lang", "de");
+  await menu.getByRole("button", { name: "Menü schließen" }).click();
   // A board with no description of its own: the German one, under the board's own name.
   await expect(reader.locator('meta[name="description"]')).toHaveAttribute("content", "Stimme für die Ideen ab, die dir am wichtigsten sind, oder teile deine eigenen.");
+  // The board switcher named by its content: "Board:" in the page's language, the board's name marked with its own.
+  const switcher = reader.getByRole("button", { name: "Board: Funktionswünsche" });
+  await expect(switcher).not.toHaveAttribute("aria-label");
+  await expect(switcher.locator("[lang=de]")).toHaveText("Funktionswünsche");
+  // Its long German name hyphenated to fit, not cut anywhere.
+  await expect(reader.getByRole("heading", { level: 1 }).locator("[lang=de]")).toHaveCSS("hyphens", "auto");
   await checkpoint(reader, "board-in-german-phone", { fullPage: false });
 });
 

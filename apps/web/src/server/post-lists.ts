@@ -8,6 +8,7 @@ import { ACTIVE_STATUSES, POSTS_PER_PAGE, type PostFilters, type Sort } from "@/
 import { inGroupSql } from "@tuti/jobs";
 import { canActIn } from "@/server/membership";
 import { type PostViewer, shownBoards, visiblePosts, visiblePostsSql } from "@/server/post-visibility";
+import { boardNames } from "@/server/portal-labels";
 
 /** Pending suggestions that this post duplicates an older post that's still listed. */
 export const possibleDuplicateOf = { status: "PENDING", original: { duplicateOfId: null } } as const;
@@ -298,19 +299,25 @@ export function boardPosts(
 }
 
 /** A project's boards `viewer` sees, for a portal board's sidebar and Feedback's overview, oldest first, each with how many ideas on it they see aren't done yet. */
-export function boardsWithCounts(projectId: string, viewer: PostViewer) {
-  return prisma.board.findMany({
-    where: { projectId, ...shownBoards(viewer) },
-    orderBy: { createdAt: "asc" },
-    select: {
-      id: true,
-      slug: true,
-      name: true,
-      description: true,
-      postButton: true,
-      _count: { select: { posts: { where: { duplicateOfId: null, status: { in: ACTIVE_STATUSES }, ...visiblePosts(viewer) } } } },
-    },
-  });
+export async function boardsWithCounts(projectId: string, viewer: PostViewer) {
+  const [rows, named] = await Promise.all([
+    prisma.board.findMany({
+      where: { projectId, ...shownBoards(viewer) },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        description: true,
+        translations: true,
+        postButton: true,
+        _count: { select: { posts: { where: { duplicateOfId: null, status: { in: ACTIVE_STATUSES }, ...visiblePosts(viewer) } } } },
+      },
+    }),
+    boardNames(),
+  ]);
+  // Their names and descriptions in the page's language where they're translated (docs/plan.md L14).
+  return rows.map(named);
 }
 
 /** A portal board's ideas `viewer` sees by status (not merged ones), for its status menu: how many in each, none for a status without any. */
