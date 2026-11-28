@@ -353,7 +353,7 @@ export const awake = (now = new Date()): Prisma.ConversationWhereInput => ({
 });
 
 /** The team member writing or looking: the signed-in one, or for an API key, the one who created it. */
-const teamMemberId = (actor: Actor) => (actor.kind === "user" ? actor.userId : actor.createdById);
+export const teamMemberId = (actor: Actor) => (actor.kind === "user" ? actor.userId : actor.createdById);
 
 /** Held while the spam filter's AI check runs (W4): `spamHeldAt` with no teammate's mark yet (Mark as spam keeps it, see conversations.update). */
 const stillHeld = { spamHeldAt: { not: null }, spamMarkedAt: null } satisfies Prisma.ConversationWhereInput;
@@ -371,7 +371,7 @@ export const INBOX_VIEWS = {
 } as const;
 
 export type InboxView = keyof typeof INBOX_VIEWS;
-const VIEW_NAMES = Object.keys(INBOX_VIEWS) as [InboxView, ...InboxView[]];
+export const VIEW_NAMES = Object.keys(INBOX_VIEWS) as [InboxView, ...InboxView[]];
 
 /**
  * A view's conversations: always this project's, whatever the view; snoozed ones only in Snoozed (till it passes). With
@@ -394,6 +394,16 @@ export function viewWhere(view: InboxView, projectId: string, userId: string, si
     spam: { spam: true, NOT: stillHeld },
   };
   return { AND: [filters[view], visibleConversations(since)], projectId };
+}
+
+/** Which of these conversations (ids) are in the view, or among a search's results (`q`), by the Inbox list's own filter: their numbers. */
+export async function inInboxView(projectId: string, userId: string, view: InboxView, ids: string[], q = ""): Promise<Set<number>> {
+  if (ids.length === 0) {
+    return new Set();
+  }
+  const list = q ? { projectId, spam: false, ...(await conversationsMatching(projectId, q)) } : viewWhere(view, projectId, userId);
+  const listed = await prisma.conversation.findMany({ where: { AND: [list, { id: { in: ids } }] }, select: { number: true } });
+  return new Set(listed.map((c) => c.number));
 }
 
 /** How many conversations each view has, in the views' order: the Inbox's numbers beside them, and conversations.views'. */

@@ -322,19 +322,6 @@ export async function saveDraftInstructions(projectSlug: string, _state: FormSta
   );
 }
 
-/** "Email me new conversations": the signed-in team member's own choice, in the inbox. */
-export async function setNewConversationEmails(projectSlug: string, on: boolean): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team gets the inbox's emails", async ({ actor, projectId }) => {
-    if (actor.kind !== "user") {
-      return;
-    }
-    await prisma.teamMember.update({
-      where: { projectId_userId: { projectId, userId: actor.userId } },
-      data: { emailNewConversations: on === true },
-    });
-  });
-}
-
 /** Settings → Inbox and email: gives the project its support email address (owners and admins). */
 export async function getSupportAddress(projectSlug: string): Promise<FormState> {
   return asAdmin(projectSlug, "Only project owners and admins can change support settings", async (context) =>

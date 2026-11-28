@@ -18,7 +18,6 @@ import {
   markConversationSpam,
   setConversationPriority,
   setConversationStatus,
-  setNewConversationEmails,
   snoozeConversation,
   summarizeWithAi,
   takeOverConversation,
@@ -472,28 +471,6 @@ export function TakeOver({ projectSlug, number, ai, children }: Props & { ai: bo
         Take over
       </Button>
     </div>
-  );
-}
-
-/** The team member's own "Email me new conversations" (new ones, and replies on unassigned ones). */
-export function NewConversationEmailsButton({ projectSlug, on }: { projectSlug: string; on: boolean }) {
-  const [pending, startTransition] = useTransition();
-  return (
-    <DropdownMenuItem
-      disabled={pending}
-      onClick={() =>
-        startTransition(async () => {
-          const result = await setNewConversationEmails(projectSlug, !on);
-          if (result.error) {
-            toast.error(result.error);
-          } else {
-            toast.success(on ? "You won't be emailed new conversations" : "You'll be emailed new conversations");
-          }
-        })
-      }
-    >
-      {on ? "Stop emailing me new conversations" : "Email me new conversations"}
-    </DropdownMenuItem>
   );
 }
 

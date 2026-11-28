@@ -1,14 +1,11 @@
-import { type Prisma, prisma } from "@tuti/db";
-import { historySince, pastConversations, visibleConversations } from "@tuti/jobs";
 import { cn } from "cn";
 import Link from "next/link";
 import { ArrowRightIcon, CheckIcon, CircleCheckIcon, ClockIcon, HourglassIcon, InboxIcon, SearchIcon, ShieldAlertIcon, SparklesIcon, UserIcon, UserXIcon } from "lucide-react";
-import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { ConversationMore } from "@/components/inbox/more-actions";
 import { ConversationDetails } from "@/components/inbox/conversation-details";
-import { NewConversationEmailsButton } from "@/components/inbox/conversation-controls";
+import { NewConversationEmailsButton } from "@/components/inbox/new-conversation-emails";
 import { ListKeys } from "@/components/inbox/list-keys";
 import { LoadMore } from "@/components/inbox/load-more";
 import { MessagesOffNotice } from "@/components/inbox/messages-off";
@@ -22,14 +19,9 @@ import { StatStrip } from "@/components/stat-tile";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { initial, longDuration, replyTime, rowBy, rowLine, shortDuration, timeAgo } from "@/lib/format";
-import { isAdminRole } from "@/lib/roles";
-import { getMembership } from "@/server/membership";
-import { conversationCompanies } from "@/server/inbox-companies";
-import { conversationReads } from "@/server/conversation-reads";
-import { inboxStats } from "@/server/inbox-stats";
-import { conversationPerson, conversationsMatching, INBOX_VIEWS, type InboxView, latestMessages, matchedMessages, MAX_SEARCH_LENGTH, viewCounts, viewWhere } from "@/server/operations/conversations";
-import { getSession } from "@/server/session";
+import { initial, longDuration, replyTime, shortDuration, timeAgo } from "@/lib/format";
+import { INBOX_VIEWS, type InboxView, MAX_SEARCH_LENGTH } from "@/server/operations/conversations";
+import { serverCaller } from "@/server/trpc/server";
 
 /** The inbox's views (INBOX_VIEWS: what needs an answer first, then the rest; conversations.views lists the same), and what each says with nothing in it. */
 export type View = InboxView;
@@ -73,9 +65,6 @@ export function inboxQuery(param: string | string[] | undefined) {
   return typeof param === "string" ? param.trim().slice(0, MAX_SEARCH_LENGTH) : "";
 }
 
-/** The list shows this many conversations, and this many more with each "Load more" (`?page=`). */
-const PER_PAGE = 100;
-
 /**
  * The inbox's address in a view, with a conversation open in it (`/inbox/<number>`) or none, its list `pages` long
  * (`?page=`: rows loaded with "Load more" stay as another conversation opens), and the open one's `messages` pages of
@@ -89,40 +78,6 @@ export function inboxHref(slug: string, view: View, number: number | null = null
     ...(messages > 1 && { messages: String(messages) }),
   });
   return `/app/${slug}/inbox${number === null ? "" : `/${number}`}${params.size > 0 ? `?${params}` : ""}`;
-}
-
-/** Which of these conversations (ids) are in the view, or among a search's results (`q`), by the list's own filter: their numbers. */
-export async function inInboxView(projectId: string, userId: string, view: View, ids: string[], q = ""): Promise<Set<number>> {
-  if (ids.length === 0) {
-    return new Set();
-  }
-  const list = q ? { projectId, spam: false, ...(await conversationsMatching(projectId, q)) } : viewWhere(view, projectId, userId);
-  const listed = await prisma.conversation.findMany({ where: { AND: [list, { id: { in: ids } }] }, select: { number: true } });
-  return new Set(listed.map((c) => c.number));
-}
-
-const LISTED = {
-  number: true,
-  subject: true,
-  status: true,
-  email: true,
-  name: true,
-  emailVerified: true,
-  lastMessageAt: true,
-  waitingSince: true,
-  snoozedUntil: true,
-  handledBy: true,
-  priority: true,
-  sample: true,
-  id: true,
-  assignee: { select: { name: true, image: true } },
-  userId: true,
-  user: { select: { name: true, email: true, emailVerified: true, image: true, deletedAt: true, ssoIdentity: { select: { externalId: true, email: true, properties: true } } } },
-} as const;
-
-/** The first `pages` pages of a view's conversations, or a search's (`where`), the latest message first. */
-async function listed(where: Prisma.ConversationWhereInput, pages: number) {
-  return prisma.conversation.findMany({ where, orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }], take: PER_PAGE * pages, select: LISTED });
 }
 
 /** `text` (a snippet: its spaces single) with the search's text marked wherever it has it, whatever the case. */
@@ -163,47 +118,15 @@ export async function InboxPanes({
   q?: string;
   children?: ReactNode;
 }) {
-  const [membership, session] = await Promise.all([getMembership(slug), getSession()]);
-  if (!membership || !session) {
-    notFound();
-  }
-  const projectId = membership.project.id;
-  const userId = session.user.id;
-
+  const trpc = await serverCaller();
+  // The team's only (inbox.list's access): anyone else gets a 404.
+  const { counts, total, hidden, conversations, projectName, admin, supportInbox, plan, emailNewConversations, stats } = await trpc.inbox.list({ project: slug, view, q, pages, overview: open === null });
   const views = Object.keys(INBOX_VIEWS) as View[];
-  const history = await historySince(projectId);
-  // A search's results: every status, never spam nor what's past the plan's history.
-  const matching = q ? await conversationsMatching(projectId, q) : null;
-  const where: Prisma.ConversationWhereInput = matching
-    ? { projectId, spam: false, AND: [visibleConversations(history), matching] }
-    : viewWhere(view, projectId, userId, history);
   // What its rows say apart from a view's: Needs reply and Closed on those that are, the message found.
   const shown = q ? "search" : view;
-  const [counts, conversations, member, { supportInbox, plan }, stats] = await Promise.all([
-    viewCounts(projectId, userId, history),
-    listed(where, pages),
-    prisma.teamMember.findUniqueOrThrow({ where: { projectId_userId: { projectId, userId } }, select: { emailNewConversations: true } }),
-    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, plan: true } }),
-    open === null ? inboxStats(projectId) : null,
-  ]);
-  // Closed, Spam and a search: whether some are past the plan's history (said above the list, rather than an empty one alone).
-  const hidden = !history
-    ? 0
-    : matching
-      ? await prisma.conversation.count({ where: { projectId, spam: false, AND: [pastConversations(history), matching] } })
-      : view === "closed" || view === "spam"
-        ? await prisma.conversation.count({ where: { AND: [viewWhere(view, projectId, userId), pastConversations(history)] } })
-        : 0;
   // Not one conversation in any view, spam included: the views split them all between them.
   const none = counts.every((n) => n === 0);
   const whereFrom = "New conversations show up here as they come in.";
-  const latest = await latestMessages(conversations.map((c) => c.id));
-  const companies = await conversationCompanies(projectId, conversations);
-  const reads = await conversationReads(conversations.map((c) => c.id), userId);
-  const matches = q ? await matchedMessages(conversations.map((c) => c.id), q) : null;
-  // How many the list has in all: the view's count, or the search's.
-  const total = q ? await prisma.conversation.count({ where }) : counts[views.indexOf(view)]!;
-
   return (
     <PaneLayout>
       <SectionPane title="Inbox">
@@ -247,7 +170,7 @@ export async function InboxPanes({
                     {q ? `Search for “${q}” found ${total === 0 ? "no conversations" : total === 1 ? "1 conversation" : `${total} conversations`}` : ""}
                   </p>
                   <ConversationMore label="Inbox options">
-                    <NewConversationEmailsButton projectSlug={slug} on={member.emailNewConversations} />
+                    <NewConversationEmailsButton projectSlug={slug} on={emailNewConversations} />
                   </ConversationMore>
                 </>
               }
@@ -255,7 +178,7 @@ export async function InboxPanes({
             {/* Off, the widget offers no way to write in: said above the list (outside it: the list is only its conversations), whatever is in it. */}
             {!supportInbox && (
               <div className="px-4.5 pt-4 pb-1">
-                <MessagesOffNotice projectSlug={slug} admin={isAdminRole(membership.role)} compact />
+                <MessagesOffNotice projectSlug={slug} admin={admin} compact />
               </div>
             )}
             {hidden > 0 && (
@@ -264,7 +187,7 @@ export async function InboxPanes({
                   what={q ? "Matching conversations" : view === "spam" ? "Spam conversations" : "Closed conversations"}
                   plan={plan}
                   projectSlug={slug}
-                  admin={isAdminRole(membership.role)}
+                  admin={admin}
                 />
               </div>
             )}
@@ -296,21 +219,14 @@ export async function InboxPanes({
                 <div className="inbox-rows [&>ul]:m-0">
                   <ItemList>
                     {conversations.map((c) => {
-                      const person = conversationPerson(c);
-                      const name = person.name ?? person.email ?? "Unknown";
                       // Their company, as the team's app says (Users' company property), when it says one.
-                      const company = companies.get(c.id);
-                      // The latest message's first line, with who wrote it when it isn't the person (an AI answer isn't their question).
-                      const message = latest.get(c.id);
-                      const text = message && rowLine(c.subject, message.body);
-                      const by = message && rowBy(message, userId);
+                      const { name, company, unread } = c;
                       // In a search, the message that has the text instead (the newest), around where it has it.
-                      const match = matches?.get(c.id);
-                      const line = match ? `${match.note ? "Note: " : ""}${match.snippet}` : text && (by ? `${by}: ${text}` : text);
-                      const unread = reads.get(c.id)?.unread ?? false;
+                      const match = c.match;
+                      const line = match ? `${match.note ? "Note: " : ""}${match.snippet}` : c.line;
                       // Spam waits on nobody, however it came in; nor does one the AI has wait on the team (With AI, a search).
                       // Not said in Needs reply, where every row does.
-                      const needsReply = shown !== "spam" && c.handledBy === "TEAM" && c.status === "OPEN" && c.waitingSince !== null;
+                      const needsReply = shown !== "spam" && c.handledBy === "team" && c.status === "open" && c.waitingSince !== null;
                       // One age per row: how long they've waited for the team, or since the latest message.
                       const since = needsReply && c.waitingSince ? c.waitingSince : c.lastMessageAt;
                       const age = needsReply ? `Waiting ${longDuration(since)}` : `Latest message ${longDuration(since)} ago`;
@@ -324,7 +240,7 @@ export async function InboxPanes({
                           className={cn("inbox-row relative isolate items-start my-0.75 mx-0 rounded-xl border-0 px-2.5 py-3.75 first:mt-0.75 first:pt-3.75 last:mb-0.75 last:pb-3.75 data-selected:bg-secondary [&>div:first-child]:items-start [&>div:first-child]:gap-2.5 [&>div:last-child]:self-stretch", unread ? "inbox-unread" : "inbox-read")}
                           leading={
                             <Avatar className="mt-0.5 size-7.5 text-xs">
-                              {c.user?.image && <AvatarImage src={c.user.image} alt="" />}
+                              {c.image && <AvatarImage src={c.image} alt="" />}
                               <AvatarFallback>{initial(name)}</AvatarFallback>
                             </Avatar>
                           }
@@ -365,13 +281,13 @@ export async function InboxPanes({
                                 </Badge>
                               )}
                               {/* A search finds the AI's among the team's: said, as no view's title does there. */}
-                              {shown === "search" && c.handledBy === "AI" && c.status !== "CLOSED" && (
+                              {shown === "search" && c.handledBy === "ai" && c.status !== "closed" && (
                                 <Badge variant="secondary" className="mr-1.5 h-4 px-1.5 align-top text-xs leading-none">
                                   With AI
                                 </Badge>
                               )}
                               {/* A search finds closed ones among those still going. */}
-                              {shown === "search" && c.status === "CLOSED" && (
+                              {shown === "search" && c.status === "closed" && (
                                 <Badge variant="secondary" className="mr-1.5 h-4 px-1.5 align-top text-xs leading-none">
                                   Closed
                                 </Badge>
@@ -446,7 +362,7 @@ export async function InboxPanes({
             // Until a conversation opens (with room for both panes; otherwise the list is alone), how the Inbox is doing.
             <ConversationPane open={false}>
               <Pane className="inbox-overview">
-                <PaneHeader level={2} title="Inbox overview" description={membership.project.name} />
+                <PaneHeader level={2} title="Inbox overview" description={projectName} />
                 <PaneBody className="flex flex-col px-5 pb-5">
                   <div className="inbox-all-clear m-auto max-w-104 py-15 text-center [&>h2]:mb-3.5 [&>h2]:font-heading [&>h2]:text-[2rem] [&>h2]:font-[650] [&>h2]:tracking-[-0.03em] [&>p]:mb-6 [&>p]:text-sm [&>p]:leading-[1.65] [&>p]:text-muted-foreground">
                     {none && (

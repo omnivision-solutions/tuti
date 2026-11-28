@@ -612,7 +612,6 @@ const matrix: Matrix = {
     setTranslation: { allowed: "ADMIN", call: (slug) => inbox.setTranslation(slug, { teamLanguage: "en" }) },
     saveDraftInstructions: { allowed: "ADMIN", call: (slug) => inbox.saveDraftInstructions(slug, {}, form({ instructions: "Keep it short." })) },
     getSupportAddress: { allowed: "ADMIN", call: (slug) => withEnv({ SUPPORT_EMAIL_DOMAIN: "tuti.email" }, () => inbox.getSupportAddress(slug)) },
-    setNewConversationEmails: { allowed: "MEMBER", call: (slug) => inbox.setNewConversationEmails(slug, false) },
     saveEmailDomain: { allowed: "ADMIN", call: (slug) => withSes(() => inbox.saveEmailDomain(slug, {}, form({ address: `help@${slug}.example.com` }))) },
     checkEmailDomain: { allowed: "ADMIN", call: (slug) => withSes(() => inbox.checkEmailDomain(slug)) },
     // To the local SMTP fake.
@@ -1480,6 +1479,9 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   // Owners only (plans are off here, so every project has Advanced tuning).
   "codeChangesTuning.update": { allowed: "OWNER", scope: "write", call: (caller, slug) => caller.codeChangesTuning.update({ project: slug, "decide.rounds": 6 }) },
   // The team's names and roles, and the project's own setup: the team's (a key counts as the team), never anyone signed in.
+  // The Inbox's list pane, and a teammate's own "Email me new conversations" (a key: its creator's).
+  "inbox.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.list({ project: slug, q: "Post", overview: true }) },
+  "inbox.newConversationEmails": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.inbox.newConversationEmails({ project: slug, on: false }) },
   "team.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.team.list({ project: slug }) },
   "project.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.project.get({ project: slug }) },
   "votes.set": { allowed: "signed in", refusesSsoUsers: true, scope: "write", call: (caller, slug) => caller.votes.set({ project: slug, number: 1, voted: true }) },
