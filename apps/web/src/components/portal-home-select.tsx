@@ -21,8 +21,14 @@ export function PortalHomeSelect({ projectSlug, home }: { projectSlug: string; h
   const [pending, startTransition] = useTransition();
   const preview = usePreview();
   const trpc = useTRPCClient();
-  // What's saved, shown as soon as the save is through (the page's own value comes with its next refresh).
+  // What's saved, shown as soon as the save is through; the page's own value again whenever it brings a new one (a
+  // refresh, another tab's change).
   const [saved, setSaved] = useState(home);
+  const [shownHome, setShownHome] = useState(home);
+  if (home !== shownHome) {
+    setShownHome(home);
+    setSaved(home);
+  }
   return (
     <SettingRow label={<span id="portal-home-label">Home page</span>} inline>
       <Select
