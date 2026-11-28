@@ -64,7 +64,6 @@ import * as readerLanguage from "./reader-language";
 import * as rewrite from "./rewrite";
 import * as screenshots from "./screenshots";
 import * as signInLink from "./sign-in-link";
-import * as ssoSettings from "./sso-settings";
 import * as team from "./team";
 import * as webhooks from "./webhooks";
 import * as widget from "./widget";
@@ -123,7 +122,6 @@ const modules = {
   rewrite,
   screenshots,
   "sign-in-link": signInLink,
-  "sso-settings": ssoSettings,
   team,
   webhooks,
   widget,
@@ -712,14 +710,7 @@ const matrix: Matrix = {
       call: () => passwordReset.setNewPassword(form({ token: "not-a-token", password: "a-new-password", confirm: "a-new-password" })),
     },
   },
-  "sso-settings": {
-    rotateSsoSecret: { allowed: "ADMIN", call: (slug) => ssoSettings.rotateSsoSecret(slug) },
-    disableSso: { allowed: "ADMIN", call: (slug) => ssoSettings.disableSso(slug) },
-    setSsoSignInUrl: {
-      allowed: "ADMIN",
-      call: (slug) => ssoSettings.setSsoSignInUrl(slug, form({ signInUrl: "https://app.example.com/login" })),
-    },
-  },
+
   team: {
     changeTeamRole: {
       allowed: "ADMIN",
@@ -1512,6 +1503,10 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
     seed: (f) => prisma.spamRule.upsert({ where: { id: f.spamRuleId }, create: { id: f.spamRuleId, projectId: f.projectId, field: "subject", matcher: "contains", value: "matrix" }, update: {} }),
     call: (caller, slug, f) => caller.spam.update({ project: slug, removeRules: [f.spamRuleId] }),
   },
+  "sso.disable": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.sso.disable({ project: slug }) },
+  "sso.get": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.sso.get({ project: slug }) },
+  "sso.rotate": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.sso.rotate({ project: slug }) },
+  "sso.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.sso.update({ project: slug, signInUrl: "https://app.example.com/login" }) },
   "support.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.support.get({ project: slug }) },
   "team.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.team.list({ project: slug }) },
   // Anyone who may post in the project may upload; finishing and status are the uploader's own. A person's, never a key's.

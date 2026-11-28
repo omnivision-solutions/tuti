@@ -52,7 +52,10 @@ test("a team enables SSO; their app signs people into the portal, once per token
   // The app's sign-in page only once SSO is on: entered before the key exists, portal sign-ins would fail.
   await expect(owner.getByText("Turn on single sign-on first, for the secret key.", { exact: false })).toBeVisible();
   await expect(owner.getByLabel("Your app's sign-in page")).toHaveCount(0);
+  // Turned on through tRPC (sso.rotate), not a server action.
+  const turnedOn = owner.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/api/trpc/sso.rotate"));
   await owner.getByRole("switch", { name: "Single sign-on" }).click();
+  await turnedOn;
   const secretAlert = owner.getByRole("alert").filter({ hasText: "Copy your secret key now" });
   const secret = await secretAlert.locator("code").innerText();
   expect(secret).toMatch(/^tsso_/);
@@ -127,7 +130,10 @@ test("with SSO and the team's app's sign-in page, signing in on the portal is th
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Enter an https:// address")).toBeVisible();
   await signInPage.fill("https://app.acme.example/tuti");
+  // Saved through tRPC (sso.update).
+  const signInSaved = owner.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/api/trpc/sso.update"));
   await owner.getByRole("button", { name: "Save changes" }).click();
+  await signInSaved;
   await expect(owner.getByText("Sign-in page saved")).toBeVisible();
   await owner.reload();
   await expect(signInPage).toHaveValue("https://app.acme.example/tuti");
