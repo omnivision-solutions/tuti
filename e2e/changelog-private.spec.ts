@@ -50,12 +50,12 @@ test("a private portal's changelog by email: its readers subscribe and get the e
   await expect(phone.getByRole("heading", { name: "You get Acme's updates by email" })).toBeVisible();
   await checkpoint(phone, "private-changelog-confirmed");
 
-  // The team publishes with Email announcement: the editor counts the one reader, and it goes to them.
+  // The team publishes with Email: the editor counts the one reader, and it goes to them.
   await api("/changelog", { title: "Dark mode is here", body: "Switch themes from your profile menu." });
   await team.goto(`/app/${slug}/changelog/1`);
-  const goesTo = team.getByRole("group", { name: "Goes to" });
-  await expect(goesTo.getByRole("switch", { name: "Email announcement" })).toHaveAccessibleDescription("1 reader subscribed");
-  await team.getByRole("complementary", { name: "Entry settings" }).evaluate((sidebar) => sidebar.scrollTo(0, sidebar.scrollHeight));
+  const goesTo = team.getByRole("group", { name: "Published in" });
+  await expect(goesTo.getByRole("switch", { name: "Email" })).toHaveAccessibleDescription("1 reader subscribed");
+  await goesTo.getByRole("switch", { name: "Email" }).scrollIntoViewIfNeeded();
   await checkpoint(team, "private-changelog-editor");
   await api("/changelog/1/publish", { emailSubscribers: true });
   const entry = await latestEmailTo(address, { subject: /^Acme: Dark mode is here$/ });

@@ -114,6 +114,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByRole("checkbox", { name: "New", exact: true })).toBeChecked();
   await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
   await team.setViewportSize({ width: 1280, height: 720 });
+  // What publishing does with it: Ada asked for Dark mode, so she's emailed.
+  await expect(team.getByRole("complementary", { name: "Entry settings" })).toContainText("Publishing completes linked posts and emails their voters.");
   // Saved, not published: its status says Draft, first in the sidebar (as a post's is), and there's nothing to view on the portal yet.
   await expect(sidebar.getByRole("region", { name: "Status" })).toHaveText("Status Draft");
   await expect(team.locator("a", { hasText: "View on portal" })).toHaveCount(0);
@@ -196,10 +198,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
     expect(button.y).toBeGreaterThanOrEqual(toolbar.y);
     expect(button.y + button.height).toBeLessThanOrEqual(toolbar.y + toolbar.height);
   }
-  // The settings beside the text are no taller than the pane under its header (the email banner above it too).
-  const paneBox = (await team.locator('[data-slot="pane"]').boundingBox())!;
-  const asideBox = (await sidebar.boundingBox())!;
-  expect(asideBox.y + asideBox.height).toBeLessThanOrEqual(paneBox.y + paneBox.height);
+  // The settings beside the text scroll with the page: no scrollbar of their own beside the page's.
+  await expect(sidebar).toHaveCSS("overflow-y", "visible");
   // The title shows once at this width too, the one to edit: the pane's header keeps it for screen readers.
   await expect(team.getByRole("heading", { level: 1, name: "Dark mode is here", exact: true })).toBeAttached();
   expect((await team.getByRole("heading", { level: 1 }).boundingBox())!.height).toBeLessThanOrEqual(1);
@@ -558,6 +558,8 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await team.reload();
   await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
   await checkpoint(team, "team-changelog-merged-post-dropped");
+  // Only the team asked for it: nobody to email.
+  await expect(team.getByText("Publishing completes linked posts.", { exact: true })).toBeVisible();
 
   // "Link post…" searches every planned, in-progress and completed post, not just the 100 changed last.
   for (let n = 5; n <= 105; n += 10) {
@@ -614,7 +616,7 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await completes.getByRole("button", { name: "Remove “Dark mode”" }).click();
   await expect(completes.getByRole("link")).toHaveCount(0);
   // Quietly: no widget popup.
-  const goesTo = team.getByRole("group", { name: "Goes to" });
+  const goesTo = team.getByRole("group", { name: "Published in" });
   await goesTo.getByRole("switch", { name: "Widget" }).uncheck();
   await team.getByRole("button", { name: "Publish" }).click();
   // What's saved is published: the post taken off here is still in it.
@@ -1220,7 +1222,7 @@ test("the next release waits to be written; its entry gets a featured image read
   await expect(team.getByText("Published", { exact: true })).toBeVisible();
   await latestEmailTo(ada.email, { subject: /^Done: Dark mode$/ });
   await team.reload();
-  await expect(sidebar.getByRole("group", { name: "Goes to" }).getByRole("switch", { name: "Email announcement" })).toHaveAccessibleDescription("Published without it · told 1 person who asked");
+  await expect(sidebar.getByRole("group", { name: "Published in" }).getByRole("switch", { name: "Email" })).toHaveAccessibleDescription("Published without it · told 1 person who asked");
   // Published as it was, Ask AI is its way into AI (Draft with AI is for drafts).
   await expect(team.getByRole("button", { name: "Ask AI", exact: true })).toBeVisible();
   await checkpoint(team, "team-changelog-told");
@@ -1323,7 +1325,8 @@ test("a draft with a line left to fill in isn't published: Publish names the lin
   await team.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
   await team.setViewportSize({ width: 1280, height: 720 });
   await team.goto(`/app/${slug}/changelog/1`);
-  // Highlighted in the text, where they are.
+  // Counted under its status, and highlighted in the text, where they are.
+  await expect(team.getByRole("region", { name: "Status" })).toContainText("2 lines to fill in");
   await expect(team.getByRole("textbox", { name: "What changed" }).locator("[data-fill-in]")).toHaveText(["[Check: is it out on iOS yet?]", "[Screenshot: the theme menu, open]"]);
   await checkpoint(team, "team-changelog-fill-ins", { fullPage: false });
   await team.getByRole("button", { name: "Publish", exact: true }).click();
@@ -1655,7 +1658,7 @@ test("an entry with no cover gets one composed: picked from its designs as it's 
   expect((await saved(3)).cover!.id).toBe(composed);
 });
 
-test("readers get the changelog by email: confirmed first, each entry published with Email announcement, unsubscribed in one click", async ({ browser }, testInfo) => {
+test("readers get the changelog by email: confirmed first, each entry published with Email, unsubscribed in one click", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -1720,13 +1723,13 @@ test("readers get the changelog by email: confirmed first, each entry published 
   await team.keyboard.type("Switch themes from your profile menu.");
   await team.getByRole("button", { name: "Save draft" }).first().click();
   await expect(team).toHaveURL(new RegExp(`/app/${slug}/changelog/1$`));
-  const announced = team.getByRole("group", { name: "Goes to" });
-  const email = announced.getByRole("switch", { name: "Email announcement" });
+  const announced = team.getByRole("group", { name: "Published in" });
+  const email = announced.getByRole("switch", { name: "Email" });
   await expect(email).toBeChecked();
   await expect(email).toHaveAccessibleDescription("1 subscriber");
   await expect(announced.getByRole("switch", { name: "Widget" })).toBeChecked();
-  // The sidebar scrolls on its own: to its end, where this is.
-  await team.getByRole("complementary", { name: "Entry settings" }).evaluate((sidebar) => sidebar.scrollTo(0, sidebar.scrollHeight));
+  // The sidebar scrolls with the page: to Email, where this is.
+  await email.scrollIntoViewIfNeeded();
   await checkpoint(team, "team-changelog-goes-to");
   await team.getByRole("button", { name: "Publish" }).click();
   const dialog = team.getByRole("alertdialog");

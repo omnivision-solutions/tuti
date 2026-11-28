@@ -4,6 +4,7 @@ import pg from "pg";
 
 import { expect, type Page, test } from "./fixtures";
 
+import { linkPullRequest } from "./changelog-dates";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
@@ -88,21 +89,43 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   await expect(newDot(bea)).toHaveCount(0);
   await bea.goto("/changelog");
   await expect(titles(bea)).toHaveText(["Dark mode"]);
-  // The team makes Dark mode for enterprise customers too, in the editor's Audience: now Bea has none.
+  // The team makes Dark mode for enterprise customers too, in the editor's Who sees it: now Bea has none.
   await owner.goto(`/app/${slug}/changelog/1`);
-  const audience = owner.getByRole("group", { name: "Audience" });
+  const audience = owner.getByRole("group", { name: "Who sees it" });
+  // The sidebar scrolls with the page: no scrollbar of its own beside the page's.
+  await expect(owner.getByRole("complementary", { name: "Entry settings" })).toHaveCSS("overflow-y", "visible");
   // Everyone to start with: no chips until Some groups.
   await expect(audience.getByRole("radio", { name: "Everyone" })).toBeChecked();
   await expect(audience.getByRole("checkbox", { name: "Enterprise" })).toHaveCount(0);
   await audience.getByText("Some groups", { exact: true }).click();
   await expect(audience.getByRole("checkbox", { name: "Enterprise" })).not.toBeChecked();
   await audience.getByRole("checkbox", { name: "Enterprise" }).check();
+  // Who it reaches, in a few words: the list, the widget and the email all leave out everyone else.
+  await expect(audience).toContainText("Only users in selected groups");
   await checkpoint(owner, "editor-audience");
   await owner.getByRole("button", { name: "Save", exact: true }).click();
   await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
   await owner.reload();
   await expect(audience.getByRole("radio", { name: "Some groups" })).toBeChecked();
   await expect(audience.getByRole("checkbox", { name: "Enterprise" })).toBeChecked();
+  // On a phone the sidebar fits the screen, a long pull request title cut to its line.
+  await linkPullRequest(slug, 1, { repo: "acme/app", number: 41, title: "Replace the theme picker with a menu that follows the system setting on every platform" });
+  await owner.reload();
+  await owner.setViewportSize({ width: 390, height: 844 });
+  for (const name of ["Changelog list", "Widget", "Email"]) {
+    const box = (await owner.getByRole("group", { name: "Published in" }).getByRole("switch", { name }).boundingBox())!;
+    expect(box.x + box.width).toBeLessThanOrEqual(390);
+  }
+  await owner.getByRole("heading", { name: "Pull requests" }).scrollIntoViewIfNeeded();
+  await checkpoint(owner, "editor-sidebar-phone", { fullPage: false });
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  // Published, it says nothing of what publishing does with its posts, even one reopened since (nothing publishes it again).
+  await api("/posts/1", { status: "planned" }, "PATCH");
+  await owner.goto(`/app/${slug}/changelog/2`);
+  await expect(owner.getByRole("heading", { name: "Ships" })).toBeVisible();
+  await expect(owner.getByText(/^Publishing completes/)).toHaveCount(0);
+  await api("/posts/1", { status: "completed" }, "PATCH");
+  await owner.goto(`/app/${slug}/changelog/1`);
   await bea.goto("/changelog");
   await expect(titles(bea)).toHaveCount(0);
   await owner.goto(`/app/${slug}/changelog/1`);
