@@ -149,8 +149,10 @@ async function saveTranslation(kind: Kind, projectId: string, input: { slug: str
       ? { name: was?.name ?? "", ...description, auto: true, source: was?.auto && was.source === source ? was.source : null }
       : { name: input.name!, ...description, auto: false, source };
     const translations = { ...(row.translations as LabelTranslations), [input.language]: entry };
-    // Raw, so its updatedAt (a board's is the sitemap's lastmod) stays its own text's last change, not a translation's.
-    await tx.$executeRaw`UPDATE ${Prisma.raw(kind.table)} SET translations = ${JSON.stringify(translations)}::jsonb WHERE id = ${row.id}`;
+    // The team's change: a collection's and a tab's updatedAt move, as for any edit of theirs (Autopilot's Undo keeps a
+    // collection it made once it has; code-changes.ts asMade). A board's doesn't: it's the sitemap's lastmod, its page's.
+    const touched = kind === BOARD ? Prisma.empty : Prisma.sql`, "updatedAt" = now()`;
+    await tx.$executeRaw`UPDATE ${Prisma.raw(kind.table)} SET translations = ${JSON.stringify(translations)}::jsonb ${touched} WHERE id = ${row.id}`;
     return { label: { ...row, translations }, automatic: found.automatic };
   });
   if (input.keepUpToDate) {
