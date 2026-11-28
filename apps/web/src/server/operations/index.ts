@@ -1,126 +1,327 @@
-import type { Operation, PublicOperation } from "./define";
-import { getAiFirst, updateAiFirst } from "./ai-first";
-import { getBranding, updateBranding } from "./branding";
-import { checkLicense } from "./license";
-import { analyseCodeChange, applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, publishCodeChangeActionNow, stopCodeChangeAction, undoCodeChangeAction, getCodeChange, getCodeChangeTarget, listCodeChanges, listCodeChangeTargets, resumeCodeChanges } from "./code-changes";
-import { createChangelogComment, deleteChangelogComment, listChangelogComments, updateChangelogComment } from "./changelog-comments";
-import { createComment, createPost } from "./create";
+import {
+  getAiFirst,
+  updateAiFirst,
+} from "./ai-first";
+import { getAiModelSetting } from "./ai-model-setting";
+import {
+  getAiModels,
+  updateAiModels,
+} from "./ai-models";
+import {
+  createApiReference,
+  deleteApiReference,
+  getApiReference,
+  listApiReferences,
+  replaceApiReference,
+  syncApiReference,
+  updateApiReference,
+} from "./api-references";
+import {
+  getAssistantSettings,
+  updateAssistantSettings,
+} from "./assistant";
+import {
+  getBranding,
+  updateBranding,
+} from "./branding";
+import {
+  addChangelogPullRequests,
+  composeChangelogCover,
+  createChangelogEntry,
+  deleteChangelogEntry,
+  draftChangelogEntry,
+  editChangelogSection,
+  getChangelogEntry,
+  getChangelogStyle,
+  getChangelogStyleSettings,
+  listChangelog,
+  listMissingChanges,
+  publishChangelogEntry,
+  reactToChangelogEntry,
+  removeChangelogPullRequest,
+  unpublishChangelogEntry,
+  updateChangelogEntry,
+  updateChangelogStyle,
+} from "./changelog";
+import {
+  createChangelogComment,
+  deleteChangelogComment,
+  listChangelogComments,
+  updateChangelogComment,
+} from "./changelog-comments";
+import { markChangelogSeen } from "./changelog-seen";
+import {
+  addChangelogSubscribers,
+  listChangelogSubscribers,
+  removeChangelogSubscribers,
+} from "./changelog-subscribers";
+import {
+  getChangelogTranslation,
+  saveChangelogTranslation,
+} from "./changelog-translations";
+import { getCodeChangeButton } from "./code-change-button";
+import {
+  analyseCodeChange,
+  applyCodeChangeAction,
+  applyCodeChangeActions,
+  dismissCodeChangeAction,
+  getCodeChange,
+  getCodeChangeTarget,
+  listCodeChangeTargets,
+  listCodeChanges,
+  publishCodeChangeActionNow,
+  resumeCodeChanges,
+  stopCodeChangeAction,
+  undoCodeChangeAction,
+} from "./code-changes";
+import {
+  getCodeChangesTuning,
+  updateCodeChangesTuning,
+} from "./code-changes-tuning";
+import { getConversationActivity } from "./conversation-activity";
+import { getConversationPerson } from "./conversation-person";
 import {
   createConversation,
   getConversation,
   linkConversationPost,
-  listConversations,
   listArticlesToInsert,
   listAssignees,
+  listConversations,
   listInboxViews,
   markConversationRead,
   replyToConversation,
-  translateReply,
   retryTranslation,
   startReplyUpload,
+  translateReply,
   unlinkConversationPost,
   updateConversation,
 } from "./conversations";
-import { getConversationActivity } from "./conversation-activity";
-import { findPostsToLink, getConversationLanguage, getInboxList, setNewConversationEmails } from "./inbox";
-import { getChangelogCover, getChangelogStyleCover } from "./covers";
-import { getArticleScreenshotsStatus, getEntryScreenshotsStatus } from "./screenshot-status";
-import { getInboxConversation } from "./inbox-conversation";
-import { getInboxLive } from "./live";
-import { getCodeChangeButton } from "./code-change-button";
-import { getConversationPerson } from "./conversation-person";
-import { getNotificationSettings, registerDevice, removeDevice, updateNotificationSettings } from "./devices";
-import { checkEmailDomainOperation, getSupportSettings, removeEmailDomain, setEmailDomain, updateSupportSettings } from "./support";
-import { suggestReply, summarizeConversation } from "./support-ai";
-import { getSpamSettings, trySpamFilter, updateSpamSettings } from "./spam";
-import { removeLink } from "./links";
-import { mergePost, updatePost } from "./manage";
-import { dismissDuplicate, getPortalAccess, getProject, getSettingsAccess, likeComment, listDuplicates, listTeam, setSubscription, setVote, updateProject, updatePropertyFormats } from "./more";
 import {
-  composeChangelogCover,
-  addChangelogPullRequests,
-  createChangelogEntry,
-  editChangelogSection,
-  deleteChangelogEntry,
-  draftChangelogEntry,
-  getChangelogEntry,
-  getChangelogStyle,
-  listChangelog,
-  listMissingChanges,
-  removeChangelogPullRequest,
-  publishChangelogEntry,
-  reactToChangelogEntry,
-  unpublishChangelogEntry,
-  updateChangelogEntry,
-  getChangelogStyleSettings,
-  updateChangelogStyle,
-} from "./changelog";
+  getChangelogCover,
+  getChangelogStyleCover,
+} from "./covers";
+import {
+  createComment,
+  createPost,
+} from "./create";
+import {
+  getCredits,
+  topUpCredits,
+} from "./credits";
+import { getPortalPreview } from "./customize";
+import type {
+  Operation,
+  PublicOperation,
+} from "./define";
+import {
+  getNotificationSettings,
+  registerDevice,
+  removeDevice,
+  updateNotificationSettings,
+} from "./devices";
 import {
   createArticle,
   createCollection,
+  createTab,
   deleteArticle,
-  discardChanges,
-  listRevisions,
-  publishChanges,
-  reorderArticle,
-  reorderCollection,
-  restoreArticle,
   deleteCollection,
+  deleteTab,
+  discardChanges,
   getArticle,
   listArticles,
   listCollections,
+  listRevisions,
+  listTabs,
   publishArticle,
-  setArticleLanguageSlug,
+  publishChanges,
+  reorderArticle,
+  reorderCollection,
+  reorderTab,
+  restoreArticle,
   searchArticles,
+  setArticleLanguageSlug,
   unpublishArticle,
   updateArticle,
   updateCollection,
-  createTab,
-  deleteTab,
-  listTabs,
-  reorderTab,
   updateTab,
 } from "./docs";
-import { createApiReference, deleteApiReference, getApiReference, listApiReferences, replaceApiReference, syncApiReference, updateApiReference } from "./api-references";
-import { listGithubRepositories } from "./github";
-import { markChangelogSeen } from "./changelog-seen";
-import { updateEmailPreferences } from "./email-preferences";
-import { addChangelogSubscribers, listChangelogSubscribers, removeChangelogSubscribers } from "./changelog-subscribers";
-import { getAssistantSettings, updateAssistantSettings } from "./assistant";
 import { askDocs } from "./docs-ask";
 import { escalateDocs } from "./docs-escalate";
-import { answerArticle, dismissDocsGap, getDocsInsights } from "./docs-insights";
-import { getReports } from "./reports";
-import { createGroup, deleteGroup, listGroups, updateGroup } from "./groups";
-import { deleteUser, getUser, listCompanies, listUsers, syncUsersOperation } from "./users";
-import { addPortalReaders, getPortal, listPortalReaders, removePortalReader, updatePortal } from "./portal";
-import { getDomain, removeDomain, setDomain, verifyDomain } from "./domain";
-import { getSite, removeSite, setSite, verifySite } from "./site";
-import { createRedirect, deleteRedirect, listRedirects } from "./redirects";
-import { getLanguages, retranslateLanguage, updateLanguages } from "./languages";
-import { getGlossary, updateGlossary } from "./glossary";
-import { getBoardTranslations, getCollectionTranslations, getTabTranslations, updateBoardTranslation, updateCollectionTranslation, updateTabTranslation } from "./label-translations";
-import { getChangelogTranslation, saveChangelogTranslation } from "./changelog-translations";
-import { getTranslation, keepTranslationUpToDate, publishTranslation, saveTranslation, updateTranslationSections } from "./translations";
-import { getPortalPreview } from "./customize";
-import { getAiModelSetting } from "./ai-model-setting";
-import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
-import { createUpload, finishUpload, getUploadStatus } from "./uploads";
-import { getUsage } from "./usage";
-import { getAiModels, updateAiModels } from "./ai-models";
-import { getCodeChangesTuning, updateCodeChangesTuning } from "./code-changes-tuning";
-import { getCredits, topUpCredits } from "./credits";
-import { getPlan, managePlan, setBadgeAddOn, subscribePlan } from "./plan";
-import { getImport, startImport } from "./imports";
-import { listVerifications, verifyAll, verifyArticle } from "./verify";
-import { getWidgetSettings, updateWidgetSettings } from "./widget";
+import {
+  answerArticle,
+  dismissDocsGap,
+  getDocsInsights,
+} from "./docs-insights";
+import {
+  getDomain,
+  removeDomain,
+  setDomain,
+  verifyDomain,
+} from "./domain";
+import { updateEmailPreferences } from "./email-preferences";
+import { listGithubRepositories } from "./github";
+import {
+  getGlossary,
+  updateGlossary,
+} from "./glossary";
+import {
+  createGroup,
+  deleteGroup,
+  listGroups,
+  updateGroup,
+} from "./groups";
 import { generateImageOperation } from "./images";
-import { getScreenshots, getScreenshotSettings, getScreenshotSignInDomains, scanScreenshotSignInDomains, takeArticleScreenshots, takeChangelogScreenshots, takeScreenshots, testScreenshotSettings, updateScreenshotSettings } from "./screenshots";
-import { createWorkflow, deleteWorkflow, getWorkflow, listWorkflows, moveWorkflow, updateWorkflow } from "./workflows";
-
+import {
+  getImport,
+  startImport,
+} from "./imports";
+import {
+  findPostsToLink,
+  getConversationLanguage,
+  getInboxList,
+  setNewConversationEmails,
+} from "./inbox";
+import { getInboxConversation } from "./inbox-conversation";
+import {
+  getBoardTranslations,
+  getCollectionTranslations,
+  getTabTranslations,
+  updateBoardTranslation,
+  updateCollectionTranslation,
+  updateTabTranslation,
+} from "./label-translations";
+import {
+  getLanguages,
+  retranslateLanguage,
+  updateLanguages,
+} from "./languages";
+import { checkLicense } from "./license";
+import { removeLink } from "./links";
+import { getInboxLive } from "./live";
+import {
+  mergePost,
+  updatePost,
+} from "./manage";
+import {
+  dismissDuplicate,
+  getPortalAccess,
+  getProject,
+  getSettingsAccess,
+  likeComment,
+  listDuplicates,
+  listTeam,
+  setSubscription,
+  setVote,
+  updateProject,
+  updatePropertyFormats,
+} from "./more";
+import {
+  getPlan,
+  managePlan,
+  setBadgeAddOn,
+  subscribePlan,
+} from "./plan";
+import {
+  addPortalReaders,
+  getPortal,
+  listPortalReaders,
+  removePortalReader,
+  updatePortal,
+} from "./portal";
+import {
+  getPost,
+  getRoadmap,
+  listBoards,
+  listComments,
+  listPosts,
+} from "./read";
+import {
+  createRedirect,
+  deleteRedirect,
+  listRedirects,
+} from "./redirects";
+import { getReports } from "./reports";
+import {
+  getArticleScreenshotsStatus,
+  getEntryScreenshotsStatus,
+} from "./screenshot-status";
+import {
+  getScreenshotSettings,
+  getScreenshotSignInDomains,
+  getScreenshots,
+  scanScreenshotSignInDomains,
+  takeArticleScreenshots,
+  takeChangelogScreenshots,
+  takeScreenshots,
+  testScreenshotSettings,
+  updateScreenshotSettings,
+} from "./screenshots";
+import {
+  getSite,
+  removeSite,
+  setSite,
+  verifySite,
+} from "./site";
+import {
+  getSpamSettings,
+  trySpamFilter,
+  updateSpamSettings,
+} from "./spam";
+import {
+  checkEmailDomainOperation,
+  getSupportSettings,
+  removeEmailDomain,
+  setEmailDomain,
+  updateSupportSettings,
+} from "./support";
+import {
+  suggestReply,
+  summarizeConversation,
+} from "./support-ai";
+import {
+  getTranslation,
+  keepTranslationUpToDate,
+  publishTranslation,
+  saveTranslation,
+  updateTranslationSections,
+} from "./translations";
+import {
+  createUpload,
+  finishUpload,
+  getUploadStatus,
+} from "./uploads";
+import { getUsage } from "./usage";
+import {
+  deleteUser,
+  getUser,
+  listCompanies,
+  listUsers,
+  syncUsersOperation,
+} from "./users";
+import {
+  listVerifications,
+  verifyAll,
+  verifyArticle,
+} from "./verify";
+import {
+  getWidgetSettings,
+  updateWidgetSettings,
+} from "./widget";
+import {
+  createWorkflow,
+  deleteWorkflow,
+  getWorkflow,
+  listWorkflows,
+  moveWorkflow,
+  updateWorkflow,
+} from "./workflows";
 export { type Actor, type ApiKeyActor, type Operation, OperationError, type PublicOperation } from "./define";
 
-/** Every operation, as a list of literal types: the tRPC router is typed from it. */
+/**
+ * Every operation, as a list of literal types: the tRPC router is typed from it.
+ * Not sorted: its order is the API docs', the OpenAPI document's and MCP's tool list's, and `matchOperation` takes the first
+ * path that fits. Add an operation beside its group's, not at the end.
+ */
 export const all = [
   getProject,
   getSettingsAccess,

@@ -1426,54 +1426,36 @@ const linkFirstPost = async (fixture: Fixture) => {
 const procedures: { [N in OperationName]?: ProcedureCase } = {
   "aiFirst.get": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.aiFirst.get({ project: slug }) },
   "aiFirst.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.aiFirst.update({ project: slug, widget: false, email: true, name: "Ada" }) },
-  "branding.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.branding.get({ project: slug }) },
-  "branding.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.branding.update({ project: slug, seo: { title: "Matrix" } }) },
-  "customize.preview": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.customize.preview({ project: slug, path: "/" }) },
   "aiModels.setting": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.aiModels.setting({ project: slug, group: "changelog" }) },
   "aiModels.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.aiModels.update({ project: slug, levels: { changelog: "balanced" } }) },
-  "changelogStyle.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.changelogStyle.update({ project: slug, tone: "Matrix tone" }) },
-  "changelogStyle.settings": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.changelogStyle.settings({ project: slug }) },
+  "articles.screenshotsStatus": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.articles.screenshotsStatus({ project: slug, slug: "matrix-article" }) },
+  "branding.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.branding.get({ project: slug }) },
+  "branding.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.branding.update({ project: slug, seo: { title: "Matrix" } }) },
+  "changelog.cover": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.changelog.cover({ project: slug, number: 1, design: "title" }) },
+  // The editors' polls while screenshots are taken (the cover and screenshot routes), and the covers to pick from: an
+  // entry's for the team, Settings → Changelog's samples for owners and admins.
+  "changelog.screenshotsStatus": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.changelog.screenshotsStatus({ project: slug, number: 1 }) },
   "changelog.update": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.changelog.update({ project: slug, number: 1, title: "Renamed by the matrix" }) },
+  "changelogStyle.cover": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.changelogStyle.cover({ project: slug, design: "title" }) },
+  "changelogStyle.settings": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.changelogStyle.settings({ project: slug }) },
+  "changelogStyle.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.changelogStyle.update({ project: slug, tone: "Matrix tone" }) },
+  // What an Autopilot email's button acts on (the act route).
+  "codeChanges.button": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.codeChanges.button({ project: slug, id: "none", actions: [] }) },
   // Owners only (plans are off here, so every project has Advanced tuning).
   "codeChangesTuning.update": { allowed: "OWNER", scope: "write", call: (caller, slug) => caller.codeChangesTuning.update({ project: slug, "decide.rounds": 6 }) },
-  // Settings' gate: each settings page asks it.
-  "settings.access": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.settings.access({ project: slug }) },
-  // The portal's gate: anyone who can read the portal, signed in or not (a private one: portal-readers.db.test.ts).
-  "portal.access": { allowed: "public", scope: "read", call: (caller, slug) => caller.portal.access({ project: slug }) },
-  // The team's names and roles, and the project's own setup: the team's (a key counts as the team), never anyone signed in.
-  // The Inbox's list pane, and a teammate's own "Email me new conversations" (a key: its creator's).
-  "inbox.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.list({ project: slug, q: "Post", overview: true }) },
+  // Its details beside it (who it's with is inbox.conversation's `person`): its Activity, and its posts (Link a post's
+  // search, Link and Unlink).
+  "conversations.activity": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.conversations.activity({ project: slug, number: 1 }) },
+  "conversations.articles": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.conversations.articles({ project: slug, number: 1, q: "Getting started" }) },
+  "conversations.linkPost": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.linkPost({ project: slug, number: 1, post: 1 }) },
+  "conversations.markRead": { allowed: "MEMBER", scope: "write", peopleOnly: true, call: (caller, slug) => caller.conversations.markRead({ project: slug, number: 1, seen: new Date().toISOString() }) },
   // The reply box: Send, its preview (translation is off in the fixture: no preview, and the model isn't asked), Draft
   // with AI (nothing in the docs is close: no draft, and the model isn't asked), a file for it (people only), Insert
   // article's search, and the conversation's language after a reply couldn't be translated.
   "conversations.reply": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.reply({ project: slug, number: 1, body: "Thanks!" }) },
-  "conversations.translateReply": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.translateReply({ project: slug, number: 1, body: "Thanks!" }) },
+  // No message's translation failed in the fixture: nothing is queued.
+  "conversations.retryTranslation": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.retryTranslation({ project: slug, number: 1 }) },
   "conversations.suggestReply": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.suggestReply({ project: slug, number: 1 }) },
-  "conversations.upload": {
-    allowed: "MEMBER",
-    scope: "write",
-    peopleOnly: true,
-    call: (caller, slug) => caller.conversations.upload({ project: slug, filename: "invoice.pdf", contentType: "application/pdf", size: 1000 }),
-  },
-  "conversations.articles": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.conversations.articles({ project: slug, number: 1, q: "Getting started" }) },
-  "inbox.language": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.language({ project: slug, number: 1 }) },
-  "inbox.newConversationEmails": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.inbox.newConversationEmails({ project: slug, on: false }) },
-  // The editors' polls while screenshots are taken (the cover and screenshot routes), and the covers to pick from: an
-  // entry's for the team, Settings → Changelog's samples for owners and admins.
-  "changelog.screenshotsStatus": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.changelog.screenshotsStatus({ project: slug, number: 1 }) },
-  "articles.screenshotsStatus": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.articles.screenshotsStatus({ project: slug, slug: "matrix-article" }) },
-  "changelog.cover": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.changelog.cover({ project: slug, number: 1, design: "title" }) },
-  "changelogStyle.cover": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.changelogStyle.cover({ project: slug, design: "title" }) },
-  // The Inbox's conversation page: what it reads, and its buttons (status, assignee, snooze, spam, priority, take over and
-  // hand back are all conversations.update), Summarize, Try again on a translation, and marking it read.
-  "inbox.conversation": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.conversation({ project: slug, number: 1 }) },
-  // Its details beside it (who it's with is inbox.conversation's `person`): its Activity, and its posts (Link a post's
-  // search, Link and Unlink).
-  "conversations.activity": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.conversations.activity({ project: slug, number: 1 }) },
-  "inbox.findPosts": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.findPosts({ project: slug, q: "Post" }) },
-  "conversations.linkPost": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.linkPost({ project: slug, number: 1, post: 1 }) },
-  "conversations.unlinkPost": { allowed: "MEMBER", scope: "write", seed: linkFirstPost, call: (caller, slug) => caller.conversations.unlinkPost({ project: slug, number: 1, post: 1 }) },
-  "conversations.update": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.update({ project: slug, number: 1, status: "closed" }) },
   // Twice: the teammate's call and the read and write key's.
   "conversations.summarize": {
     allowed: "MEMBER",
@@ -1484,14 +1466,37 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
     },
     call: (caller, slug) => caller.conversations.summarize({ project: slug, number: 1 }),
   },
-  // No message's translation failed in the fixture: nothing is queued.
-  "conversations.retryTranslation": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.retryTranslation({ project: slug, number: 1 }) },
-  "conversations.markRead": { allowed: "MEMBER", scope: "write", peopleOnly: true, call: (caller, slug) => caller.conversations.markRead({ project: slug, number: 1, seen: new Date().toISOString() }) },
+  "conversations.translateReply": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.translateReply({ project: slug, number: 1, body: "Thanks!" }) },
+  "conversations.unlinkPost": { allowed: "MEMBER", scope: "write", seed: linkFirstPost, call: (caller, slug) => caller.conversations.unlinkPost({ project: slug, number: 1, post: 1 }) },
+  "conversations.update": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.update({ project: slug, number: 1, status: "closed" }) },
+  "conversations.upload": {
+    allowed: "MEMBER",
+    scope: "write",
+    peopleOnly: true,
+    call: (caller, slug) => caller.conversations.upload({ project: slug, filename: "invoice.pdf", contentType: "application/pdf", size: 1000 }),
+  },
+  "customize.preview": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.customize.preview({ project: slug, path: "/" }) },
+  // The Inbox's conversation page: what it reads, and its buttons (status, assignee, snooze, spam, priority, take over and
+  // hand back are all conversations.update), Summarize, Try again on a translation, and marking it read.
+  "inbox.conversation": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.conversation({ project: slug, number: 1 }) },
+  "inbox.findPosts": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.findPosts({ project: slug, q: "Post" }) },
+  "inbox.language": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.language({ project: slug, number: 1 }) },
+  // The team's names and roles, and the project's own setup: the team's (a key counts as the team), never anyone signed in.
+  // The Inbox's list pane, and a teammate's own "Email me new conversations" (a key: its creator's).
+  "inbox.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.list({ project: slug, q: "Post", overview: true }) },
+  "inbox.newConversationEmails": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.inbox.newConversationEmails({ project: slug, on: false }) },
   // /api/live's check, as the stream opens and at each keepalive.
   "live.inbox": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.live.inbox({ project: slug }) },
-  // What an Autopilot email's button acts on (the act route).
-  "codeChanges.button": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.codeChanges.button({ project: slug, id: "none", actions: [] }) },
+  // The portal's gate: anyone who can read the portal, signed in or not (a private one: portal-readers.db.test.ts).
+  "portal.access": { allowed: "public", scope: "read", call: (caller, slug) => caller.portal.access({ project: slug }) },
+  "portal.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.portal.get({ project: slug }) },
+  "portal.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.portal.update({ project: slug, home: "docs" }) },
+  "project.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.project.get({ project: slug }) },
+  "project.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.project.update({ project: slug, name: "Renamed by the matrix" }) },
+  // Settings' gate: each settings page asks it.
+  "settings.access": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.settings.access({ project: slug }) },
   "spam.get": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.spam.get({ project: slug }) },
+  "spam.try": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.spam.try({ project: slug, name: "Kim", sender: "e2e-matrix-kim@example.com", subject: "Hi", text: "Hello" }) },
   // Removing a rule by its id: the fixture's, put back before each call that may remove it.
   "spam.update": {
     allowed: "ADMIN",
@@ -1500,13 +1505,8 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
     seed: (f) => prisma.spamRule.upsert({ where: { id: f.spamRuleId }, create: { id: f.spamRuleId, projectId: f.projectId, field: "subject", matcher: "contains", value: "matrix" }, update: {} }),
     call: (caller, slug, f) => caller.spam.update({ project: slug, removeRules: [f.spamRuleId] }),
   },
-  "spam.try": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.spam.try({ project: slug, name: "Kim", sender: "e2e-matrix-kim@example.com", subject: "Hi", text: "Hello" }) },
   "support.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.support.get({ project: slug }) },
   "team.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.team.list({ project: slug }) },
-  "portal.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.portal.get({ project: slug }) },
-  "portal.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.portal.update({ project: slug, home: "docs" }) },
-  "project.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.project.get({ project: slug }) },
-  "project.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.project.update({ project: slug, name: "Renamed by the matrix" }) },
   // Anyone who may post in the project may upload; finishing and status are the uploader's own. A person's, never a key's.
   "uploads.create": { allowed: "signed in", refusesSsoUsers: true, peopleOnly: true, scope: "write", call: (caller, slug) => caller.uploads.create({ project: slug, type: "image/png", size: 1000 }) },
   "uploads.finish": { allowed: "signed in", refusesSsoUsers: true, peopleOnly: true, uploadersOwn: true, scope: "write", call: (caller, slug, f) => caller.uploads.finish({ project: slug, mediaId: f.mediaId }) },
