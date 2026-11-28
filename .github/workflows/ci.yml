@@ -28,12 +28,13 @@ jobs:
   # reviews. Pushes to main and the nightly always run everything; so does a diff that can't be
   # read. Renames list both paths, so renaming code to .md isn't Markdown-only.
   # The Docker images build on a pull request only when it changes what the Production build
-  # (each app with its Dockerfile's build settings) doesn't prove for them: the Dockerfiles and
-  # .dockerignore, turbo prune's and pnpm's inputs (package.json files, the lockfile, workspace,
-  # .npmrc, patches, turbo.json), the Prisma schema and config, the worker's bundle config, the
-  # start scripts and this workflow. ponytail: code reaching outside its app's pruned workspace
-  # (a relative import from another app, a build reading docs/ or e2e/) shows up only on main;
-  # build each app from turbo prune's output on pull requests if that starts happening.
+  # (each app with its Dockerfile's build settings) doesn't prove for them: the Dockerfiles,
+  # .dockerignore and the .env files it leaves out, turbo prune's and pnpm's inputs (package.json
+  # files, the lockfile, workspace, .npmrc, patches, turbo.json), the Prisma schema and config, the
+  # worker's bundle config, the start scripts and this workflow. ponytail: code reaching outside
+  # its app's pruned workspace (a relative import from another app, a build reading docs/ or e2e/)
+  # shows up only on main; build each app from turbo prune's output on pull requests if that
+  # starts happening.
   changes:
     name: Changes
     runs-on: ubuntu-latest
@@ -51,7 +52,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
-          DOCKER: '(^|/)(Dockerfile|package\.json|start\.sh)$|^(\.dockerignore|\.npmrc|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json|patches/|packages/db/prisma/schema\.prisma|packages/db/prisma\.config\.ts|apps/worker/tsup\.config\.ts|\.github/workflows/ci\.yml)'
+          DOCKER: '(^|/)(Dockerfile|package\.json|start\.sh)$|(^|/)\.env|^(\.dockerignore|\.npmrc|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json|patches/|packages/db/prisma/schema\.prisma|packages/db/prisma\.config\.ts|apps/worker/tsup\.config\.ts|\.github/workflows/ci\.yml)'
         run: |
           code=true docker=true
           if [[ "$EVENT" == pull_request ]] && files=$(git diff --name-only --no-renames "$BASE...$HEAD"); then
