@@ -258,6 +258,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "screenshots.get": (f) => ({ id: f.screenshotRunId }),
   "screenshots.take": () => ({ shots: [{ show: "The dashboard" }] }),
   "settings.access": () => ({}),
+  "settings.asking": () => ({}),
   "site.get": () => ({}),
   "site.remove": () => ({}),
   // Like domain.set: admins only in the app.
