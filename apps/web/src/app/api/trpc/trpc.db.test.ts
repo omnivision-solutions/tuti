@@ -100,6 +100,24 @@ test("the mobile app's token counts only with Tuti-Client; its saves need no sam
   expect(await trpc("aiFirst.get", { project: project.slug }, { headers: { authorization: "Bearer not-a-session", "tuti-client": "mobile" } })).toMatchObject({ status: 401 });
 });
 
+const tokenHeaders = () => ({ authorization: `Bearer ${/session_token=([^;]+)/.exec(owner.cookie)![1]!}`, "tuti-client": "mobile" });
+
+// Each request counts once against the teammate's rate limit, as /api/v1 counts each call: a batch would run many on one count.
+test("the mobile app's token sends one call per request: a batch of them is refused", async () => {
+  const input = encodeURIComponent(JSON.stringify({ 0: { json: { project: project.slug } }, 1: { json: { project: project.slug } } }));
+  const batch = (headers: Record<string, string>) => GET(new Request(`${appUrl().origin}/api/trpc/aiFirst.get,team.list?batch=1&input=${input}`, { headers: { host: host(), ...headers } }));
+  expect((await batch(tokenHeaders())).status).toBe(400);
+  // The web app's batches, with its cookie, go through.
+  expect((await batch({ cookie: owner.cookie })).status).toBe(200);
+});
+
+test("past the token's rate limit, the 429 says when to come back (Retry-After), as /api/v1's does", async () => {
+  await prisma.user.update({ where: { id: owner.id }, data: { apiRateCount: 10_000, apiRateWindowStart: new Date(Math.floor(Date.now() / 60_000) * 60_000) } });
+  const response = await GET(new Request(`${appUrl().origin}/api/trpc/aiFirst.get?input=${encodeURIComponent(JSON.stringify({ json: { project: project.slug } }))}`, { headers: { host: host(), ...tokenHeaders() } }));
+  expect(response.status).toBe(429);
+  expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0);
+});
+
 test("an operation's own error keeps its status and message", async () => {
   const long = await save({ "sec-fetch-site": "same-origin" }).then(() =>
     trpc("aiFirst.update", { project: project.slug, name: "x".repeat(51) }, { method: "POST", headers: { cookie: owner.cookie, "sec-fetch-site": "same-origin" } }),

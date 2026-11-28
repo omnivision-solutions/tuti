@@ -32,6 +32,8 @@ export class ContextError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** For a 429: seconds until the caller's limit lets them in again (`Retry-After`). */
+    readonly retryAfter?: string,
   ) {
     super(message);
   }
@@ -75,7 +77,7 @@ export async function requestContext(headers: Headers): Promise<TrpcContext> {
     const session = await authenticateSession(request);
     if (session instanceof Response) {
       const { error } = (await session.json()) as { error: { message: string } };
-      throw new ContextError(session.status, error.message);
+      throw new ContextError(session.status, error.message, session.headers.get("retry-after") ?? undefined);
     }
     return { who: { kind: "session", ...session, boundTo: "app", via: "token" }, sameSite: true, memberships };
   }
