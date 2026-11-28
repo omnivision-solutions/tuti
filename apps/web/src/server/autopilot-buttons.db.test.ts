@@ -307,3 +307,22 @@ test("what a button names comes with a post update's parts only when asked (Appr
   expect((await read(false)).map((action) => action.parts)).toEqual([null]);
   expect((await read(true)).map((action) => action.parts)).toEqual([[scheduled]]);
 });
+
+test("Publish now on an update decided between the button's read and the act says it went already, holding nothing", async () => {
+  const c = await change();
+  const a = scheduledOf(c);
+  await call(publishCodeChangeActionNow, team(), { id: a });
+  // The button's read still sees it scheduled (a teammate published it a moment after): publishNow refuses it, not_scheduled.
+  const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<{ id: string; status: string }[]>;
+  vi.spyOn(prisma.codeChangeAction, "findMany").mockImplementationOnce((async (...args: unknown[]) =>
+    (await findMany(...args)).map((action) => (action.id === a ? { ...action, status: "SCHEDULED" } : action))) as never);
+  expect(await click(c.id, signAutopilotButton(owner.id, c.id, `publish:${a}`)!)).toBe(`/app/${project.slug}/autopilot/activity/${c.id}?done=already&button=publish&update=${a}`);
+});
+
+test("Publish now whose update went before a failure counts it as done", async () => {
+  const c = await change();
+  vi.spyOn(log, "error").mockImplementation(() => {});
+  // The operation fails after the update went (`saved: true`).
+  vi.spyOn(prisma.codeChangeAction, "findFirst").mockRejectedValueOnce(Object.assign(new Error("connection reset"), { saved: true }));
+  expect(await click(c.id, signAutopilotButton(owner.id, c.id, `publish:${scheduledOf(c)}`)!)).toBe(`/app/${project.slug}/autopilot/activity/${c.id}?done=published&button=publish`);
+});
