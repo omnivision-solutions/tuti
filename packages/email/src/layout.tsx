@@ -79,7 +79,7 @@ const appImage = (file: string) => {
 };
 
 /** Where "Powered by tuti" goes, on every installation, self-hosted too: no project or installation in it. */
-export const POWERED_BY_URL = "https://tuti.so/?utm_source=email&utm_medium=powered_by&utm_campaign=badge";
+const POWERED_BY_URL = "https://tuti.so/?utm_source=email&utm_medium=powered_by&utm_campaign=badge";
 
 const SANS = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 

@@ -69,12 +69,10 @@ describe("links", () => {
 });
 
 describe("parseDoc", () => {
-  test("accepts what the profile allows and returns it normalised", () => {
-    const result = parseDoc(
-      "post",
-      doc(p(text("Dark mode", [{ type: "bold" }]), text(" see "), text("here", [link("https://example.com")])), list("a", "b"), video("youtube", "dQw4w9WgXcQ")),
-    );
-    expect(result).toEqual({ ok: true, doc: expect.objectContaining({ type: "doc" }) });
+  test("accepts what the profile allows and keeps all of it (normalising: below)", () => {
+    const input = doc(p(text("Dark mode", [{ type: "bold" }]), text(" see "), text("here", [link("https://example.com")])), list("a", "b"), video("youtube", "dQw4w9WgXcQ"));
+    const result = parseDoc("post", input);
+    expect(result).toEqual({ ok: true, doc: input });
     expect(result.ok && toPlainText(result.doc)).toBe("Dark mode see here\na\nb\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ");
   });
 
