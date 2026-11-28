@@ -24,6 +24,7 @@ import {
 import { getConversationActivity } from "./conversation-activity";
 import { findPostsToLink, getInboxList, setNewConversationEmails } from "./inbox";
 import { getInboxConversation } from "./inbox-conversation";
+import { getInboxLive } from "./live";
 import { getConversationPerson } from "./conversation-person";
 import { getNotificationSettings, registerDevice, removeDevice, updateNotificationSettings } from "./devices";
 import { checkEmailDomainOperation, getSupportSettings, removeEmailDomain, setEmailDomain, updateSupportSettings } from "./support";
@@ -122,6 +123,7 @@ export const all = [
   listInboxViews,
   getInboxList,
   setNewConversationEmails,
+  getInboxLive,
   listAssignees,
   listConversations,
   markConversationRead,

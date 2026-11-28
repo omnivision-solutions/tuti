@@ -1500,6 +1500,8 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   // No message's translation failed in the fixture: nothing is queued.
   "conversations.retryTranslation": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.conversations.retryTranslation({ project: slug, number: 1 }) },
   "conversations.markRead": { allowed: "MEMBER", scope: "write", peopleOnly: true, call: (caller, slug) => caller.conversations.markRead({ project: slug, number: 1, seen: new Date().toISOString() }) },
+  // /api/live's check, as the stream opens and at each keepalive.
+  "live.inbox": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.live.inbox({ project: slug }) },
   "team.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.team.list({ project: slug }) },
   "project.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.project.get({ project: slug }) },
   "project.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.project.update({ project: slug, name: "Renamed by the matrix" }) },

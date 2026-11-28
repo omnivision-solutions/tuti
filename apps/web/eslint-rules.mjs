@@ -83,6 +83,9 @@ const EXEMPT = [
       /^src\/app\/(api\/(autopilot\/due|inbox\/due|widget\/latest|stripe\/webhook|github\/webhook|appsumo\/webhook|appsumo\/redirect|email\/events|inbound\/email|health|widget\.js|media|plans|license\/refresh)\/|portal\/\[project\]\/\(site\)\/(changelog\/subscription\/(confirm|emails-on|unsubscribe)|unsubscribe\/confirm)\/|app\/\(account-pages\)\/auth\/card\.png\/)/,
     imports: /./,
   },
+  // Routes that stay routes (T10): the caller from the context function (the cookie session, and until T11 the mobile
+  // app's token as api-auth.ts reads it), then createCaller; the streams also need the stream itself.
+  { files: /^src\/app\/api\/live\/route\.ts$/, imports: /^server\/(api-auth|live|session|trpc\/context)\.ts$/ },
   // Signing in itself, built from server/auth: Better Auth's handler and the hand-offs on both sides.
   { files: /^src\/app\/(api\/auth\/|portal\/\[project\]\/\(site\)\/(continue|sso)\/route\.ts$|app\/\(account-pages\)\/auth\/continue\/page\.tsx$)/, imports: /^server\/auth\// },
   // proxy.ts: its gate in front of a private portal (the reader and team function) and its routing reads.

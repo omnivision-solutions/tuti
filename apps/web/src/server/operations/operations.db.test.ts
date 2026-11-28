@@ -165,6 +165,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   // Internal (the app's only, through tRPC): run through the caller as a teammate, below.
   "inbox.list": () => ({ q: "matrix", overview: true }),
   "inbox.newConversationEmails": () => ({ on: false }),
+  "live.inbox": () => ({}),
   "conversations.assignees": () => ({}),
   // People only: every key is refused (below).
   "conversations.upload": () => ({ filename: "matrix.pdf", contentType: "application/pdf", size: 1000 }),
