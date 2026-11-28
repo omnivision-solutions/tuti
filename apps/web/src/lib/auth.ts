@@ -16,7 +16,9 @@ import { portalAddress, requestTarget, sessionBinding, sessionWorksOn, siteMount
 import { APP_ORIGIN, appSignIn, noAccountFromApp } from "./app-sign-in";
 import { CLIENT_IP_HEADER, withClientIp } from "./client-ip";
 import { allowedHostPatterns, appUrl, portalTemplate } from "./hosts";
+import { appPortalMount } from "./app-portal";
 import { PAGE_LANGUAGE_HEADER } from "./language-addresses";
+import { BASE_HEADER } from "./portal-base";
 import { hashSecret, portalHandoff } from "./portal-handoff";
 import { supportSignIn } from "./support-sign-in";
 import { PASSWORD_RESET_MINUTES, SIGN_IN_LINK_MINUTES, type SignInLinkMetadata } from "./sign-in-link";
@@ -72,10 +74,14 @@ async function sendPasswordReset({ user, url, token }: { user: { email: string }
  */
 export async function verificationLanguage(request: Request | undefined): Promise<string | undefined> {
   const boundTo = request ? await sessionBinding(request.headers.get("host")) : null;
-  if (!request || !boundTo || boundTo === "app") {
+  // On the app's host, Tuti's own portal under its path (lib/app-portal.ts) is a portal too.
+  const own = appPortalMount();
+  const ownPortal = boundTo === "app" && own && request?.headers.get(BASE_HEADER) === own.path;
+  const projectId = ownPortal ? (await prisma.project.findUnique({ where: { slug: own.slug }, select: { id: true } }))?.id : boundTo !== "app" ? boundTo : null;
+  if (!request || !projectId) {
     return undefined;
   }
-  return (await readerEmailLanguage(boundTo))(request.headers.get(PAGE_LANGUAGE_HEADER)).language;
+  return (await readerEmailLanguage(projectId))(request.headers.get(PAGE_LANGUAGE_HEADER)).language;
 }
 
 /** How long an emailed verification link works (emailVerification.expiresIn), and so the way back it carries. */

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
+import { configFile } from "@tuti/testkit";
 import { expect, test, vi } from "vitest";
 
 import ContinuePage from "@/app/app/(account-pages)/auth/continue/page";
@@ -12,6 +13,7 @@ import { auth, VERIFICATION_SECONDS } from "./auth";
 import { getSession } from "@/server/session";
 
 import { PAGE_LANGUAGE_HEADER } from "./language-addresses";
+import { BASE_HEADER } from "./portal-base";
 import { randomSecret } from "./portal-handoff";
 import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR } from "./sign-in-link";
 
@@ -402,11 +404,11 @@ test("asked again on a portal (Resend email), the verification email is in its p
   const ada = await signUpUser("Ada", undefined, { verified: false });
   const origin = `http://${project.slug}.localhost:3100`;
   /** Resend email on `at`, as its button does: saying the page's language (PAGE_LANGUAGE_HEADER). */
-  const resendAt = async (at: string, language: string) => {
+  const resendAt = async (at: string, language: string, more: Record<string, string> = {}) => {
     const response = await auth.handler(
       new Request(`${at}/api/auth/send-verification-email`, {
         method: "POST",
-        headers: { host: new URL(at).host, origin: at, "content-type": "application/json", [PAGE_LANGUAGE_HEADER]: language },
+        headers: { host: new URL(at).host, origin: at, "content-type": "application/json", [PAGE_LANGUAGE_HEADER]: language, ...more },
         body: JSON.stringify({ email: ada.email, callbackURL: "/account" }),
       }),
     );
@@ -421,4 +423,11 @@ test("asked again on a portal (Resend email), the verification email is in its p
   expect(await resendAt(origin, "fr")).toBe("Bestätige deine E-Mail-Adresse für Tuti");
   // The app's (its sign-up and sign-in pages, a portal's password sign-up included): English, whatever it says.
   expect(await resendAt(APP_URL, "de")).toBe("Verify your email for Tuti");
+  // Tuti's own portal, under its path on the app's host (the proxy says so with BASE_HEADER): a portal's.
+  vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { project: project.slug } }));
+  try {
+    expect(await resendAt(APP_URL, "fr", { [BASE_HEADER]: `/${project.slug}` })).toBe("Bestätige deine E-Mail-Adresse für Tuti");
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });
