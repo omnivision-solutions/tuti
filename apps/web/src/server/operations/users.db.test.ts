@@ -6,12 +6,11 @@ import { beforeEach, expect, test, vi } from "vitest";
 import type { z } from "zod";
 
 import { generateSsoSecret, verifySsoToken } from "@/server/auth/sso";
-import { createProject, signUp, type TestUser, untilWaitingOnLock } from "@/test/helpers";
+import { createProject, findSimilarPosts, signUp, type TestUser, untilWaitingOnLock } from "@/test/helpers";
 
 import { widgetToken, widgetTokenUser } from "@/server/auth/widget-session";
 
 import { canActIn } from "../membership";
-import { findSimilarPosts } from "../similar-posts";
 import { widgetIdeaNews } from "../widget";
 import { widgetConversations } from "../widget-inbox";
 import { createConversation, getConversation } from "./conversations";

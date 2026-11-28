@@ -1,17 +1,13 @@
-"use server";
-
 import { prisma } from "@tuti/db";
 import { duplicatesMeter } from "@tuti/jobs";
 import { duplicatesModel, duplicateText, embed, embeddingsEnabled, judgeDuplicates, log, toVectorLiteral, TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 import { z } from "zod";
 
-import { widgetTokenUser } from "@/server/auth/widget-session";
+import { canActIn } from "../membership";
+import { boardNames } from "../portal-labels";
+import { actorPostViewer, type PostViewer, visiblePostsSql } from "../post-visibility";
 
-import { canActIn } from "./membership";
-import { boardNames } from "./portal-labels";
-import { currentPostViewer, readableProject } from "./portal-access";
-import { type PostViewer, postViewer, visiblePostsSql } from "./post-visibility";
-import { sessionIn } from "./session";
+import { type Context, defineOperation } from "./define";
 
 /** `boardName` in the page's language where it's translated, in `boardLang` (docs/plan.md L14). */
 export type SimilarPost = { id: string; number: number; title: string; voteCount: number; boardName: string; boardLang?: string; boardSlug: string; voted: boolean };
@@ -30,26 +26,19 @@ const MIN_EMBED_LENGTH = 10;
  * same idea in other words. Posts found both ways rank first. Then the decision model (the config file's `duplicates.typing.model`) keeps
  * those it calls duplicates, likeliest first; without one, past the project's hourly checks, or when it fails or takes
  * over a second, the project is out of credits, or whoever's typing isn't signed in (it's charged to the project), they're
- * shown as found. With whether whoever's asking voted for
- * each: the widget's person, by its token (`widgetToken`), or the portal's signed-in user.
+ * shown as found. With whether whoever's asking voted for each: the widget's person (by their token, as the router's
+ * context reads it) or the portal's signed-in user.
  */
-export async function findSimilarPosts(projectSlug: string, title: string, widgetToken?: string | null): Promise<SimilarPost[]> {
+async function findSimilarPosts({ actor, projectId, pageLanguage }: Context, title: string): Promise<SimilarPost[]> {
   const query = querySchema.safeParse(title);
   if (!query.success) {
     return [];
   }
-  const project = await readableProject(projectSlug);
-  if (!project) {
-    return [];
-  }
-
-  // Only posts they may see (post-visibility.ts): the widget's person, or whoever's reading the portal.
-  const tokenUser = widgetToken ? await widgetTokenUser(project.id, String(widgetToken)) : null;
-  // By the widget's token: a reader whatever their role (Actor's viaWidget).
-  const viewer = widgetToken ? await postViewer(project.id, tokenUser, true) : await currentPostViewer(project.id);
+  // Only posts they may see (post-visibility.ts): the widget's person as a reader, else whoever's reading the portal.
+  const viewer = await actorPostViewer(actor, projectId);
   const [byWords, byMeaning] = await Promise.all([
-    trigramMatches(project.id, query.data, viewer),
-    query.data.length >= MIN_EMBED_LENGTH && embeddingsEnabled() ? embeddingMatches(project.id, query.data, viewer) : [],
+    trigramMatches(projectId, query.data, viewer),
+    query.data.length >= MIN_EMBED_LENGTH && embeddingsEnabled() ? embeddingMatches(projectId, query.data, viewer) : [],
   ]);
   const both = new Set(byWords.map((p) => p.id).filter((id) => byMeaning.some((p) => p.id === id)));
   const ranked = [
@@ -57,18 +46,51 @@ export async function findSimilarPosts(projectSlug: string, title: string, widge
     ...byMeaning.filter((p) => !both.has(p.id)),
     ...byWords.filter((p) => !both.has(p.id)),
   ];
-  const userId = widgetToken ? tokenUser : (await sessionIn(project.id))?.user.id;
+  const userId = actor.kind === "user" ? actor.userId : null;
   // Every candidate is judged (up to twice LIMIT, one request), so a duplicate found only by its words isn't cut first.
   // Only for someone who can post here: the check is charged to the project, and anyone can type on a portal.
-  const judged = userId && (await canActIn(userId, project.id)) ? await duplicatesOnly(project.id, query.data, ranked) : ranked;
+  const judged = userId && (await canActIn(userId, projectId)) ? await duplicatesOnly(projectId, query.data, ranked) : ranked;
   const shown = judged.slice(0, LIMIT);
   const votes = userId && shown.length > 0 ? await prisma.vote.findMany({ where: { userId, postId: { in: shown.map((post) => post.id) } }, select: { postId: true } }) : [];
-  const named = await boardNames();
+  // In the page's language (the client says it: Context's pageLanguage), else the project's.
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { language: true } });
+  const named = await boardNames({ language: pageLanguage ?? project.language, defaultLanguage: project.language });
   return shown.map(({ body: _, boardDescription, boardTranslations, ...post }) => {
     const board = named({ name: post.boardName, description: boardDescription, translations: boardTranslations });
     return { ...post, boardName: board.name, boardLang: board.lang, voted: votes.some((vote) => vote.postId === post.id) };
   });
 }
+
+/**
+ * The posts like a title being typed (findSimilarPosts), for the new post forms on the portal and in the widget. A POST:
+ * it may spend the project's credits on the decision model's check.
+ */
+export const similarPosts = defineOperation({
+  name: "posts.similar",
+  title: "Find similar posts",
+  summary: "Posts that look like a title being typed, with whether the caller voted for each.",
+  method: "POST",
+  internal: true,
+  scope: "read",
+  access: "reader",
+  // Any length: a title too short or too long to search finds nothing (findSimilarPosts), never an error while typing.
+  input: z.object({ title: z.string().max(10_000) }),
+  output: z.object({
+    posts: z.array(
+      z.object({
+        id: z.string(),
+        number: z.number(),
+        title: z.string(),
+        voteCount: z.number(),
+        boardName: z.string(),
+        boardLang: z.string().optional(),
+        boardSlug: z.string(),
+        voted: z.boolean(),
+      }),
+    ),
+  }),
+  run: async (context, { title }) => ({ posts: await findSimilarPosts(context, title) }),
+});
 
 /** Checks by the decision model per project an hour, at most: the search is public, so anyone could run it up. */
 const CHECKS_PER_PROJECT_PER_HOUR = 300;

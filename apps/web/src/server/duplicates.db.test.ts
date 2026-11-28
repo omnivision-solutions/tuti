@@ -6,11 +6,10 @@ import { DUPLICATE_CANDIDATE_MIN_SIMILARITY, DUPLICATE_MIN_SIMILARITY, DEFAULT_D
 import { configFile, FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, findSimilarPosts, signUp, type TestUser } from "@/test/helpers";
 
 import { mergePost } from "./manage-posts";
 import { createPost } from "./posts";
-import { findSimilarPosts } from "./similar-posts";
 
 /**
  * Duplicate detection end to end: creating a post runs the post-created job

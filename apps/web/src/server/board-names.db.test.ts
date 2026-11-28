@@ -3,6 +3,9 @@ import { labelSource } from "@tuti/jobs";
 import { beforeEach, expect, test } from "vitest";
 
 import { generateMetadata as boardMetadata } from "@/app/portal/[project]/(site)/feedback/[board]/page";
+import { PAGE_LANGUAGE_HEADER } from "@/lib/language-addresses";
+import { requestContext } from "@/server/trpc/context";
+import { createCaller } from "@/server/trpc/server";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
@@ -72,4 +75,16 @@ test("a board's page title and description are in the page's language where it's
   expect(await boardMetadata(params)).toMatchObject({ title: "Funktionswünsche", description: "Was wir bauen sollten." });
   at(null);
   expect(await boardMetadata(params)).toMatchObject({ title: "Feature requests", description: "What we should build." });
+});
+
+test("similar posts through /api/trpc name their boards in the page's language, which the client says (no proxy headers there)", async () => {
+  const board = await prisma.board.findFirstOrThrow({ where: { projectId: project.id } });
+  await prisma.post.create({ data: { projectId: project.id, boardId: board.id, authorId: owner.id, number: 1, title: "Dark mode please", status: "PLANNED" } });
+  const similar = async (language?: string) => {
+    const headers = new Headers({ host: `${project.slug}.localhost:3100`, "sec-fetch-site": "same-origin", ...(language && { [PAGE_LANGUAGE_HEADER]: language }) });
+    const { posts } = await createCaller(await requestContext(headers)).posts.similar({ project: project.slug, title: "Dark mode please" });
+    return posts.map(({ boardName, boardLang }) => ({ boardName, boardLang }));
+  };
+  expect(await similar("de")).toEqual([{ boardName: "Funktionswünsche", boardLang: "de" }]);
+  expect(await similar()).toEqual([{ boardName: "Feature requests", boardLang: "en" }]);
 });

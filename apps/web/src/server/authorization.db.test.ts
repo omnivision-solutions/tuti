@@ -64,7 +64,6 @@ import * as readerLanguage from "./reader-language";
 import * as rewrite from "./rewrite";
 import * as screenshots from "./screenshots";
 import * as signInLink from "./sign-in-link";
-import * as similarPosts from "./similar-posts";
 import * as ssoSettings from "./sso-settings";
 import * as team from "./team";
 import * as webhooks from "./webhooks";
@@ -123,7 +122,6 @@ const modules = {
   "reader-language": readerLanguage,
   rewrite,
   screenshots,
-  "similar-posts": similarPosts,
   "sign-in-link": signInLink,
   "sso-settings": ssoSettings,
   team,
@@ -688,9 +686,6 @@ const matrix: Matrix = {
     unassignPlanLicense: { allowed: "signed in", refusesSsoUsers: true, call: (_, f) => planLicenses.unassignPlanLicense(f.assignedPlanLicenseId) },
     // A claim for an unclaimed license (from AppSumo's sign-in): it redirects to Licenses once claimed.
     claimPlanLicense: { allowed: "signed in", refusesSsoUsers: true, call: (_, f) => planLicenses.claimPlanLicense(f.planLicenseClaim) },
-  },
-  "similar-posts": {
-    findSimilarPosts: { allowed: "public", call: (slug) => similarPosts.findSimilarPosts(slug, "Dark mode please") },
   },
   // Signing in: anyone may ask for a link; only the address's owner can use it (see sign-in-link.db.test.ts).
   "sign-in-link": {
@@ -1491,6 +1486,8 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   "portal.access": { allowed: "public", scope: "read", call: (caller, slug) => caller.portal.access({ project: slug }) },
   "portal.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.portal.get({ project: slug }) },
   "portal.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.portal.update({ project: slug, home: "docs" }) },
+  // Similar posts while typing a new one: anyone who can read the portal (a POST: its check may spend credits).
+  "posts.similar": { allowed: "public", scope: "read", call: (caller, slug) => caller.posts.similar({ project: slug, title: "Dark mode please" }) },
   "project.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.project.get({ project: slug }) },
   "project.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.project.update({ project: slug, name: "Renamed by the matrix" }) },
   // Settings' gate: each settings page asks it.
