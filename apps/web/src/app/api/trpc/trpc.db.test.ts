@@ -107,15 +107,25 @@ test("the mobile app's token sends one call per request: a batch of them is refu
   const input = encodeURIComponent(JSON.stringify({ 0: { json: { project: project.slug } }, 1: { json: { project: project.slug } } }));
   const batch = (headers: Record<string, string>) => GET(new Request(`${appUrl().origin}/api/trpc/aiFirst.get,team.list?batch=1&input=${input}`, { headers: { host: host(), ...headers } }));
   expect((await batch(tokenHeaders())).status).toBe(400);
+  // Its comma escaped, and a malformed escape: refused, never a server error.
+  for (const path of ["aiFirst.get%2Cteam.list", "aiFirst.get%2cteam.list", "aiFirst.get%E0%A4%A"]) {
+    const status = (await GET(new Request(`${appUrl().origin}/api/trpc/${path}?batch=1&input=${input}`, { headers: { host: host(), ...tokenHeaders() } }))).status;
+    expect({ path, status }).toEqual({ path, status: expect.toSatisfy((code: number) => code >= 400 && code < 500) });
+  }
   // The web app's batches, with its cookie, go through.
   expect((await batch({ cookie: owner.cookie })).status).toBe(200);
 });
 
 test("past the token's rate limit, the 429 says when to come back (Retry-After), as /api/v1's does", async () => {
-  await prisma.user.update({ where: { id: owner.id }, data: { apiRateCount: 10_000, apiRateWindowStart: new Date(Math.floor(Date.now() / 60_000) * 60_000) } });
+  // Half way through a minute, the clock held there: the limit's window (the minute, as authenticateSession counts it)
+  // can't roll over during the test, and 30 seconds are left in it.
+  const window = Math.floor(Date.now() / 60_000) * 60_000;
+  vi.useFakeTimers({ toFake: ["Date"], now: window + 30_000 });
+  onTestFinished(() => void vi.useRealTimers());
+  await prisma.user.update({ where: { id: owner.id }, data: { apiRateCount: 10_000, apiRateWindowStart: new Date(window) } });
   const response = await GET(new Request(`${appUrl().origin}/api/trpc/aiFirst.get?input=${encodeURIComponent(JSON.stringify({ json: { project: project.slug } }))}`, { headers: { host: host(), ...tokenHeaders() } }));
   expect(response.status).toBe(429);
-  expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0);
+  expect(response.headers.get("retry-after")).toBe("30");
 });
 
 test("an operation's own error keeps its status and message", async () => {

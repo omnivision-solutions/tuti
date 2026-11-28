@@ -12,7 +12,8 @@ import { appRouter } from "@/server/trpc/router";
 function handler(request: Request) {
   // The mobile app's token is counted against its teammate's rate limit once per request, as /api/v1 counts each call:
   // one procedure per request, never a batch of them.
-  if (request.headers.get(CLIENT_HEADER) && decodeURIComponent(new URL(request.url).pathname).includes(",")) {
+  // The raw path: a comma, or its escape (decoding a malformed escape would throw).
+  if (request.headers.get(CLIENT_HEADER) && /,|%2c/i.test(new URL(request.url).pathname)) {
     return Response.json({ error: { message: "Send one call per request" } }, { status: 400 });
   }
   let retryAfter: string | undefined;
