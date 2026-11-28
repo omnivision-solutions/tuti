@@ -22,7 +22,7 @@ import { log } from "@tuti/shared";
 import { mediaLimit, mediaStorage, VIDEO_URL_SECONDS } from "@tuti/shared/storage";
 import { z } from "zod";
 
-import { onTeam } from "../session";
+import { actorOnTeam } from "../session";
 import { type Actor, defineOperation, OperationError } from "./define";
 
 /**
@@ -93,8 +93,8 @@ export const createUpload = defineOperation({
       throw new OperationError(503, "uploads_unavailable", attachment ? "File uploads aren't set up on this server" : "Image uploads aren't set up on this server");
     }
 
-    // The team as this request has them: a teammate on a portal's session uploads as a reader.
-    const isTeam = await onTeam(projectId, userId);
+    // The team as this request has them: a teammate on a portal's session, or by the widget, uploads as a reader.
+    const isTeam = await actorOnTeam(actor, projectId);
     // Files go into articles, which only the team writes.
     if (attachment && !isTeam) {
       throw new OperationError(403, "forbidden", "Only the team can attach files");

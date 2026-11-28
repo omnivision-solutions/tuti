@@ -11,7 +11,7 @@ import { storedProperties } from "@tuti/shared/user-properties";
 
 import type { Actor } from "./operations/define";
 import type { PostViewer } from "./post-visibility";
-import { canReadPortal, PREVIEW_READER_COOKIE, previewReader } from "@/server/auth/portal-readers";
+import { canReadPortal, PREVIEW_READER_COOKIE, previewReader, WIDGET_READER_COOKIE } from "@/server/auth/portal-readers";
 import { widgetTokenUser } from "@/server/auth/widget-session";
 
 import { onTeam, sessionIn } from "./session";
@@ -24,20 +24,13 @@ import { onTeam, sessionIn } from "./session";
  */
 
 /**
- * In the widget on a customer's site the portal's session cookie isn't sent; the person their app
- * signs in (Tuti.identify) gets this cookie instead (set by widgetSignIn: partitioned per embedding
- * site, holding their signed widget token), so the panel can show a private portal to them.
- */
-export const WIDGET_READER_COOKIE = "tuti_widget_reader";
-
-/**
  * Who's reading on this request: the team member previewing the portal in Customize (its cookie is only ever in
  * Customize's frame, which carries the portal's cookies too, so it comes first: a portal session there is a reader's,
  * see onTeam), the portal's signed-in user, or the person signed in to the widget. A portal session that may not read
  * the portal (a team member's on their own private portal) gives way to the widget's. `session` null: the widget's or
  * the preview's person, read with no portal session (onTeam).
  */
-const reader = cache(async (projectId: string): Promise<{ userId: string | null; session?: null }> => {
+const reader = cache(async (projectId: string): Promise<{ userId: string | null; session?: null; asReader?: true }> => {
   const jar = await cookies();
   const previewing = await previewReader(projectId, jar.get(PREVIEW_READER_COOKIE)?.value);
   if (previewing) {
@@ -49,7 +42,8 @@ const reader = cache(async (projectId: string): Promise<{ userId: string | null;
   }
   const token = jar.get(WIDGET_READER_COOKIE)?.value;
   const widget = token ? await widgetTokenUser(projectId, token) : null;
-  return widget ? { userId: widget, session: null } : { userId: session?.user.id ?? null };
+  // The widget's person: a reader whatever their role (Actor's viaWidget), let in as the team is but never shown its own.
+  return widget ? { userId: widget, session: null, asReader: true } : { userId: session?.user.id ?? null };
 });
 
 /** Whether whoever's asking may read the project's portal. */
@@ -72,12 +66,13 @@ export async function readableProject(slug: string): Promise<{ id: string } | nu
  * verified (any of them puts them in a group). None for everyone else, and none on a plan without
  * reader groups. Once per request: pages ask many times.
  */
-export const readerOf = cache(async (projectId: string, userId: string | null | undefined, session?: Session | null): Promise<Reader> => {
+export const readerOf = cache(async (projectId: string, userId: string | null | undefined, session?: Session | null, asReader = false): Promise<Reader> => {
   if (!userId) {
     return SIGNED_OUT;
   }
   const [member, account, groups, project] = await Promise.all([
-    onTeam(projectId, userId, session),
+    // `asReader`: never the team (the widget's person: Actor's viaWidget).
+    !asReader && onTeam(projectId, userId, session),
     prisma.user.findUnique({ where: { id: userId }, select: { email: true, emailVerified: true } }),
     prisma.readerGroup.findMany({ where: { projectId }, select: { key: true, conditions: true, match: true } }),
     prisma.project.findUnique({ where: { id: projectId }, select: { plan: true } }),
@@ -105,8 +100,8 @@ export const readerOf = cache(async (projectId: string, userId: string | null | 
  * shows less.
  */
 export async function currentReader(projectId: string): Promise<Reader> {
-  const { userId, session } = await reader(projectId);
-  const read = await readerOf(projectId, userId, session);
+  const { userId, session, asReader } = await reader(projectId);
+  const read = await readerOf(projectId, userId, session, asReader);
   return (await headers()).get(PREVIEW.header) === PREVIEW.value ? SIGNED_OUT : read;
 }
 
@@ -125,8 +120,11 @@ export async function currentPostViewer(projectId: string): Promise<PostViewer> 
   return read === null ? { team: true, userId } : { team: false, userId: read.signedIn ? userId : null };
 }
 
-/** An operation's caller as a reader: API keys act for the team (everything). */
+/**
+ * An operation's caller as a reader: API keys act for the team (everything); a visitor reads as people signed out do; the
+ * widget's person as a reader, never the team.
+ */
 export async function actorReader(actor: Actor, projectId: string): Promise<Reader> {
-  return actor.kind === "apiKey" ? null : readerOf(projectId, actor.userId);
+  return actor.kind === "apiKey" ? null : actor.kind === "user" ? readerOf(projectId, actor.userId, undefined, !!actor.viaWidget) : readerOf(projectId, null);
 }
 

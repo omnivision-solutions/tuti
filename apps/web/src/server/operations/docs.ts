@@ -49,7 +49,7 @@ import { searchDocs } from "../docs-search";
 import { actorReader } from "../portal-access";
 import { isTeam } from "./changelog";
 import { saving } from "./create";
-import { type Actor, defineOperation, OperationError } from "./define";
+import { actingUserId, type Actor, defineOperation, OperationError } from "./define";
 import { requireArticleRoom, requirePlan } from "./plan";
 import { projectSlug } from "./read";
 
@@ -469,7 +469,7 @@ async function articleText(input: { body?: string; content?: unknown }, projectI
 type ArticleText = Awaited<ReturnType<typeof articleText>>;
 
 /** Who a save is by: the person, or the API key's creator. */
-const authorOf = (actor: Actor) => (actor.kind === "user" ? actor.userId : actor.createdById);
+const authorOf = (actor: Actor) => actingUserId(actor);
 
 /** Deleted articles after this can still be restored. */
 export const restorableSince = () => new Date(Date.now() - DELETED_ARTICLE_DAYS * 24 * 60 * 60 * 1000);

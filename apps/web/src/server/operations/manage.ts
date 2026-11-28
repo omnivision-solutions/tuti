@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { fromApiVisibility, VISIBILITIES } from "../post-visibility";
 import { lockSampleContent } from "../sample-content";
-import { defineOperation, OperationError } from "./define";
+import { actingUserId, defineOperation, OperationError } from "./define";
 import { findPost, fromApiStatus, postNumber, postShape, postSummarySelect, projectPortal, STATUSES, summary } from "./read";
 
 /** Team actions on posts: status, board and merging duplicates. */
@@ -112,7 +112,7 @@ export const updatePost = defineOperation({
       // while it's still the post's latest.
       let generation: number | null = null;
       if (status && status !== previous) {
-        await tx.postEvent.create({ data: { postId: post.id, actorId: actor.kind === "user" ? actor.userId : actor.createdById, from: previous, to: status } });
+        await tx.postEvent.create({ data: { postId: post.id, actorId: actingUserId(actor), from: previous, to: status } });
         generation = await postGeneration(post.id, tx);
       }
       return { updated: saved, previous, generation };

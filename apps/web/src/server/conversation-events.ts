@@ -2,7 +2,7 @@ import type { Prisma } from "@tuti/db";
 
 import { EVENTS, type NewEvent } from "@/lib/conversation-events";
 
-import type { Actor } from "./operations/define";
+import { actingUserId, type Actor } from "./operations/define";
 
 /**
  * Writes a conversation's Activity rows (docs/plan.md, Inbox automation, W16), in the transaction of the change they
@@ -32,8 +32,9 @@ export async function logEvents(tx: Prisma.TransactionClient, conversationId: st
 
 /** Who a change by the team is credited to: the teammate, or the API key (by its name now, kept as it was), never its creator. */
 export async function teamActor(tx: Prisma.TransactionClient, actor: Actor): Promise<Pick<NewEvent, "actor" | "actorId" | "actorName">> {
-  if (actor.kind === "user") {
-    return { actor: "teammate", actorId: actor.userId };
+  if (actor.kind !== "apiKey") {
+    // A visitor is never the team: refused (actingUserId).
+    return { actor: "teammate", actorId: actingUserId(actor) };
   }
   const key = await tx.apiKey.findUnique({ where: { id: actor.keyId }, select: { name: true } });
   return { actor: "api_key", actorName: key?.name ?? null };

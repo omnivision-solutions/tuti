@@ -7,7 +7,10 @@ import { beforeEach, expect, test, vi } from "vitest";
 import { generateSsoSecret } from "@/server/auth/sso";
 import { widgetToken } from "@/server/auth/widget-session";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { request } from "@/test/next-headers";
 
+import { WIDGET_READER_COOKIE } from "./auth/portal-readers";
+import { currentReader } from "./portal-access";
 import { findSimilarPosts } from "./similar-posts";
 import {
   widgetComment,
@@ -15,6 +18,7 @@ import {
   widgetCreatePost,
   widgetDeleteComment,
   widgetEditComment,
+  widgetIdeaNews,
   widgetIdeas,
   widgetReact,
   widgetReacted,
@@ -315,4 +319,33 @@ test("a private portal's widget lists and takes comments only from those who may
   expect(await widgetEditComment(project.slug, readerToken, 1, id!, {}, text("Still here?"))).toEqual({ error: "Sign in to comment" });
   expect(await widgetDeleteComment(project.slug, readerToken, 1, id!)).toEqual({ error: "Sign in to comment" });
   expect(await prisma.changelogComment.count({ where: { entry: { projectId: project.id } } })).toBe(1);
+});
+
+test("a teammate the customer's site signs in is a reader in the widget: their comment isn't the team's, and team-only ideas stay hidden", async () => {
+  await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Dark mode", publishedAt: new Date() } });
+  await post("For the team only", { voteCount: 3 });
+  await prisma.post.updateMany({ where: { projectId: project.id, title: "For the team only" }, data: { visibility: "TEAM" } });
+  await post("Out in the open", { voteCount: 1 });
+  const token = widgetToken(project.id, owner.id);
+
+  const { id } = await widgetComment(project.slug, token, 1, {}, text("From the widget"));
+  expect(await prisma.changelogComment.findUniqueOrThrow({ where: { id: id! }, select: { asReader: true } })).toEqual({ asReader: true });
+  expect((await widgetIdeas(project.slug, token)).map((idea) => idea.title)).toEqual(["Out in the open"]);
+  // Their ideas' news (both theirs, both just planned) and the ideas like what they type: the open one only.
+  for (const { id: postId } of await prisma.post.findMany({ where: { projectId: project.id }, select: { id: true } })) {
+    await prisma.post.update({ where: { id: postId }, data: { status: "PLANNED" } });
+    await prisma.postEvent.create({ data: { postId, from: "OPEN", to: "PLANNED" } });
+  }
+  expect((await widgetIdeaNews(project.slug, token)).map((news) => news.title)).toEqual(["Out in the open"]);
+  vi.stubEnv("OPENAI_API_KEY", "");
+  expect((await findSimilarPosts(project.slug, "team only open", token)).map((found) => found.title)).not.toContain("For the team only");
+  // The widget panel's own page, by its reader cookie: a reader, never the team (null).
+  request.host = `${project.slug}.localhost:3100`;
+  request.cookie = `${WIDGET_READER_COOKIE}=${encodeURIComponent(token)}`;
+  try {
+    expect(await currentReader(project.id)).not.toBeNull();
+  } finally {
+    request.cookie = "";
+    request.host = "";
+  }
 });

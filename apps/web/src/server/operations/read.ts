@@ -18,7 +18,7 @@ import {
   visiblePosts,
   visiblePostsSql,
 } from "../post-visibility";
-import { type Actor, defineOperation, OperationError } from "./define";
+import { actingUserId, type Actor, defineOperation, OperationError } from "./define";
 import { linkSelect, linkView } from "./link-view";
 
 /** Statuses as the API spells them. */
@@ -323,7 +323,7 @@ export const listComments = defineOperation({
     const post = await findVisiblePost(actor, projectId, number);
     const ofTeam = (await actorReader(actor, projectId)) === null;
     // Liked by whoever calls (a key: its creator, as it votes).
-    const caller = actor.kind === "user" ? actor.userId : actor.createdById;
+    const caller = actingUserId(actor);
     const select = { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true } } } as const;
     const [comments, notes, team] = await Promise.all([
       // In the order they were written (the id breaks a tie: two in the same millisecond), as threads keeps it.

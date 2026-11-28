@@ -23,7 +23,7 @@ import { onlineUntil, presenceKey } from "../presence";
 import { namedProjectUser } from "../project-users";
 import { blockDomainOf, blockSenderOf, recordMark } from "../spam";
 import { SPAM_HOLD_MS } from "../spam-models";
-import { type Actor, defineOperation, OperationError } from "./define";
+import { actingUserId, type Actor, defineOperation, OperationError } from "./define";
 import { findPost, postNumber, projectSlug, STATUSES as POST_STATUSES, toApiStatus as toPostStatus } from "./read";
 
 /** The support inbox (docs/plan.md, Support inbox): conversations between a project's users and its team. */
@@ -353,7 +353,7 @@ export const awake = (now = new Date()): Prisma.ConversationWhereInput => ({
 });
 
 /** The team member writing or looking: the signed-in one, or for an API key, the one who created it. */
-export const teamMemberId = (actor: Actor) => (actor.kind === "user" ? actor.userId : actor.createdById);
+export const teamMemberId = (actor: Actor) => actingUserId(actor);
 
 /** Held while the spam filter's AI check runs (W4): `spamHeldAt` with no teammate's mark yet (Mark as spam keeps it, see conversations.update). */
 const stillHeld = { spamHeldAt: { not: null }, spamMarkedAt: null } satisfies Prisma.ConversationWhereInput;

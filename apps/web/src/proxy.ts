@@ -9,7 +9,7 @@ import { CHECK_PATH, portalAddress, requestTarget, siteCheckToken, siteMount } f
 import { isArticleSlug } from "@/server/docs-queries";
 import { destinationKey, redirectKey, redirectLocation } from "@/lib/portal-redirects";
 import { PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/server/auth/preview-session";
-import { PREVIEW_READER_COOKIE, portalVisitor, previewTokenFor, teamPreview } from "@/server/auth/portal-readers";
+import { PREVIEW_READER_COOKIE, portalVisitor, previewTokenFor, teamPreview, WIDGET_READER_COOKIE } from "@/server/auth/portal-readers";
 import { redirectFor } from "@/server/portal-redirects";
 import { LANGUAGE, languagePrefix, ownAddress, preferredLanguage, prefixedTarget, splitLanguage, withLanguage } from "@/lib/language-addresses";
 import { LANGUAGE_COOKIE } from "@/lib/reader-language";
@@ -270,7 +270,9 @@ async function servePortal(request: NextRequest, slug: string, origin: string, a
   const language = inLanguage && (live || preview) ? inLanguage.code : null;
   const prefix = language ? languagePrefix(language) : "";
   const pathname = inLanguage ? inLanguage.path : address;
-  const visitor = OPEN_PORTAL_PATHS.test(pathname) ? "public" : await portalVisitor(slug, request.headers, request.cookies.get(PREVIEW_READER_COOKIE)?.value);
+  const visitor = OPEN_PORTAL_PATHS.test(pathname)
+    ? "public"
+    : await portalVisitor(slug, request.headers, { preview: request.cookies.get(PREVIEW_READER_COOKIE)?.value, widgetReader: request.cookies.get(WIDGET_READER_COOKIE)?.value });
   if (visitor === "refused") {
     // A script's request (a client navigation: the page's router asking for the next page's payload) gets no redirect:
     // followed, it would show the sign-in page inside the layout as it was for someone who could read the portal (its

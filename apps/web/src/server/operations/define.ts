@@ -11,13 +11,29 @@ import { z } from "zod";
 export type Scope = "read" | "write";
 
 /**
- * Who's calling: someone signed in (in the app or on a portal), or a project's API key (acting as its team). `sessionId`:
- * the app session a teammate called the API with (server/api-auth.ts), which a device they register belongs to.
+ * Who's calling: someone signed in (in the app, on a portal, or in the widget by its token), a project's API key (acting
+ * as its team), or a visitor nobody signed in: the widget's signed-out visitor by their visitor token's hash, or, with
+ * none (null), someone reading a portal signed out. `sessionId`: the app session a teammate called the API with
+ * (server/api-auth.ts), which a device they register belongs to. `viaWidget`: someone the customer's site signed in to
+ * the widget, a reader whatever their role (the embedding site holds their token): never the team, in what they see
+ * either. A visitor acts only where `access` is "reader".
  */
 export type Actor =
-  | { kind: "user"; userId: string; sessionId?: string }
-  | { kind: "apiKey"; keyId: string; projectId: string; scope: Scope; createdById: string };
+  | { kind: "user"; userId: string; sessionId?: string; viaWidget?: true }
+  | { kind: "apiKey"; keyId: string; projectId: string; scope: Scope; createdById: string }
+  | { kind: "visitor"; visitorHash: string | null };
 export type ApiKeyActor = Extract<Actor, { kind: "apiKey" }>;
+
+/**
+ * Who an actor acts as: the person signed in, or a key's creator. A visitor is nobody: refused (they run only `reader`
+ * operations, and none of those asks this).
+ */
+export function actingUserId(actor: Actor): string {
+  if (actor.kind === "visitor") {
+    throw new OperationError(401, "unauthorized", "Sign in to do this");
+  }
+  return actor.kind === "user" ? actor.userId : actor.createdById;
+}
 
 /** What an operation runs with: who's calling and in which project, plus what trusted server code adds (`byItself`, `quietly`). */
 export type Context = {
@@ -46,12 +62,12 @@ type Fields<I extends z.ZodType> = {
   /** Read operations work with any key; write operations need a read + write key. */
   scope: Scope;
   /**
-   * Who may run it when signed in: the project's team, only its owners and admins (project settings, like the Settings
-   * page), only its owners (settings only they change, like Autopilot's: a key works only while whoever created it owns
-   * the project), or anyone who may post in the project. Keys count as the team, with their creator's current role.
-   * Checked before the run, never inside it (authorize).
+   * Who may run it: the project's team, only its owners and admins (project settings, like the Settings page), only its
+   * owners (settings only they change, like Autopilot's: a key works only while whoever created it owns the project),
+   * anyone signed in who may post in the project, or anyone who can read its portal, signed in or not (a visitor
+   * too). Keys count as the team, with their creator's current role. Checked before the run, never inside it (authorize).
    */
-  access: "team" | "admin" | "owner" | "anyone";
+  access: "team" | "admin" | "owner" | "anyone" | "reader";
   /**
    * The statuses besides those every operation may answer with (openapi.ts: `errorStatuses`) that its run, or a helper
    * it calls, can raise: 402 (its plan or credits), 404 (something its input names, where its path names nothing),
@@ -152,12 +168,37 @@ const roleIn = async (projectId: string, userId: string) =>
 /**
  * Whether the actor may run the operation in the project: the one check, used by the tRPC middleware (through
  * procedureFor) and by runOperation. A key's scope decides reads and writes, and it acts with its creator's current role
- * (none once they left the team); `team`, `admin` and `owner` need that role; `anyone` needs someone who may act in the
- * project (canActIn: not another project's single sign-on user, a reader of a private portal). `role`: the actor's,
- * when the caller already read it. Returns the context to run with (with `ownerId` for owner operations).
+ * (none once they left the team); `team`, `admin` and `owner` need that role; `anyone` needs someone signed in who may
+ * act in the project (canActIn: not another project's single sign-on user, a reader of a private portal); `reader`
+ * needs someone who can read the project's portal (`mayRead`: the middleware's answer for the request's reader, its
+ * preview and widget cookies included; else the actor's), and a key counts as the team. A visitor (nobody signed in)
+ * acts only where `access` is `reader`, and the widget's person (`viaWidget`) only where it's `anyone` or `reader`. `role`: the actor's, when the caller already read it. Returns the context to run
+ * with (with `ownerId` for owner operations).
  */
-export async function authorize<C extends Context>(operation: Pick<Operation, "scope" | "access">, context: C, role?: TeamRole | null): Promise<C> {
+export async function authorize<C extends Context>(
+  operation: Pick<Operation, "scope" | "access">,
+  context: C,
+  role?: TeamRole | null,
+  mayRead?: () => Promise<boolean>,
+): Promise<C> {
   const { actor, projectId } = context;
+  // Imported here: portal-readers.ts reaches the session, and membership.ts reaches operations, which import this file.
+  const canRead = async (userId: string | null) => (await import("../auth/portal-readers")).canReadPortal({ id: projectId }, userId);
+  const refusedReader = () => new OperationError(403, "forbidden", "This portal is private: sign in as one of its readers");
+  if (actor.kind === "visitor") {
+    if (operation.access !== "reader") {
+      throw new OperationError(401, "unauthorized", "Sign in to do this");
+    }
+    if (!(await (mayRead ?? (() => canRead(null)))())) {
+      throw refusedReader();
+    }
+    return context;
+  }
+  // The widget's person: a reader whatever their role (the embedding site holds their token), so never the team's
+  // operations, however they're reached (the router, or runOperation in a chain).
+  if (actor.kind === "user" && actor.viaWidget && operation.access !== "anyone" && operation.access !== "reader") {
+    throw new OperationError(403, "forbidden", "This can't be done from the widget");
+  }
   const userId = actor.kind === "user" ? actor.userId : actor.createdById;
   if (actor.kind === "apiKey") {
     if (actor.projectId !== projectId) {
@@ -167,12 +208,14 @@ export async function authorize<C extends Context>(operation: Pick<Operation, "s
       throw new OperationError(403, "forbidden", "This key can only read. Create a read + write key to change things.");
     }
   }
-  const needsRole = actor.kind === "apiKey" || operation.access !== "anyone";
+  const needsRole = actor.kind === "apiKey" || (operation.access !== "anyone" && operation.access !== "reader");
   const current = needsRole ? (role === undefined ? await roleIn(projectId, userId) : role) : null;
   if (needsRole && !current) {
     throw new OperationError(403, "forbidden", actor.kind === "apiKey" ? "This API key stopped working when whoever created it left the team" : "You're not on this project's team");
   }
-  // Imported here: membership.ts reaches operations, which import this file.
+  if (operation.access === "reader" && actor.kind === "user" && !(await (mayRead ?? (() => canRead(userId)))())) {
+    throw refusedReader();
+  }
   if (operation.access === "anyone" && actor.kind === "user" && !(await (await import("../membership")).canActIn(userId, projectId))) {
     throw new OperationError(403, "forbidden", "You can't do this in this project");
   }
@@ -215,12 +258,13 @@ export async function runOperation<I extends z.ZodType, O>(operation: Operation<
 /**
  * What the tRPC router builds each operation's procedure from: the same check as runOperation, before the input is
  * read (so a refused caller hears that, whatever they sent, as REST always answered), then the run with what it
- * returned. `role` is the caller's, which the middleware read; the input arrives checked (the procedure's parser).
+ * returned. `role` is the caller's, which the middleware read, and `mayRead` whether the request's reader can read the
+ * portal (for `reader` operations); the input arrives checked (the procedure's parser).
  */
 export function procedureFor<I extends z.ZodType, O>(operation: Operation<I, O>) {
   const run = runOf(operation);
-  return async (context: Context, role?: TeamRole | null) => {
-    const allowed = await authorize(operation, context, role);
+  return async (context: Context, role?: TeamRole | null, mayRead?: () => Promise<boolean>) => {
+    const allowed = await authorize(operation, context, role, mayRead);
     return (input: z.infer<I>): Promise<O> => run(allowed, input);
   };
 }

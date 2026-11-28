@@ -51,7 +51,7 @@ import { createComment } from "./create";
 import { linkEntryPosts } from "./changelog";
 import { aiOrRefuse } from "./credits";
 import { collectionNamed, createArticle, indexArticle, keepText, publishArticleChanges, recordRevision, reorderArticle, saveArticle, updateArticle } from "./docs";
-import { type Actor, defineOperation, OperationError, runOperation } from "./define";
+import { actingUserId, type Actor, defineOperation, OperationError, runOperation } from "./define";
 import { updatePost } from "./manage";
 import { requirePlan } from "./plan";
 import { postSummarySelect, projectPortal, STATUSES, summary, toApiStatus } from "./read";
@@ -1643,7 +1643,7 @@ export const resumeCodeChanges = defineOperation({
 });
 
 /** The person behind a call: the user, or the key's creator. */
-const actorUser = (actor: Actor) => (actor.kind === "user" ? actor.userId : actor.createdById);
+const actorUser = (actor: Actor) => actingUserId(actor);
 
 /** Statuses a post moves on from to In progress when a code change moves it forward. */
 const NOT_STARTED = new Set(["OPEN", "UNDER_REVIEW", "PLANNED"]);

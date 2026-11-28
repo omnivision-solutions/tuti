@@ -2,7 +2,7 @@ import type { TRPCMutationProcedure, TRPCQueryProcedure } from "@trpc/server";
 
 import { all, allOperations } from "../operations";
 import { type InputOf, type Operation, OperationError, type OutputOf, procedureFor } from "../operations/define";
-import { type ProjectField, projectOf, router, signedInProcedure } from "./init";
+import { baseProcedure, type ProjectField, projectOf, router, signedInProcedure } from "./init";
 
 /**
  * The router, generated from the operations list (docs/plan.md, "One way in"): one procedure per operation, under its
@@ -35,12 +35,13 @@ function inputOf(operation: Operation) {
 
 function procedure(operation: Operation) {
   const allowed = procedureFor(operation);
-  const built = signedInProcedure
+  // Anyone who can read the portal, signed in or not, for `reader` operations; someone signed in for the rest.
+  const built = (operation.access === "reader" ? baseProcedure : signedInProcedure)
     .use(async ({ ctx, getRawInput, next }) => {
       // Who may, before the input is checked (as REST always answered): a typo in the slug or a refusal, then the input.
       const { project } = ((await getRawInput()) ?? {}) as { project?: unknown };
-      const { actor, projectId, role } = await projectOf(ctx, typeof project === "string" ? project : undefined, operation.access);
-      const run = await allowed({ actor, projectId }, role);
+      const { actor, projectId, role, mayRead } = await projectOf(ctx, typeof project === "string" ? project : undefined, operation.access);
+      const run = await allowed({ actor, projectId }, role, mayRead);
       if (ctx.unreadable) {
         throw ctx.unreadable;
       }

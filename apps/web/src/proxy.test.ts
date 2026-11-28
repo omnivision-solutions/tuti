@@ -25,6 +25,7 @@ vi.mock("@/server/auth/portal-readers", () => ({
   previewTokenFor: async () => false,
   teamPreview: async (_slug: string, _headers: Headers, preview?: string) => preview === "team",
   PREVIEW_READER_COOKIE: "tuti_preview_reader",
+  WIDGET_READER_COOKIE: "tuti_widget_reader",
 }));
 // /docs/billing is an article's page; any other /docs/<slug>, a tab's or collection's (see findable.db.test.ts).
 vi.mock("@/server/docs-queries", () => ({ isArticleSlug: async (_project: string, slug: string) => slug === "billing" }));

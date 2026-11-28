@@ -56,6 +56,23 @@ export const getSettingsAccess = defineOperation({
   run: async () => ({}),
 });
 
+/**
+ * The portal's gate, for its pages and files as they move onto the router: nothing to read, refused to anyone who can't
+ * read the portal (the same answer proxy.ts gives the same request: server/auth/portal-readers.ts, mayReadPortal).
+ */
+export const getPortalAccess = defineOperation({
+  name: "portal.access",
+  title: "Open the portal",
+  summary: "Whether the caller may read the project's portal: anyone, or only its readers when it's private.",
+  method: "GET",
+  internal: true,
+  scope: "read",
+  access: "reader",
+  input: z.object({}),
+  output: z.object({}),
+  run: async () => ({}),
+});
+
 export const updateProject = defineOperation({
   name: "project.update",
   title: "Update the project",

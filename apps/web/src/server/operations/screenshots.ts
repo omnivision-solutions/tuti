@@ -12,7 +12,7 @@ import { HIDDEN_CHARACTERS, hasHiddenCharacters } from "@/lib/hidden-characters"
 
 import { displayDoc } from "../content";
 import { NO_CREDITS } from "./credits";
-import { type Actor, defineOperation, OperationError } from "./define";
+import { actingUserId, type Actor, defineOperation, OperationError } from "./define";
 import { countSpecFetch } from "./fetch-limits";
 
 /**
@@ -437,7 +437,7 @@ async function refuseRun(projectId: string) {
   }
 }
 
-const startedBy = (actor: Actor) => (actor.kind === "user" ? actor.userId : actor.createdById);
+const startedBy = (actor: Actor) => actingUserId(actor);
 
 /**
  * Starts a run, or finds the one running: one at a time per project (and one Test), as each holds a worker slot for

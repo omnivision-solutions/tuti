@@ -15,12 +15,13 @@ import { verifySsoToken } from "@/server/auth/sso";
 import type { FormState } from "./form-state";
 import { canActIn } from "./membership";
 import { createPost as createPostOperation } from "./operations/create";
-import { OperationError } from "./operations/define";
+import { type Actor, OperationError } from "./operations/define";
 import { setVote } from "./operations/more";
 import { reactToChangelogEntry } from "./operations/changelog";
 import { createChangelogComment, deleteChangelogComment, listChangelogComments, updateChangelogComment } from "./operations/changelog-comments";
 import { asAdmin, call, postNumberOf } from "./operations/run";
-import { readableProject, WIDGET_READER_COOKIE } from "./portal-access";
+import { WIDGET_READER_COOKIE } from "./auth/portal-readers";
+import { readableProject } from "./portal-access";
 import { boardPosts } from "./post-lists";
 import { postViewer } from "./post-visibility";
 import { sessionIn } from "./session";
@@ -73,7 +74,7 @@ export async function widgetSignIn(
 export async function widgetIdeaNews(projectSlug: string, token: string): Promise<IdeaNews[]> {
   const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
   const userId = project && (await widgetTokenUser(project.id, String(token)));
-  return project && userId ? ideaNews(project.id, userId) : [];
+  return project && userId ? ideaNews(project.id, userId, undefined, true) : [];
 }
 
 /** Posts feedback from the widget as the person its token is for (like the portal's createPost). */
@@ -88,7 +89,7 @@ export async function widgetCreatePost(projectSlug: string, token: string, _prev
     return { error: "Sign in to post feedback" };
   }
   try {
-    await call(createPostOperation, { actor: { kind: "user", userId }, projectId: project.id }, {
+    await call(createPostOperation, { actor: widgetActor(userId, token), projectId: project.id }, {
       board: value("boardSlug") ?? "",
       title: value("title") ?? "",
       content: value("content") || undefined,
@@ -113,6 +114,9 @@ async function widgetPerson(projectId: string, token: string | null): Promise<st
   return userId && (await canActIn(userId, projectId)) ? userId : null;
 }
 
+/** The widget's person as an operation's actor: signed in by the token, a reader whatever their role (Actor's viaWidget). */
+const widgetActor = (userId: string, token: string | null): Actor => (token ? { kind: "user", userId, viaWidget: true } : { kind: "user", userId });
+
 /**
  * The widget's ideas, across the project's boards: the trending ones not done yet, or `mine`, those
  * its person (widgetPerson) posted or voted for, every status, newest first; with whether they voted
@@ -125,7 +129,8 @@ export async function widgetIdeas(projectSlug: string, token: string | null, min
     return [];
   }
   const filters = parsePostFilters({}, TEAM_SORTS, mine ? "new" : "trending");
-  const viewer = await postViewer(project.id, userId);
+  // By the widget's token: a reader whatever their role (Actor's viaWidget).
+  const viewer = await postViewer(project.id, userId, !!token);
   const { posts } = await boardPosts({ projectId: project.id }, filters, viewer, { statuses: mine ? undefined : ACTIVE_STATUSES, mine: mine === true });
   return posts.map((post) => ({
     id: post.id,
@@ -148,7 +153,7 @@ export async function widgetVote(projectSlug: string, token: string | null, post
     return { error: "Sign in to vote" };
   }
   try {
-    const context = { actor: { kind: "user", userId }, projectId: project.id } as const;
+    const context = { actor: widgetActor(userId, token), projectId: project.id };
     return { votes: (await call(setVote, context, { number: await postNumberOf(project.id, postId), voted: voted === true })).votes };
   } catch (error) {
     if (error instanceof OperationError) {
@@ -180,7 +185,7 @@ export async function widgetReact(projectSlug: string, token: string | null, num
     return { error: "Sign in to react" };
   }
   try {
-    const context = { actor: { kind: "user", userId }, projectId: project.id } as const;
+    const context = { actor: widgetActor(userId, token), projectId: project.id };
     return { reactions: (await call(reactToChangelogEntry, context, { number: Number(number), reaction, reacted: reacted === true })).reactions };
   } catch (error) {
     if (error instanceof OperationError) {
@@ -201,7 +206,7 @@ export async function widgetComments(projectSlug: string, token: string | null, 
     return { error: "Sign in to comment" };
   }
   try {
-    const context = { actor: { kind: "user", userId }, projectId: project.id } as const;
+    const context = { actor: widgetActor(userId, token), projectId: project.id };
     const { comments } = await call(listChangelogComments, context, { number: Number(number) });
     const own = new Set(
       (await prisma.changelogComment.findMany({ where: { authorId: userId, entry: { projectId: project.id, number: Number(number) } }, select: { id: true } })).map((c) => c.id),
@@ -216,14 +221,14 @@ export async function widgetComments(projectSlug: string, token: string | null, 
 }
 
 /** Runs a comment's operation as the widget's person (widgetPerson); the panel's page then shows the list as it is now. */
-async function asCommenter<T>(projectSlug: string, token: string | null, run: (context: { actor: { kind: "user"; userId: string }; projectId: string }) => Promise<T>) {
+async function asCommenter<T>(projectSlug: string, token: string | null, run: (context: { actor: Actor; projectId: string }) => Promise<T>) {
   const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
   const userId = project && (await widgetPerson(project.id, token));
   if (!project || !userId) {
     return { error: "Sign in to comment" };
   }
   try {
-    const result = await run({ actor: { kind: "user", userId }, projectId: project.id });
+    const result = await run({ actor: widgetActor(userId, token), projectId: project.id });
     refresh();
     return result;
   } catch (error) {

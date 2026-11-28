@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { z } from "zod";
 
-import { type Actor, defineOperation, OperationError } from "./define";
+import { actingUserId, type Actor, defineOperation, OperationError } from "./define";
 
 /**
  * The mobile app's push notifications (docs/plan.md, Mobile app; packages/jobs push.ts): a teammate's phones, across
@@ -105,7 +105,7 @@ export const getNotificationSettings = defineOperation({
   access: "team",
   input: z.object({}),
   output: notificationSettings,
-  run: ({ actor }) => settingsOf(actor.kind === "user" ? actor.userId : actor.createdById),
+  run: ({ actor }) => settingsOf(actingUserId(actor)),
 });
 
 export const updateNotificationSettings = defineOperation({

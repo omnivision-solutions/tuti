@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { syncUsers as syncProjectUsers, TooManyProperties, upsertProjectUser, type UserDetails } from "@tuti/jobs";
 
-import { type Actor, OperationError } from "./operations/define";
+import { actingUserId, type Actor, OperationError } from "./operations/define";
 
 export { upsertProjectUser, type UserDetails } from "@tuti/jobs";
 
@@ -10,7 +10,7 @@ export { upsertProjectUser, type UserDetails } from "@tuti/jobs";
  * that their name and email change only when the caller (a key's creator) is an owner or admin, as users.sync needs.
  */
 export async function namedProjectUser(actor: Actor, projectId: string, user: { id: string; name?: string; email?: string }) {
-  const caller = actor.kind === "user" ? actor.userId : actor.createdById;
+  const caller = actingUserId(actor);
   const [admin, existing] = await Promise.all([
     prisma.teamMember.findFirst({ where: { projectId, userId: caller, role: { in: ["OWNER", "ADMIN"] } }, select: { id: true } }),
     prisma.ssoIdentity.findUnique({ where: { projectId_externalId: { projectId, externalId: user.id } }, select: { userId: true } }),

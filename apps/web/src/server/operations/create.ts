@@ -8,10 +8,10 @@ import { namedProjectUser } from "@/server/project-users";
 
 import { attachMedia, displayDoc, MediaGoneError, readContent } from "../content";
 import { emitEvent } from "../events";
-import { type Actor, defineOperation, OperationError } from "./define";
+import { actingUserId, type Actor, defineOperation, OperationError } from "./define";
 import { actorPostViewer, fromApiVisibility, seesBoard, VISIBILITIES } from "../post-visibility";
 import { commentShape, findVisiblePost, postNumber, postShape, postSummarySelect, projectPortal, summary } from "./read";
-import { onTeam, signedInAsReader } from "../session";
+import { actorOnTeam, onTeam, writesAsReader } from "../session";
 import { rememberPageLanguage } from "@/server/portal-language";
 
 /** A comment that isn't (or is no longer) on the post: replied to or liked. */
@@ -61,14 +61,15 @@ export const author = z
  * app when `author` is given (created on first sight; see namedProjectUser), otherwise the key's creator.
  */
 export async function authorId(context: { actor: Actor; projectId: string }, input: z.infer<typeof author>) {
-  if (context.actor.kind === "user") {
+  // Only a key writes on someone's behalf: anyone else (a person, the widget's, a visitor) writes as themselves.
+  if (context.actor.kind !== "apiKey") {
     if (input) {
       throw new OperationError(403, "forbidden", "Only API keys can write on someone's behalf");
     }
-    return context.actor.userId;
+    return actingUserId(context.actor);
   }
   if (!input) {
-    return context.actor.createdById;
+    return actingUserId(context.actor);
   }
   return namedProjectUser(context.actor, context.projectId, input);
 }
@@ -269,7 +270,7 @@ export const createComment = defineOperation({
       throw new OperationError(403, "forbidden", teamOnly);
     }
     const userId = await authorId(context, input.author);
-    if (teamOnly && context.actor.kind !== "apiKey" && !(await onTeam(projectId, userId))) {
+    if (teamOnly && !(await actorOnTeam(context.actor, projectId))) {
       throw new OperationError(403, "forbidden", teamOnly);
     }
     const portal = await projectPortal(projectId);
@@ -291,8 +292,8 @@ export const createComment = defineOperation({
       return { id: note.id, author: { name: note.author.name, team: member }, body: note.body, content: displayDoc(note), createdAt: note.createdAt.toISOString(), internal: true as const };
     }
 
-    // Written with a portal's session: a reader's, never shown as the team's, whoever wrote it.
-    const asReader = await signedInAsReader(userId);
+    // Written by the widget's person or with a portal's session: a reader's, never shown as the team's, whoever wrote it.
+    const asReader = await writesAsReader(context.actor, userId);
     let target = input.replyTo;
     const write = () =>
       prisma.$transaction(async (tx) => {
@@ -338,7 +339,7 @@ export const createComment = defineOperation({
     // Its parent deleted by a writer that doesn't lock the post (its author's account): "There's no such comment".
     // The comment its foreign key names: the top-level one, for a reply to a reply.
     const comment = await saving(() => (target ? orNoSuchComment(() => target!, write) : write()));
-    const team = await onTeam(projectId, userId);
+    const team = !asReader && (await onTeam(projectId, userId));
     const created = {
       id: comment.id,
       author: { name: comment.author.name, team },

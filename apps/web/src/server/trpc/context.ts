@@ -2,20 +2,33 @@ import { prisma, type TeamRole } from "@tuti/db";
 
 import type { OperationError } from "../operations/define";
 import { type ApiKey, authenticateSession, sendsSession, type Teammate } from "../api-auth";
+import { PREVIEW_READER_COOKIE, WIDGET_READER_COOKIE } from "../auth/portal-readers";
 import { sessionFrom } from "../session";
 
 /**
  * Who's calling, for every procedure (docs/plan.md, "One way in"): someone signed in by a cookie (the app's session, or
- * a portal's on that portal's host, as sessionFrom has it), the mobile app's session token, or, in process only, a
- * project API key (REST and MCP build that context: keys never call /api/trpc). Readers and visitors join in T8.
+ * a portal's on that portal's host, as sessionFrom has it), the mobile app's session token, in process only a project
+ * API key (REST and MCP build that context: keys never call /api/trpc), or the widget's person: someone the customer's
+ * site signed in (`widget`: their widget token, server/auth/widget-session.ts) or a signed-out visitor (`visitor`: their
+ * visitor token, server/auth/visitor-session.ts). Tokens are checked against the project they're for once the procedure
+ * names it (server/trpc/init.ts: projectOf). Nobody (null) may still read a portal anyone can.
  */
 export type Who =
   | { kind: "session"; userId: string; sessionId: string; boundTo: string; via: "cookie" | "token" }
   | { kind: "apiKey"; key: ApiKey }
+  | { kind: "widget"; token: string }
+  | { kind: "visitor"; token: string }
   | null;
+
+/**
+ * What else says who may read a portal (server/auth/portal-readers.ts: mayReadPortal), never who acts: Customize's
+ * preview cookie (the team member customizing it, read-only) and the widget's reader cookie (its signed-in person).
+ */
+export type ReaderCookies = { preview?: string; widgetReader?: string };
 
 export type TrpcContext = {
   who: Who;
+  reader: ReaderCookies;
   /**
    * Whether a mutation may act with this request's cookie: it came from the page's own site. Always true in process
    * (pages, REST, MCP): only /api/trpc can be asked by another site.
@@ -29,6 +42,34 @@ export type TrpcContext = {
    */
   unreadable?: OperationError;
 };
+
+/** The reader's cookies on a request (ReaderCookies). */
+export function readerCookies(headers: Headers): ReaderCookies {
+  const jar = new Map(
+    (headers.get("cookie") ?? "").split(";").map((pair) => {
+      const at = pair.indexOf("=");
+      return [pair.slice(0, at).trim(), pair.slice(at + 1).trim()] as const;
+    }),
+  );
+  const value = (name: string) => {
+    const raw = jar.get(name);
+    try {
+      return raw ? decodeURIComponent(raw) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  return { preview: value(PREVIEW_READER_COOKIE), widgetReader: value(WIDGET_READER_COOKIE) };
+}
+
+/**
+ * The widget's person, as the panel sends them (`Authorization: Widget <token>` or `Visitor <token>`, as /api/widget/live
+ * takes them): schemes of Tuti's own, which a self-hoster's proxy adding its `Basic` or `Bearer` can't be read as.
+ */
+function widgetPersonOf(headers: Headers): { kind: "Widget" | "Visitor"; token: string } | null {
+  const [, kind, token] = /^(Widget|Visitor) (\S{1,8192})$/.exec(headers.get("authorization") ?? "") ?? [];
+  return kind && token ? { kind: kind as "Widget" | "Visitor", token } : null;
+}
 
 /** The header the mobile app always sends and pages never do: only with it does a bearer session token count here. */
 export const CLIENT_HEADER = "Tuti-Client";
@@ -71,10 +112,12 @@ export function fromOwnSite(headers: Headers): boolean {
 /**
  * The context for a request to /api/trpc. The mobile app's token only with CLIENT_HEADER, never from `Authorization`
  * alone: a self-hoster's proxy may add its own to the web app's requests, and a cookie call carrying one is still the
- * cookie session.
+ * cookie session. The widget's person as widgetPersonOf reads them: someone the customer's site signed in first, then
+ * the cookie session, then a signed-out visitor (as the widget's Messages has always ordered them).
  */
 export async function requestContext(headers: Headers): Promise<TrpcContext> {
   const memberships = new Map();
+  const reader = readerCookies(headers);
   if (headers.get(CLIENT_HEADER)) {
     const request = new Request("http://tuti.invalid/api/trpc", { headers });
     if (!sendsSession(request)) {
@@ -85,27 +128,34 @@ export async function requestContext(headers: Headers): Promise<TrpcContext> {
       const { error } = (await session.json()) as { error: { message: string } };
       throw new ContextError(session.status, error.message, session.headers.get("retry-after") ?? undefined);
     }
-    return { who: { kind: "session", ...session, boundTo: "app", via: "token" }, sameSite: true, memberships };
+    return { who: { kind: "session", ...session, boundTo: "app", via: "token" }, reader: {}, sameSite: true, memberships };
+  }
+  const person = widgetPersonOf(headers);
+  if (person?.kind === "Widget") {
+    return { who: { kind: "widget", token: person.token }, reader, sameSite: fromOwnSite(headers), memberships };
   }
   const session = await sessionFrom(headers);
-  return {
-    who: session && { kind: "session", userId: session.user.id, sessionId: session.session.id, boundTo: session.session.boundTo ?? "", via: "cookie" },
-    sameSite: fromOwnSite(headers),
-    memberships,
-  };
+  const who: Who = session
+    ? { kind: "session", userId: session.user.id, sessionId: session.session.id, boundTo: session.session.boundTo ?? "", via: "cookie" }
+    : person && { kind: "visitor", token: person.token };
+  return { who, reader, sameSite: fromOwnSite(headers), memberships };
 }
 
-/** The context for an in-process caller signed in by a cookie (pages): `session` as getSession reads it. */
-export function sessionContext(session: Awaited<ReturnType<typeof sessionFrom>>): TrpcContext {
+/**
+ * The context for an in-process caller signed in by a cookie (pages): `session` as getSession reads it, and the reader's
+ * cookies on the request (readerCookies).
+ */
+export function sessionContext(session: Awaited<ReturnType<typeof sessionFrom>>, reader: ReaderCookies = {}): TrpcContext {
   return {
     who: session && { kind: "session", userId: session.user.id, sessionId: session.session.id, boundTo: session.session.boundTo ?? "", via: "cookie" },
+    reader,
     sameSite: true,
     memberships: new Map(),
   };
 }
 
 /** The context for a project API key, checked already (api-auth.ts: authenticate), for REST and MCP. */
-export const keyContext = (key: ApiKey): TrpcContext => ({ who: { kind: "apiKey", key }, sameSite: true, memberships: new Map() });
+export const keyContext = (key: ApiKey): TrpcContext => ({ who: { kind: "apiKey", key }, reader: {}, sameSite: true, memberships: new Map() });
 
 /**
  * The context for the mobile app's teammate on REST (api-auth.ts: authenticateTeammate, until T11), in the project its
@@ -113,6 +163,7 @@ export const keyContext = (key: ApiKey): TrpcContext => ({ who: { kind: "apiKey"
  */
 export const teammateContext = (teammate: Teammate, slug: string): TrpcContext => ({
   who: { kind: "session", userId: teammate.userId, sessionId: teammate.sessionId, boundTo: "app", via: "token" },
+  reader: {},
   sameSite: true,
   memberships: new Map([[slug, Promise.resolve({ projectId: teammate.projectId, role: teammate.role })]]),
 });
@@ -130,5 +181,5 @@ export async function stillContext(who: Extract<Who, { kind: "session" }>, proje
   const membership = prisma.teamMember
     .findUnique({ where: { projectId_userId: { projectId: project.id, userId: who.userId } }, select: { role: true } })
     .then((member) => member && { projectId: project.id, role: member.role });
-  return { who, sameSite: true, memberships: new Map([[project.slug, membership]]) };
+  return { who, reader: {}, sameSite: true, memberships: new Map([[project.slug, membership]]) };
 }

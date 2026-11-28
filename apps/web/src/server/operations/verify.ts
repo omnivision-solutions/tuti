@@ -5,7 +5,7 @@ import { cache } from "react";
 import { z } from "zod";
 
 import { aiOrRefuse } from "./credits";
-import { defineOperation, OperationError } from "./define";
+import { actingUserId, defineOperation, OperationError } from "./define";
 
 /**
  * Verify (docs/plan.md, V5): an article checked against the project's repository, the default branch at its latest
@@ -235,7 +235,7 @@ export const verifyArticle = defineOperation({
         data: {
           projectId,
           articleId: article.id,
-          startedById: actor.kind === "user" ? actor.userId : actor.createdById,
+          startedById: actingUserId(actor),
           // The version checked: an edit landing after this is one it didn't see, so its fix isn't written.
           revisionId: await newestRevision(article.id, tx),
         },
