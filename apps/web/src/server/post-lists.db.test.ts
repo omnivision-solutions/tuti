@@ -7,9 +7,8 @@ import { PostShipped, PostsLike, PostVoters, VOTERS_NAMED } from "@/components/p
 
 import type { GroupCondition } from "@tuti/shared/group-conditions";
 import { parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
-import { setAskingProperty } from "@/server/groups";
 import { numberPropertyNames } from "@/server/operations/groups";
-import { actAs, createProject, signUp } from "@/test/helpers";
+import { actAs, callerNow, createProject, signUp } from "@/test/helpers";
 
 import { boardPosts, boardStatusCounts, boardsWithCounts, howShipped, likeFirst, MAX_LISTED, postNeighbours, postsLike, postsLikeConversation, postVoters, teamPostCounts, teamPosts, VOTERS_SHOWN, voterTotals } from "./post-lists";
 import { SIGNED_OUT_VIEWER, TEAM_VIEWER } from "./post-visibility";
@@ -217,8 +216,12 @@ test("Who's asking: each post's voters' total of the number property the team pi
   const names = await numberPropertyNames(project.id);
   expect([names.length, names.includes("mrr"), names.includes("p0250")]).toEqual([1000, true, true]);
   await prisma.ssoIdentity.deleteMany({ where: { projectId: project.id, externalId: "many" } });
-  expect(await setAskingProperty(project.slug, "mrr")).toEqual({});
-  expect(await setAskingProperty(project.slug, " ")).toEqual({ error: "Pick one of your users' properties" });
+  // As Settings → Who's asking saves it (project.update), as the signed-in admin.
+  const caller = await callerNow();
+  await caller.project.update({ project: project.slug, askingProperty: "mrr" });
+  await expect(caller.project.update({ project: project.slug, askingProperty: " " })).rejects.toMatchObject({ code: "BAD_REQUEST", message: "Pick one of your users' properties" });
+  // And the page reads it back, with the users' number properties.
+  expect(await caller.settings.asking({ project: project.slug })).toMatchObject({ property: "mrr", properties: ["mrr"] });
   expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).askingProperty).toBe("mrr");
   const totals = await voterTotals(project.id, "mrr", [sso.id, exports.id, quiet.id]);
   expect(new Map(totals)).toEqual(new Map([[sso.id, 1500.5], [quiet.id, 99]]));

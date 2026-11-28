@@ -634,7 +634,6 @@ const matrix: Matrix = {
     previewGroup: { allowed: "ADMIN", call: (slug) => groups.previewGroup(slug, [{ property: "plan", op: "is", value: "pro" }]) },
     // The values the project's SSO users have, like the preview.
     suggestValues: { allowed: "ADMIN", call: (slug) => groups.suggestValues(slug, "plan") },
-    setAskingProperty: { allowed: "ADMIN", call: (slug) => groups.setAskingProperty(slug, "mrr") },
     setUserColumns: { allowed: "ADMIN", call: (slug) => groups.setUserColumns(slug, ["company", "mrr"]) },
     setPropertyFormats: { allowed: "ADMIN", call: (slug) => groups.setPropertyFormats(slug, { mrr: { label: "MRR", format: "money" } }) },
     removeChangelogSubscriber: { allowed: "ADMIN", call: (slug) => groups.removeChangelogSubscriber(slug, "e2e-matrix-subscriber@example.com") },
@@ -1490,6 +1489,7 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   "project.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.project.update({ project: slug, name: "Renamed by the matrix" }) },
   // Settings' gate: each settings page asks it.
   "settings.access": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.settings.access({ project: slug }) },
+  "settings.asking": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.settings.asking({ project: slug }) },
   "spam.get": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.spam.get({ project: slug }) },
   "spam.try": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.spam.try({ project: slug, name: "Kim", sender: "e2e-matrix-kim@example.com", subject: "Hi", text: "Hello" }) },
   // Removing a rule by its id: the fixture's, put back before each call that may remove it.

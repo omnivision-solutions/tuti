@@ -171,6 +171,7 @@ import {
 import {
   createGroup,
   deleteGroup,
+  getAskingSettings,
   listGroups,
   updateGroup,
 } from "./groups";
@@ -465,6 +466,7 @@ export const all = [
   createGroup,
   updateGroup,
   deleteGroup,
+  getAskingSettings,
   listUsers,
   listCompanies,
   getUser,

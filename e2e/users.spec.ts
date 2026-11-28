@@ -524,7 +524,10 @@ test("on a phone, Who's asking's suggestion of a long-named property stays insid
   const list = (await owner.getByRole("listbox").boundingBox())!;
   expect(tag.x + tag.width).toBeLessThanOrEqual(list.x + list.width);
   await checkpoint(owner, "settings-whos-asking-long-name-phone");
+  // Saved through tRPC (project.update), not a server action.
+  const saved = owner.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/api/trpc/project.update"));
   await option.click();
+  await saved;
   await expect(owner.getByText("Feedback totals Averyveryveryverylongnumberpropertynamewithoutanyspaces over each post's voters")).toBeVisible();
   // Picked, it's cut short in its box too.
   const box = (await card.boundingBox())!;
