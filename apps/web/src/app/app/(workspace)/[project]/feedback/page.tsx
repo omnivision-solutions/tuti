@@ -340,7 +340,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                           status={
                             <PostStatusMenu
                               projectSlug={slug}
-                              postId={post.id}
+                              number={post.number}
                               status={post.status}
                               completing={{ title: post.title, emails: emailing(post) }}
                               badge={mixedUngrouped}

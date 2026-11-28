@@ -258,6 +258,7 @@ import {
   listRedirects,
 } from "./redirects";
 import { getReports } from "./reports";
+import { getTeamRoadmap } from "./roadmap";
 import {
   getArticleScreenshotsStatus,
   getEntryScreenshotsStatus,
@@ -406,6 +407,7 @@ export const all = [
   removeEmailDomain,
   listBoards,
   getRoadmap,
+  getTeamRoadmap,
   listChangelog,
   getChangelogEntry,
   reactToChangelogEntry,

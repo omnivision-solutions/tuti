@@ -254,7 +254,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
               <PropertyRow icon={CircleDotIcon} label="Status">
                 <PostStatusSelect
                   projectSlug={slug}
-                  postId={post.id}
+                  number={post.number}
                   status={post.status}
                   completing={{ title: post.title, emails: emails.get(post.id) ?? {} }}
                   className={QUIET_TRIGGER}

@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
-import { PostStatusMenu } from "@/components/post-status-select";
+import { PostStatusMenu, useSavePostStatus } from "@/components/post-status-select";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { VisibilityBadge } from "@/components/visibility-badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -25,7 +25,6 @@ import {
 import { initial } from "@/lib/format";
 import { statusPrompt } from "@/lib/status-prompt";
 import { cn } from "@/lib/utils";
-import { changePostStatus } from "@/server/manage-posts";
 
 type Card = {
   id: string;
@@ -77,6 +76,7 @@ const COLUMN_NOTES: Partial<Record<PostStatus, string>> = {
  */
 export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectSlug: string; columns: { status: PostStatus; posts: Card[] }[]; completedDays: number }) {
   const router = useRouter();
+  const save = useSavePostStatus(projectSlug);
   const [pending, startTransition] = useTransition();
   const [dragging, setDragging] = useState<Card | null>(null);
   const [over, setOver] = useState<PostStatus | null>(null);
@@ -138,17 +138,18 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
   const move = (card: Card, status: PostStatus, byKey = false) => {
     const from = byKey ? presses.current : -1;
     startTransition(async () => {
-      const result = await changePostStatus(projectSlug, card.id, status);
+      const result = await save(card.number, status);
       setAsking(null);
       if (result.error) {
         toast.error(result.error);
+        // The card back where it is (saved, it's refreshed already).
+        router.refresh();
       } else {
         toast.success(`${card.title}: ${STATUS_LABELS[status]}`);
         setMoved({ id: card.id, status, presses: from });
         // On a phone the column it went to is the one shown, so it (and the focus) can follow it.
         if (columns.some((column) => column.status === status)) setShown(status);
       }
-      router.refresh();
     });
   };
 
@@ -249,7 +250,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                     <span className="-my-1 [@media(hover:hover)]:lg:opacity-0 [@media(hover:hover)]:lg:group-focus-within/card:opacity-100 [@media(hover:hover)]:lg:group-hover/card:opacity-100">
                       <PostStatusMenu
                         projectSlug={projectSlug}
-                        postId={card.id}
+                        number={card.number}
                         status={card.status}
                         // The column says the status.
                         badge={false}

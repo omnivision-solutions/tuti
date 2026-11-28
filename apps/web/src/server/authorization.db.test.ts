@@ -1491,6 +1491,8 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   "posts.similar": { allowed: "public", scope: "read", call: (caller, slug) => caller.posts.similar({ project: slug, title: "Dark mode please" }) },
   "project.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.project.get({ project: slug }) },
   "project.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.project.update({ project: slug, name: "Renamed by the matrix" }) },
+  // Feedback → Roadmap, the team's.
+  "roadmap.team": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.roadmap.team({ project: slug }) },
   // Settings' gate: each settings page asks it.
   "settings.access": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.settings.access({ project: slug }) },
   "settings.asking": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.settings.asking({ project: slug }) },

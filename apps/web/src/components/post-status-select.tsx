@@ -3,6 +3,7 @@
 import type { PostStatus } from "@tuti/db";
 import { cn } from "cn";
 import { ChevronDownIcon, EllipsisIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -20,8 +21,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { errorMessage, useInOrder, useTRPCClient } from "@/components/trpc";
 import { statusPrompt } from "@/lib/status-prompt";
-import { changePostStatus } from "@/server/manage-posts";
 
 const STATUSES = Object.keys(STATUS_LABELS) as PostStatus[];
 
@@ -29,15 +30,35 @@ const STATUSES = Object.keys(STATUS_LABELS) as PostStatus[];
 export type Completing = { title: string; emails: Partial<Record<PostStatus, number>> };
 
 /**
+ * Saves a post's status: posts.update, the one operation the roadmap, Feedback's list and a post's page change it with,
+ * in the page's order (useInOrder: tRPC calls don't wait for each other, as server actions did), then the page again.
+ * Nothing, or what it was refused with.
+ */
+export function useSavePostStatus(projectSlug: string) {
+  const client = useTRPCClient();
+  const inOrder = useInOrder();
+  const router = useRouter();
+  return (number: number, status: PostStatus): Promise<{ error?: string }> =>
+    inOrder(() => client.posts.update.mutate({ project: projectSlug, number, status: status.toLowerCase() as Lowercase<PostStatus> })).then(
+      () => {
+        router.refresh();
+        return {};
+      },
+      (error: unknown) => ({ error: errorMessage(error) }),
+    );
+}
+
+/**
  * A post's status change, a move that emails its people asked about first when `completing` says how many (statusPrompt;
  * the roadmap asks for its own, onAsk): `pick` takes the status chosen, `asking` holds it until it's confirmed or cancelled.
  */
-function useStatusChange(projectSlug: string, postId: string, status: PostStatus, completing?: Completing, onChanged?: (status: PostStatus) => void) {
+function useStatusChange(projectSlug: string, number: number, status: PostStatus, completing?: Completing, onChanged?: (status: PostStatus) => void) {
   const [pending, startTransition] = useTransition();
   const [asking, setAsking] = useState<{ status: PostStatus; prompt: string } | null>(null);
+  const save = useSavePostStatus(projectSlug);
   const change = (value: PostStatus) =>
     startTransition(async () => {
-      const result = await changePostStatus(projectSlug, postId, value);
+      const result = await save(number, value);
       setAsking(null);
       if (result.error) {
         toast.error(result.error);
@@ -80,18 +101,19 @@ function useStatusChange(projectSlug: string, postId: string, status: PostStatus
 /** Team-only: shows a post's status and changes it. With `completing`, a move that emails people asks first, saying how many. */
 export function PostStatusSelect({
   projectSlug,
-  postId,
+  number,
   status,
   completing,
   className,
 }: {
   projectSlug: string;
-  postId: string;
+  /** The post's number. */
+  number: number;
   status: PostStatus;
   completing?: Completing;
   className?: string;
 }) {
-  const { pending, pick, ask } = useStatusChange(projectSlug, postId, status, completing);
+  const { pending, pick, ask } = useStatusChange(projectSlug, number, status, completing);
 
   return (
     <>
@@ -133,7 +155,7 @@ export function PostStatusSelect({
  */
 export function PostStatusMenu({
   projectSlug,
-  postId,
+  number,
   status,
   completing,
   onAsk,
@@ -141,14 +163,15 @@ export function PostStatusMenu({
   badge = true,
 }: {
   projectSlug: string;
-  postId: string;
+  /** The post's number. */
+  number: number;
   status: PostStatus;
   completing?: Completing;
   onAsk?: (status: PostStatus) => boolean;
   onChanged?: (status: PostStatus) => void;
   badge?: boolean;
 }) {
-  const { pending, pick, ask } = useStatusChange(projectSlug, postId, status, completing, onChanged);
+  const { pending, pick, ask } = useStatusChange(projectSlug, number, status, completing, onChanged);
 
   return (
     <>
