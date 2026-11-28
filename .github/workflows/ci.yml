@@ -22,9 +22,11 @@ concurrency:
 
 jobs:
   # A pull request that changes only Markdown (docs, the plan, agents' instructions, skills' text)
-  # skips the builds and test suites below: nothing they run reads a .md file. The secret scan,
-  # the workflow audit, the CLA and the reviews still run. Pushes to main and the nightly always
-  # run everything. When the diff can't be read, everything runs.
+  # skips lint, typecheck, the builds, the database tests and the journeys: none of them reads a
+  # .md file. The unit tests still run (some check docs against the code, such as the config
+  # table in docs/self-hosting.md), as do the secret scan, the workflow audit, the CLA and the
+  # reviews. Pushes to main and the nightly always run everything; so does a diff that can't be
+  # read. Renames list both paths, so renaming code to .md isn't Markdown-only.
   changes:
     name: Changes
     runs-on: ubuntu-latest
@@ -42,7 +44,7 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
-          if [[ "$EVENT" == pull_request ]] && files=$(git diff --name-only "$BASE...$HEAD") \
+          if [[ "$EVENT" == pull_request ]] && files=$(git diff --name-only --no-renames "$BASE...$HEAD") \
             && [ -n "$files" ] && ! grep -qv '\.md$' <<< "$files"; then
             echo "code=false" >> "$GITHUB_OUTPUT"
           else
@@ -87,8 +89,6 @@ jobs:
 
   test:
     name: Unit tests
-    needs: changes
-    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
