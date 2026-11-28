@@ -66,9 +66,19 @@ test("an entry for some groups only: their readers see it on the changelog, ever
   const ada = await newPerson(browser, portalUrl(slug));
   await ada.goto(`/sso?token=${ssoToken(secret, { sub: "user-1", name: "Ada" })}&redirect=${encodeURIComponent("/roadmap")}`);
   await expect(newDot(ada)).toBeAttached();
+  const recorded = ada.waitForResponse((response) => !!response.request().headers()["next-action"] && /^\["[^"]+","\d{4}-/.test(response.request().postData() ?? ""));
   await ada.goto("/changelog");
   await expect(titles(ada)).toHaveText(["Audit log export", "Dark mode"]);
   await checkpoint(ada, "changelog-enterprise");
+  // Being there is seeing it: once that's recorded, on to the roadmap from the header, Changelog's "New" has gone.
+  await recorded;
+  const portalNav = ada.getByRole("navigation", { name: "Portal" });
+  await portalNav.getByRole("link", { name: "Roadmap" }).click();
+  await expect(ada).toHaveURL(/\/roadmap$/);
+  await expect(portalNav.getByRole("link", { name: "Roadmap" })).toHaveAttribute("aria-current", "page");
+  await expect(newDot(ada)).toHaveCount(0);
+  await portalNav.getByRole("link", { name: /^Changelog/ }).click();
+  await expect(titles(ada)).toHaveText(["Audit log export", "Dark mode"]);
   await ada.getByRole("link", { name: "Audit log export" }).click();
   await expect(ada.getByRole("heading", { level: 1, name: "Audit log export" })).toBeVisible();
   await expect(ada.getByText("Download your audit log as CSV.")).toBeVisible();

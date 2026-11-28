@@ -5,7 +5,7 @@ import { expect, test, type Browser, type Page } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";
-import { apiFor, createProject, signUp } from "./helpers";
+import { apiFor, createProject, editorFocused, signUp } from "./helpers";
 
 async function editor(browser: Browser) {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -546,10 +546,9 @@ test("table and code context controls remain reachable on small laptops and phon
     const article = team.getByRole("textbox", { name: "Article", exact: true });
     const formatting = team.getByRole("toolbar", { name: "Formatting", exact: true });
     await article.click();
-    await expect(article).toBeFocused();
+    await editorFocused(article);
     await team.keyboard.press("ControlOrMeta+Home");
-    // Wait for ProseMirror to consume Home's native selectionchange before extending it:
-    // its delayed focus correction can otherwise restore the old caret over the new selection.
+    // Wait for ProseMirror to read Home's selectionchange before extending it.
     await expect.poll(() => article.evaluate((element) => {
       const { selection } = (element as unknown as { editor: { state: { selection: { from: number; empty: boolean } } } }).editor.state;
       return selection.from === 1 && selection.empty;

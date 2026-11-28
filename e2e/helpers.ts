@@ -261,3 +261,13 @@ export async function holdActions(page: Page) {
     await page.unroute("**/*", handler);
   };
 }
+
+/**
+ * Waits until a rich text editor has the keyboard and ProseMirror has settled its caret: 20ms after taking the focus,
+ * it puts back the caret it last read over one it hasn't read yet, undoing a select-all or a Ctrl+Home made in between.
+ * A page timer of the same delay, set once the editor has the focus, runs after that check.
+ */
+export async function editorFocused(editor: Locator) {
+  await expect(editor).toBeFocused();
+  await editor.evaluate(() => new Promise((resolve) => setTimeout(resolve, 20)));
+}
