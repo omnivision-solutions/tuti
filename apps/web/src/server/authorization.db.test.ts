@@ -1032,8 +1032,9 @@ beforeAll(async () => {
   users = { OWNER: OWNER!, ADMIN: ADMIN!, MEMBER: MEMBER!, outsider: outsider!, ssoUser: ssoUser! };
   otherProject = await createProject(users.outsider);
   // The account that's allowed to act on its own email invites (allowedActor for "signed in"), and the ones allowed to
-  // send invites (only from a verified address).
-  await prisma.user.updateMany({ where: { id: { in: [users.outsider.id, users.OWNER.id, users.ADMIN.id] } }, data: { emailVerified: true } });
+  // send invites (only from a verified address). The SSO user verified too: unverified, it has no session at all here
+  // (this server sends email), so it would only be refused as someone signed out.
+  await prisma.user.updateMany({ where: { id: { in: [users.outsider.id, users.OWNER.id, users.ADMIN.id, users.ssoUser.id] } }, data: { emailVerified: true } });
   await prisma.ssoIdentity.create({
     data: { projectId: otherProject.id, externalId: "ext-1", userId: users.ssoUser.id },
   });
@@ -1341,7 +1342,8 @@ function refusedActors(rule: Case): Actor[] {
   if (rule.allowed === "signed in") {
     return rule.refusesSsoUsers ? ["signed out", "other project's SSO user"] : ["signed out"];
   }
-  return ["signed out", "other project's owner", ...ROLES.slice(0, ROLES.indexOf(rule.allowed))];
+  // Another project's single sign-on user too: signed in, with an identity elsewhere, and on no team here.
+  return ["signed out", "other project's owner", "other project's SSO user", ...ROLES.slice(0, ROLES.indexOf(rule.allowed))];
 }
 
 /** The lowest level that may act, to show the action works. */
