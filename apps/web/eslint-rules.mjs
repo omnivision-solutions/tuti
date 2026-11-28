@@ -79,6 +79,9 @@ const EXEMPT = [
   // Routes that stay routes (T10) acting for the team: the caller from the context function (the cookie session), then
   // createCaller. Autopilot's email buttons.
   { files: /^src\/app\/app\/\(workspace\)\/\[project\]\/autopilot\/\[id\]\/act\/route\.ts$/, imports: /^server\/(session|trpc\/context)\.ts$/ },
+  // Routes that stay routes (T10): the GitHub connect flow keeps its guards against other sites (the same-site check,
+  // the signed state and cookies, server/github-connect.ts); who may connect is the router's.
+  { files: /^src\/app\/api\/github\/(install|setup|use|callback)\/route\.ts$/, imports: /^server\/github-connect\.ts$/ },
   // Left as they are: the job endpoints, the public widget feed, signed email links, webhooks, health, widget.js, media,
   // plans, the licence refresh, AppSumo's redirect, the sign-in card.
   {

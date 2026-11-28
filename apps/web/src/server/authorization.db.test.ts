@@ -1467,6 +1467,10 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
     call: (caller, slug) => caller.conversations.upload({ project: slug, filename: "invoice.pdf", contentType: "application/pdf", size: 1000 }),
   },
   "customize.preview": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.customize.preview({ project: slug, path: "/" }) },
+  // Connecting GitHub (the /api/github routes): owners and admins, as Settings → Integrations. A state that isn't ours
+  // finishes nothing, for whoever may.
+  "githubConnect.finish": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.githubConnect.finish({ project: slug, state: "not-a-state" }) },
+  "githubConnect.get": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.githubConnect.get({ project: slug }) },
   // The Inbox's conversation page: what it reads, and its buttons (status, assignee, snooze, spam, priority, take over and
   // hand back are all conversations.update), Summarize, Try again on a translation, and marking it read.
   "inbox.conversation": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.conversation({ project: slug, number: 1 }) },
