@@ -24,6 +24,16 @@ import { Card } from "@/components/ui/card";
 
 const SUGGEST_DELAY_MS = 300;
 
+/**
+ * The posts like `title` (posts.similar), as the widget's person where it has one (widgetCall), else whoever's reading
+ * the portal. None when the call fails or is refused (a title too long to search, a reader no longer let in), as before.
+ */
+const similarTo = (client: ReturnType<typeof useTRPCClient>, project: string, title: string, widgetToken: string | null | undefined): Promise<SimilarPost[]> =>
+  client.posts.similar.mutate({ project, title }, widgetCall(widgetToken)).then(
+    ({ posts }) => posts,
+    () => [],
+  );
+
 type Placeholders = { titlePlaceholder?: string; detailsPlaceholder?: string };
 
 /**
@@ -151,8 +161,7 @@ export function NewPostForm({
     clearTimeout(timer.current);
     const query = ++latestQuery.current;
     const sent = performance.now();
-    // As the widget's person where it has one (widgetCall), else whoever's reading the portal.
-    void client.posts.similar.mutate({ project: projectSlug, title }, widgetCall(widgetToken)).then(({ posts }) => {
+    void similarTo(client, projectSlug, title, widgetToken).then((posts) => {
       if (query === latestQuery.current) {
         found(posts, sent);
       }
@@ -170,7 +179,7 @@ export function NewPostForm({
     }
     timer.current = setTimeout(async () => {
       const sent = performance.now();
-      const { posts } = await client.posts.similar.mutate({ project: projectSlug, title }, widgetCall(widgetToken));
+      const posts = await similarTo(client, projectSlug, title, widgetToken);
       if (query === latestQuery.current) {
         setSimilar(posts);
         onSimilar?.(posts, sent);
