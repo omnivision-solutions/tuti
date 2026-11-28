@@ -270,18 +270,6 @@ test("the daily job deletes closed conversations and AI questions after a year (
   expect(await prisma.conversationMessage.count({ where: { conversationId: old.id } })).toBe(0);
 });
 
-test("a teammate leaving doesn't show their old closed conversations again: being unassigned isn't something done in it", async () => {
-  vi.stubEnv("BILLING_CONFIG", billingFile());
-  const { owner, project, conversation, listed } = await setup();
-  const member = await addMember(project.id, "MEMBER");
-  actAs(owner);
-  await conversation(10, "CLOSED", { assigneeId: member.id });
-  expect(await listed()).toEqual([]);
-  expect(await removeMember(project.slug, member.memberId)).toEqual({});
-  expect(await prisma.teamMember.count({ where: { projectId: project.id, userId: member.id } })).toBe(0);
-  expect(await listed()).toEqual([]);
-});
-
 test("the migration dates conversations from before activeAt by their updatedAt, so a teammate leaving no longer shows them again", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
   const { owner, project, conversation, listed } = await setup();

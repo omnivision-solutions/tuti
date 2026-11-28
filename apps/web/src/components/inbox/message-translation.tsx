@@ -18,9 +18,9 @@ const RETRY_SHOWN_MS = 60_000;
 
 /**
  * The conversation's messages Try again queued again: it re-queues every customer message whose translation failed, so
- * each says "Translating…", not only the one clicked. Exported for tests.
+ * each says "Translating…", not only the one clicked.
  */
-export const RetriedTranslations = createContext<{ retried: ReadonlySet<string>; markRetried: () => void }>({ retried: new Set(), markRetried: () => {} });
+const RetriedTranslations = createContext<{ retried: ReadonlySet<string>; markRetried: () => void }>({ retried: new Set(), markRetried: () => {} });
 
 /**
  * Around a conversation's messages: `failed`, the ids of those whose translation failed as the page was rendered (what
@@ -44,7 +44,7 @@ export function TranslationRetries({ failed, children }: { failed: string[]; chi
  * Which line a message has under it: its translation's, its failure's, "Translating…" once Try again has queued it
  * (until the live refresh brings the result), or none.
  */
-export function translationLine({ teamText, error, fromTeam, retried }: { teamText: string | null; error: string | null; fromTeam: boolean; retried: boolean }) {
+function translationLine({ teamText, error, fromTeam, retried }: { teamText: string | null; error: string | null; fromTeam: boolean; retried: boolean }) {
   if (teamText !== null) {
     return "translated";
   }

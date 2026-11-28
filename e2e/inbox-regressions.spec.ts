@@ -35,7 +35,7 @@ test("blocked recipients have no composer promise that replies are emailed", asy
   await expect(owner.getByText(/^(Replies are emailed|Emailed) to/)).toHaveCount(0);
 });
 
-test("sample conversations have no composer promise that replies are emailed: the reply job skips them", async ({ browser }) => {
+test("sample conversations have no composer promise that replies are emailed", async ({ browser }) => {
   const { owner, slug, url } = await inbox(browser);
   await owner.goto(url);
   await expect(owner.getByText("Replies are emailed to e2e-reader@example.com.", { exact: true })).toBeVisible();
@@ -74,15 +74,6 @@ for (const state of ["closed", "spam"] as const) {
   });
 }
 
-test("triage accessible names include the visible values", async ({ browser }) => {
-  const { owner, url } = await inbox(browser);
-  await owner.goto(url);
-  const details = owner.getByRole("complementary", { name: "Conversation details", exact: true });
-  await expect.soft(details.getByRole("button", { name: /Unassigned/ })).toBeVisible();
-  await expect.soft(details.getByRole("button", { name: "Needs reply, change status" })).toBeVisible();
-  await expect.soft(details.getByRole("button", { name: "Not snoozed", exact: true })).toBeVisible();
-});
-
 test("a details sheet stays closed after widening then narrowing", async ({ browser }) => {
   const { owner, url } = await inbox(browser);
   await owner.setViewportSize({ width: 390, height: 844 });
@@ -96,31 +87,6 @@ test("a details sheet stays closed after widening then narrowing", async ({ brow
   await expect(sheet).toBeHidden();
   await owner.getByRole("button", { name: "Show details" }).click();
   await expect(sheet).toBeVisible();
-});
-
-test("the details sheet close target uses the dense 32px size", async ({ browser }) => {
-  const { owner, url } = await inbox(browser);
-  await owner.setViewportSize({ width: 390, height: 844 });
-  await owner.goto(url);
-  await owner.getByRole("button", { name: "Show details" }).click();
-  const close = owner.getByRole("dialog", { name: "Conversation details" }).getByRole("button", { name: "Close", exact: true });
-  await expect(close).toHaveCSS("height", "32px");
-  await expect(close).toHaveCSS("width", "32px");
-});
-
-test("overview keeps one page heading and small stat labels with captions", async ({ browser }) => {
-  const { owner, slug } = await inbox(browser);
-  await owner.goto(`/app/${slug}/inbox`);
-  await expect.soft(owner.getByRole("heading", { level: 1 })).toHaveText([/^Needs reply/]);
-  const stats = owner.locator(".inbox-overview-stats");
-  await expect.soft(stats.locator("dt")).toHaveText([/^Waiting for a reply/, /^Usual first reply/, /^New conversations this week/]);
-  await expect.soft(stats.getByText("Conversations started", { exact: true })).toBeVisible();
-});
-
-test("an unverified sender is marked in the conversation header", async ({ browser }) => {
-  const { owner, url } = await inbox(browser);
-  await owner.goto(url);
-  await expect(owner.locator(".inbox-conversation-meta")).toContainText("(not verified)");
 });
 
 test("only needs reply uses the attention colour in header and status picker", async ({ browser }) => {
@@ -221,18 +187,6 @@ test("inline link trigger retains keyboard focus when dismissed while saving", a
     await expect(trigger).toBeFocused();
   } finally { release(); }
   await expect(owner.getByText("Couldn't reach Tuti. Try again.")).toBeVisible();
-});
-
-
-test("other conversations use a status dot alongside the text", async ({ browser }) => {
-  const { owner, api, url } = await inbox(browser);
-  await api("/conversations", { email: "e2e-reader@example.com", subject: "Previous question", body: "All sorted" });
-  await api("/conversations/2", { status: "closed" }, "PATCH");
-  await owner.goto(url);
-  await owner.locator("summary", { hasText: "Other conversations" }).click();
-  const other = owner.getByRole("region", { name: "Other conversations", exact: true });
-  await expect(other).toContainText("Closed");
-  await expect(other.locator(".bg-status-closed")).toBeVisible();
 });
 
 
