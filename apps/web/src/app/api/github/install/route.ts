@@ -2,14 +2,15 @@ import { NextResponse } from "next/server";
 
 import { githubConfig } from "@/lib/github";
 import { appUrl } from "@/lib/hosts";
-import { adminProject, authorizeRedirect, crossSite, rememberInstall } from "@/server/github-connect";
+import { authorizeRedirect, crossSite, rememberInstall } from "@/server/github-connect";
+import { cookieCaller, unlessRefused } from "@/server/trpc/server";
 
 /**
  * "Connect GitHub": first asks GitHub (its web authorization flow) which accounts the person
  * already has the App on, so they can pick one in Tuti; the callback sends them on to install
  * it if there are none. `?new=1` ("Install on another account") goes straight to the App's
  * install page. Either way the project is remembered in a short-lived signed cookie, for the
- * Setup URL that GitHub comes back to after an install.
+ * Setup URL that GitHub comes back to after an install. Owners and admins only (githubConnect.get).
  */
 export async function GET(request: Request) {
   const config = githubConfig();
@@ -17,13 +18,14 @@ export async function GET(request: Request) {
     return new NextResponse(null, { status: 404 });
   }
   const params = new URL(request.url).searchParams;
-  const project = !crossSite(request) && (await adminProject({ slug: params.get("project") ?? "" }));
-  if (!project) {
+  const slug = params.get("project") ?? "";
+  const connect = !crossSite(request) && (await unlessRefused((await cookieCaller()).githubConnect.get({ project: slug })));
+  if (!connect) {
     return NextResponse.redirect(new URL("/app?github=expired", appUrl()));
   }
   const response =
     params.get("new") === "1"
       ? NextResponse.redirect(`${config.url}/apps/${config.appSlug}/installations/new`)
-      : authorizeRedirect(config, project, "", "choose");
-  return rememberInstall(response, project.id);
+      : authorizeRedirect(config, { slug, userId: connect.userId }, "", "choose");
+  return rememberInstall(response, slug);
 }

@@ -1,15 +1,15 @@
-import { prisma } from "@tuti/db";
 import { NextResponse } from "next/server";
 
-import { githubConfig, installationForUser, installationsForUser, signValue, verifyValue } from "@/lib/github";
+import { githubConfig, signValue, verifyValue } from "@/lib/github";
 import { appUrl } from "@/lib/hosts";
-import { ACCOUNTS_COOKIE, adminProject, INSTALL_COOKIE, saveConnection } from "@/server/github-connect";
+import { ACCOUNTS_COOKIE, INSTALL_COOKIE } from "@/server/github-connect";
+import { cookieCaller, unlessRefused } from "@/server/trpc/server";
 
 /**
- * The App's Callback URL (step 3 of 3): GitHub's web authorization flow returns
- * `code` and our `state`. The installation is connected only if the state is ours
- * and fresh, the signed-in account administers the project, and GitHub says the
- * person who authorized can see the installation, so nobody can claim another's. The
+ * The App's Callback URL (step 3 of 3): GitHub's web authorization flow returns `code` and our `state`, which names
+ * the project. The installation is connected only if the state is ours and fresh, the signed-in account administers
+ * the project, and GitHub says the person who authorized can see the installation, so nobody can claim another's
+ * (githubConnect.finish, which also checks the state is this project's and that whoever finishes started it). The
  * repositories of it they can access are the ones the project can add.
  */
 export async function GET(request: Request) {
@@ -18,52 +18,37 @@ export async function GET(request: Request) {
     return new NextResponse(null, { status: 404 });
   }
   const params = new URL(request.url).searchParams;
-  const [projectId, installation, purpose, startedBy] = verifyValue("callback", params.get("state") ?? "") ?? [];
-  const project = projectId && (await adminProject({ id: projectId }));
-  // Finished by whoever started it: another admin sent someone else's link would make the list theirs.
-  if (!project || project.userId !== startedBy) {
+  const state = params.get("state") ?? "";
+  const slug = verifyValue("callback", state)?.[0];
+  const finished = slug && (await unlessRefused((await cookieCaller()).githubConnect.finish({ project: slug, state, code: params.get("code") ?? undefined })));
+  if (!slug || !finished || finished.result === "expired") {
     return NextResponse.redirect(new URL("/app?github=expired", appUrl()));
   }
   // Connected: on to its settings; otherwise back to the integrations, to try again.
   const done = (result: string) => {
     const page = result === "connected" ? "integrations/github" : "integrations";
-    const response = NextResponse.redirect(new URL(`/app/${project.slug}/settings/${page}?github=${result}`, appUrl()));
+    const response = NextResponse.redirect(new URL(`/app/${slug}/settings/${page}?github=${result}`, appUrl()));
     response.cookies.delete({ name: INSTALL_COOKIE, path: "/api/github" });
     response.cookies.delete({ name: ACCOUNTS_COOKIE, path: "/" });
     return response;
   };
-
-  const code = params.get("code");
-  const redirectUri = new URL("/api/github/callback", appUrl()).href;
-  // "Connect GitHub": the accounts the person has the App on, to pick from; none, so on to install it.
-  if (purpose === "choose") {
-    const installations = code ? await installationsForUser(config, code, redirectUri).catch(() => null) : null;
-    if (!installations) {
-      return done("unconfirmed");
-    }
-    if (installations.length === 0) {
-      return NextResponse.redirect(`${config.url}/apps/${config.appSlug}/installations/new`);
-    }
-    // Already connected ("Switch account"): the choice is on the GitHub page.
-    const switching = await prisma.githubInstallation.count({ where: { projectId: project.id } });
-    const page = switching ? "integrations/github" : "integrations";
-    const response = NextResponse.redirect(new URL(`/app/${project.slug}/settings/${page}?github=choose`, appUrl()));
-    const accounts = installations.slice(0, 50).map((i) => `${i.id}:${i.account.type}:${i.account.login}`);
-    response.cookies.set(ACCOUNTS_COOKIE, signValue("accounts", [project.id, ...accounts]), {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: appUrl().protocol === "https:",
-      path: "/",
-      maxAge: 15 * 60,
-    });
-    return response;
+  // "Connect GitHub" and none to pick: on to install it.
+  if (finished.result === "install") {
+    return NextResponse.redirect(`${config.url}/apps/${config.appSlug}/installations/new`);
   }
-
-  const installationId = Number(installation);
-  const found = code && (await installationForUser(config, code, redirectUri, installationId).catch(() => null));
-  if (!found) {
-    return done("unconfirmed");
+  if (finished.result !== "choose") {
+    return done(finished.result);
   }
-  await saveConnection(project, installationId, found.account, found.repositories);
-  return done("connected");
+  // The accounts the person has the App on, to pick from; already connected ("Switch account"), on the GitHub page.
+  const page = finished.switching ? "integrations/github" : "integrations";
+  const response = NextResponse.redirect(new URL(`/app/${slug}/settings/${page}?github=choose`, appUrl()));
+  const accounts = finished.accounts.map((account) => `${account.id}:${account.type}:${account.login}`);
+  response.cookies.set(ACCOUNTS_COOKIE, signValue("accounts", [finished.projectId, ...accounts]), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: appUrl().protocol === "https:",
+    path: "/",
+    maxAge: 15 * 60,
+  });
+  return response;
 }
