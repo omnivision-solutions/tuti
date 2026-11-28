@@ -220,6 +220,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "links.remove": (f) => ({ number: 1, id: f.linkId }),
   "codeChanges.list": () => ({}),
   "codeChanges.get": (f) => ({ id: f.codeChangeId }),
+  "codeChanges.button": (f) => ({ id: f.codeChangeId, actions: [f.linkActionId] }),
   "codeChanges.targets": () => ({}),
   "codeChanges.target": (f) => ({ type: "feedback", id: f.postId }),
   // With AI on (see below); its repository isn't the project's, so it stops there, unread.

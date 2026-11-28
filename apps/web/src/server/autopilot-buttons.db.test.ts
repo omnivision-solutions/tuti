@@ -8,7 +8,7 @@ import OldChangePage from "@/app/app/(workspace)/[project]/autopilot/[id]/page";
 import { publishCodeChangeActionNow, stopCodeChangeAction } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, callerAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -279,4 +279,50 @@ test("Publish now when a teammate published one it named and stopped the other s
   await call(stopCodeChangeAction, team(), { id: b.id });
   expect(await click(c.id, signAutopilotButton(owner.id, c.id, `publish:${a},${b.id}`)!)).toBe(`/app/${project.slug}/autopilot/activity/${c.id}?done=already&button=publish&update=${a}&kept=1`);
   expect(await click(c.id, signAutopilotButton(owner.id, c.id, `stop:${b.id},${a}`)!)).toBe(`/app/${project.slug}/autopilot/activity/${c.id}?done=already&button=stop&update=${b.id}&went=1`);
+});
+
+test("refused without its token, and to someone off the team even with their own button: nothing done", async () => {
+  const c = await change();
+  const { id } = c;
+  const link = c.actions.find((action) => action.kind === "LINKS")!;
+  const scheduled = scheduledOf(c);
+  expect(await click(id, "")).toBe(`/app/${project.slug}/autopilot/activity/${id}`);
+
+  // Sent while they were on the team, clicked once they'd left: the router refuses them, as the project's pages do.
+  const former = await signUp("Fern Former");
+  actAs(former);
+  for (const button of [`approve:${link.id}`, `publish:${scheduled}`, `stop:${scheduled}`] as const) {
+    await expect(click(id, signAutopilotButton(former.id, id, button)!)).rejects.toMatchObject({ digest: expect.stringMatching(/^NEXT_HTTP_ERROR_FALLBACK;404/) });
+  }
+  expect(await statusOf(link.id)).toBe("PENDING");
+  expect(await statusOf(scheduled)).toBe("SCHEDULED");
+});
+
+test("what a button names comes with a post update's parts only when asked (Approve): Publish now and Stop don't read them", async () => {
+  const c = await change();
+  const scheduled = scheduledOf(c);
+  const caller = await callerAs(owner);
+  const read = async (parts?: boolean) => (await caller.codeChanges.button({ project: project.slug, id: c.id, actions: [scheduled], parts })).actions;
+  expect((await read()).map((action) => action.parts)).toEqual([null]);
+  expect((await read(false)).map((action) => action.parts)).toEqual([null]);
+  expect((await read(true)).map((action) => action.parts)).toEqual([[scheduled]]);
+});
+
+test("Publish now on an update decided between the button's read and the act says it went already, holding nothing", async () => {
+  const c = await change();
+  const a = scheduledOf(c);
+  await call(publishCodeChangeActionNow, team(), { id: a });
+  // The button's read still sees it scheduled (a teammate published it a moment after): publishNow refuses it, not_scheduled.
+  const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<{ id: string; status: string }[]>;
+  vi.spyOn(prisma.codeChangeAction, "findMany").mockImplementationOnce((async (...args: unknown[]) =>
+    (await findMany(...args)).map((action) => (action.id === a ? { ...action, status: "SCHEDULED" } : action))) as never);
+  expect(await click(c.id, signAutopilotButton(owner.id, c.id, `publish:${a}`)!)).toBe(`/app/${project.slug}/autopilot/activity/${c.id}?done=already&button=publish&update=${a}`);
+});
+
+test("the button counts an update as done when Publish now fails after it went (`saved: true`)", async () => {
+  const c = await change();
+  vi.spyOn(log, "error").mockImplementation(() => {});
+  // The operation fails after the update went (`saved: true`).
+  vi.spyOn(prisma.codeChangeAction, "findFirst").mockRejectedValueOnce(Object.assign(new Error("connection reset"), { saved: true }));
+  expect(await click(c.id, signAutopilotButton(owner.id, c.id, `publish:${scheduledOf(c)}`)!)).toBe(`/app/${project.slug}/autopilot/activity/${c.id}?done=published&button=publish`);
 });
