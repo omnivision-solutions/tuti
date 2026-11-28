@@ -11,12 +11,26 @@ import AutopilotSettingsPage from "@/app/app/(workspace)/[project]/settings/(adm
 import { SIGNED_OUT } from "@/lib/read-access";
 import { aiModelSetting, checksSwitch } from "@/lib/ai-model-setting";
 import { CHECKS_UNAVAILABLE } from "@/lib/autopilot-words";
-import { saveAiModel } from "@/server/ai-models";
 import { getAiModels, updateAiModels } from "@/server/operations/ai-models";
 import { answerQuestion } from "@/server/operations/docs-ask";
 import { createArticle, publishArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
-import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
+import { TRPCError } from "@trpc/server";
+import { actAs, addMember, callerNow, createProject, signUp, type TestUser } from "@/test/helpers";
+import type { InputOf } from "@/server/operations/define";
+
+/** A settings page's AI model save (aiModels.update), as the signed-in person (actAs) makes it: a refusal as `{ error }`. */
+async function saveAiModel(project: string, input: InputOf<typeof updateAiModels>): Promise<{ error?: string }> {
+  try {
+    await (await callerNow()).aiModels.update({ project, ...input });
+    return {};
+  } catch (error) {
+    if (error instanceof TRPCError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
+}
 
 /** Models per feature (docs/plan.md, AI usage per project): the server's default for each feature, or the project's pick. */
 
@@ -368,7 +382,7 @@ test("Autopilot's Checks switch: off needs no plan and holds on every level and 
   actAs(await addMember(project.id, "ADMIN"));
   expect(await saveAiModel(project.slug, { code_changes_check: "" })).toEqual({});
   actAs(await addMember(project.id, "MEMBER"));
-  expect(await saveAiModel(project.slug, { code_changes_check: "off" })).toEqual({ error: "Only project owners and admins can change AI models" });
+  expect(await saveAiModel(project.slug, { code_changes_check: "off" })).toEqual({ error: "Only project owners and admins can use project settings" });
   expect((await call(getAiModels, as(), {})).code_changes_check).toMatchObject({ model: null, used: SONNET });
 });
 

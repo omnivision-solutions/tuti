@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 
 import { usePreviewPage } from "@/components/customize-shell";
 import { Pane, PaneBody, PaneHeader } from "@/components/pane";
+import { InOrderProvider } from "@/components/trpc";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -13,7 +14,8 @@ import { Button } from "@/components/ui/button";
  * line, given as elements, always above the cards), then its cards in one centred column. `back`: the page it's a
  * part of (Advanced tuning's Autopilot).
  * A page with forms (useCustomizeForm) gets "Save changes" in its header, the one Save on the page: enabled once
- * something differs from what's saved, and leaving with changes not saved asks first, as on Portal pages.
+ * something differs from what's saved, and leaving with changes not saved asks first, as on Portal pages. Its saves
+ * share one queue (InOrderProvider), the page's: they land in the order made, and a new page starts a fresh one.
  */
 export function SettingsPane({
   title,
@@ -31,6 +33,7 @@ export function SettingsPane({
   const short = typeof description === "string";
   const { provider, leaveDialog, hasForms, dirty, pending, save } = usePreviewPage(title);
   return provider(
+    <InOrderProvider>
     <Pane aria-label={title}>
       <PaneHeader
         title={title}
@@ -56,6 +59,7 @@ export function SettingsPane({
         </div>
       </PaneBody>
       {leaveDialog}
-    </Pane>,
+    </Pane>
+    </InOrderProvider>,
   );
 }

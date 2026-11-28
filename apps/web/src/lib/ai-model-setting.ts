@@ -30,6 +30,15 @@ export type AiModelSettingProps = {
   creditsPerDollar: number | null;
 };
 
+/** What each group's settings page calls its roles, in the group's order (one page per group). */
+export const ROLE_LABELS: { [G in AiGroup]: Record<(typeof AI_GROUPS)[G][number], string> } = {
+  answers: { answers: "Answers", escalations: "Summaries" },
+  support: { support_draft: "Drafts", support_summary: "Summaries" },
+  changelog: { changelog: "Drafts" },
+  code_changes: { code_changes_decide: "Decides", code_changes_check: "Checks", code_changes: "Writes" },
+  translation: { translation: "Translation" },
+};
+
 /** `labels`: what the page calls each of the group's roles ("Drafts"), in the group's order. For owners and admins (settings pages). */
 export async function aiModelSetting<G extends AiGroup>(project: { id: string; slug: string; plan: PlanKey }, group: G, labels: Record<(typeof AI_GROUPS)[G][number], string>): Promise<AiModelSettingProps> {
   const all = await listModels().catch((error: unknown) => {

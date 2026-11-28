@@ -6,10 +6,27 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import type { AiModelSettingProps } from "@/lib/ai-model-setting";
 
-const saveAiModel = vi.hoisted(() => vi.fn(async (): Promise<{ error?: string }> => ({})));
-vi.mock("@/server/ai-models", () => ({ saveAiModel }));
+// What the server answers each save (by project and input): a refusal's message, or nothing; through the tRPC client.
+const saveAiModel = vi.hoisted(() => vi.fn<(project: string, input: unknown) => Promise<{ error?: string }>>(async () => ({})));
+vi.mock("@/components/trpc", async (importOriginal) => {
+  const { TRPCClientError } = await import("@trpc/client");
+  const mutate = async ({ project, ...input }: { project: string }) => {
+    const result = await saveAiModel(project, input);
+    if (result.error) {
+      throw new TRPCClientError(result.error, { result: { error: { message: result.error, code: -32600, data: { code: "BAD_REQUEST", httpStatus: 400 } } } });
+    }
+    return {};
+  };
+  return { ...(await importOriginal<typeof import("@/components/trpc")>()), useTRPCClient: () => ({ aiModels: { update: { mutate } } }) };
+});
+// Rendered on its own, outside the app router: a save refreshes the page.
+vi.mock("next/navigation", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/navigation")>()), useRouter: () => ({ refresh: () => {} }) }));
+
+vi.mock("@/server/github", () => ({}));
 
 const { AiModelSetting } = await import("./ai-model-setting");
+const { AutopilotChecksSwitch } = await import("./autopilot-settings");
+const { InOrderProvider } = await import("@/components/trpc");
 
 const upgrade = (title: string) => ({ title, billingHref: "/app/acme/settings/billing", note: null });
 const props: AiModelSettingProps = {
@@ -166,7 +183,7 @@ test("a save that throws is over like one refused: the control takes choices aga
   expect(saveAiModel).toHaveBeenCalledTimes(2);
 });
 
-test("a level chosen while a typed model is still saving isn't ignored: it's saved after the model, so the level wins", async () => {
+test("a level chosen while a typed model is still saving isn't ignored: it's sent once the model's save is done, so the level wins", async () => {
   const { root, radio, checked } = await render({ saved: "custom", used: "custom", levels: props.levels.map((level) => ({ ...level, upgrade: null })) });
   const [drafts] = [...root.querySelectorAll("input")];
   let saved!: (result: { error?: string }) => void;
@@ -177,13 +194,28 @@ test("a level chosen while a typed model is still saving isn't ignored: it's sav
   expect(saveAiModel).toHaveBeenCalledTimes(1);
   expect(radio("Best").hasAttribute("aria-disabled")).toBe(false);
   await act(async () => radio("Best").click());
+  // One at a time, as server actions ran: the level waits for the model's save, so it can't land first and be overwritten.
+  expect(saveAiModel.mock.calls).toEqual([["acme", { support_draft: "acme/other" }]]);
+  expect(checked()).toEqual(["Best"]);
+  await act(async () => saved({}));
   expect(saveAiModel.mock.calls).toEqual([
     ["acme", { support_draft: "acme/other" }],
     ["acme", { levels: { support: "best" } }],
   ]);
-  expect(checked()).toEqual(["Best"]);
-  await act(async () => saved({}));
   expect(radio("Best").hasAttribute("aria-disabled")).toBe(false);
+});
+
+test("a save after one that failed still goes, in its turn", async () => {
+  const { root, radio } = await render({ saved: "custom", used: "custom", levels: props.levels.map((level) => ({ ...level, upgrade: null })) });
+  const [drafts] = [...root.querySelectorAll("input")];
+  let failed!: (error: Error) => void;
+  saveAiModel.mockImplementationOnce(() => new Promise((_resolve, reject) => (failed = reject)));
+  await type(drafts!, "acme/other");
+  await leave(drafts!);
+  await act(async () => radio("Best").click());
+  expect(saveAiModel).toHaveBeenCalledTimes(1);
+  await act(async () => failed(new Error("The network dropped")));
+  expect(saveAiModel).toHaveBeenLastCalledWith("acme", { levels: { support: "best" } });
 });
 
 test("a role switched off (Autopilot's Checks) is said to be off under Custom, with no model to pick", async () => {
@@ -203,4 +235,46 @@ test("a role switched off (Autopilot's Checks) is said to be off under Custom, w
   expect(boxes.map((input) => root.querySelector(`label[for="${input.id}"]`)?.textContent)).toEqual(["Decides", "Writes"]);
   expect(boxes.map((input) => input.value)).toEqual(["", ""]);
   expect([...root.querySelectorAll("p")].map((line) => line.textContent)).toContain("ChecksOff");
+});
+
+test("on Settings → Autopilot, a Checks model typed then the Checks switch turned off land in that order: off is what's saved", async () => {
+  // Both on one page, as Settings → Autopilot has them: the AI model setting (Custom, Checks' box) and the Checks switch.
+  const root = document.createElement("div");
+  document.body.append(root);
+  await act(async () =>
+    createRoot(root).render(
+      h(
+        InOrderProvider,
+        null,
+        h(AiModelSetting, {
+          ...props,
+          group: "code_changes",
+          saved: "custom",
+          used: "custom",
+          levels: props.levels.map((level) => ({ ...level, upgrade: null })),
+          summary: "Decides Claude Haiku 5.5 · Checks Claude Sonnet 5.5 · Writes Claude Haiku 5.5",
+          roles: [
+            { role: "code_changes_decide", label: "Decides", model: "", default: "anthropic/claude-haiku-5.5", used: "anthropic/claude-haiku-5.5", agent: true },
+            { role: "code_changes_check", label: "Checks", model: "", default: "anthropic/claude-sonnet-5.5", used: "anthropic/claude-sonnet-5.5", agent: true },
+            { role: "code_changes", label: "Writes", model: "", default: "anthropic/claude-haiku-5.5", used: "anthropic/claude-haiku-5.5", agent: true },
+          ],
+        }),
+        h(AutopilotChecksSwitch, { projectSlug: "acme", on: true, price: null }),
+      ),
+    ),
+  );
+  const checksBox = [...root.querySelectorAll<HTMLInputElement>("input:not(#autopilot-checks)")][1]!;
+  let modelSaved!: () => void;
+  saveAiModel.mockImplementationOnce(() => new Promise((resolve) => (modelSaved = () => resolve({}))));
+  // The model typed, saved on leaving its box: the click on the switch is what leaves it.
+  await type(checksBox, "acme/tiny");
+  await leave(checksBox);
+  await act(async () => root.querySelector<HTMLInputElement>("#autopilot-checks")!.click());
+  // The switch's save waits for the model's, which resolves last here: "off" is sent after it, so it's what's saved.
+  expect(saveAiModel.mock.calls).toEqual([["acme", { code_changes_check: "acme/tiny" }]]);
+  await act(async () => modelSaved());
+  expect(saveAiModel.mock.calls).toEqual([
+    ["acme", { code_changes_check: "acme/tiny" }],
+    ["acme", { code_changes_check: "off" }],
+  ]);
 });

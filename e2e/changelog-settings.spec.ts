@@ -65,7 +65,10 @@ test("an owner sets the changelog's AI model: on Free, Best opens the upgrade pr
   await expect(level("Best")).toHaveAccessibleDescription("");
   // Picked from the keyboard too: Enter on a level's button (inside the page's form, which Enter mustn't submit).
   await level("Best").focus();
+  // Saved through tRPC (aiModels.update), not a server action.
+  const levelSaved = owner.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/api/trpc/aiModels.update"));
   await level("Best").press("Enter");
+  await levelSaved;
   await expect(owner.getByText("AI model saved")).toBeVisible();
   await expect(level("Best")).toBeChecked();
   await expect(owner.getByText("Drafts Claude Opus 5.5", { exact: true })).toBeVisible();
@@ -256,8 +259,10 @@ test("an admin picks the changelog's style examples: published entries from a se
   await screenshots.check();
   await checkpoint(team, "team-settings-changelog-screenshots");
 
-  // Saved from the header, and there after a reload.
+  // Saved from the header, through tRPC (changelogStyle.update), and there after a reload.
+  const styleSaved = team.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/api/trpc/changelogStyle.update"));
   await save.click();
+  await styleSaved;
   await expect(team.getByText("Changelog saved")).toBeVisible();
   await team.reload();
   await expect(chips).toHaveText(["Calendar sharing links for teams and guests", "Faster month view"]);

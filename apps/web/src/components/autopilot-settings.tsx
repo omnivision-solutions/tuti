@@ -4,6 +4,7 @@ import { cn } from "cn";
 import { ChevronRightIcon, PlusIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { useCustomizeForm } from "@/components/customize-shell";
@@ -16,7 +17,8 @@ import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { UpgradeDialog } from "@/components/upgrade-dialog";
 import type { UpgradePrompt } from "@/lib/upgrade-prompt";
-import { saveAiModel } from "@/server/ai-models";
+import { useInOrder, useTRPCClient } from "@/components/trpc";
+import { TRPCClientError } from "@trpc/client";
 import { saveAutopilotRecipients, saveAutopilotSettings, setAutopilotEmails, setAutopilotSwitch } from "@/server/github";
 
 export type AutopilotSwitchValues = Record<(typeof SWITCHES)[number][0], boolean>;
@@ -46,6 +48,11 @@ const CHECKS_DOES = "Reviews every article edit and double-checks new articles. 
  */
 export function AutopilotChecksSwitch({ projectSlug, on, price }: { projectSlug: string; on: boolean; price: string | null }) {
   const [, startTransition] = useTransition();
+  const trpc = useTRPCClient();
+  const router = useRouter();
+  // The page's queue, which the AI model setting above saves through too: a Checks model typed there, then this switch,
+  // land in that order.
+  const inOrder = useInOrder();
   const [checked, setChecked] = useOptimistic(on);
   const ref = useRef<HTMLInputElement>(null);
   const was = useRef(on);
@@ -76,16 +83,21 @@ export function AutopilotChecksSwitch({ projectSlug, on, price }: { projectSlug:
         id="autopilot-checks"
         aria-describedby="autopilot-checks-description"
         checked={checked}
-        // Not disabled while saving, which would drop keyboard focus: server actions run one at a time, in order.
+        // Not disabled while saving, which would drop keyboard focus: saves run one at a time, in order (useInOrder).
         onChange={(event) => {
           const next = event.currentTarget.checked;
           startTransition(async () => {
             setChecked(next);
-            const result = await saveAiModel(projectSlug, { code_changes_check: next ? "" : "off" }).catch(() => ({ error: "Couldn't save. Try again." }));
+            const result = await inOrder(() => trpc.aiModels.update.mutate({ project: projectSlug, code_changes_check: next ? "" : "off" })).then(
+              () => ({ error: undefined }),
+              (error: unknown) => ({ error: error instanceof TRPCClientError && error.shape ? error.message : "Couldn't save. Try again." }),
+            );
             if (result.error) {
               toast.error(result.error);
             } else {
               toast.success(`Checks: ${next ? "on" : "off"}`);
+              // What's shown is what the page read (the AI model setting's too).
+              router.refresh();
             }
           });
         }}

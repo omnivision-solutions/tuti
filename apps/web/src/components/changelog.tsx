@@ -24,6 +24,7 @@ import {
   useTransition,
 } from "react";
 import { flushSync } from "react-dom";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { keepingFields } from "@/lib/forms";
@@ -73,10 +74,10 @@ import {
   publishChangelogEntry,
   removeChangelogPullRequest,
   saveChangelogEntry,
-  saveChangelogStyle,
   takeChangelogScreenshots,
   unpublishChangelogEntry,
 } from "@/server/changelog";
+import { errorMessage, useTRPCClient } from "@/components/trpc";
 import type { CoverDesign } from "@/server/cover-card";
 import type { LineScreenshots } from "@/server/operations/screenshots";
 import type { FormState } from "@/server/form-state";
@@ -1675,6 +1676,8 @@ export function ChangelogStyleForm({
   /** Published entries, newest first; `sample`: one of Home's sample updates, which AI never follows unpicked. */
   published: { number: number; title: string; sample?: boolean }[];
 }) {
+  const trpc = useTRPCClient();
+  const router = useRouter();
   const [picked, setPicked] = useState(examples);
   // Saved elsewhere meanwhile (another tab), what isn't edited here follows: the examples as the server sends them…
   const [examplesWere, setExamplesWere] = useState(examples);
@@ -1750,14 +1753,28 @@ export function ChangelogStyleForm({
   const { state, pending, form } = useCustomizeForm({
     saved: changelogStyleSaved({ drafting: Boolean(model), tone, examples, screenshotMarkers, coverDesign, coverBackground }),
     busy: background.uploading,
-    save: async (prev, formData) => {
-      const result = await saveChangelogStyle(projectSlug, prev, formData);
-      if (result.error) {
-        toast.error(result.error);
-      } else {
-        toast.success("Changelog saved");
+    save: async (_prev, formData) => {
+      // Without AI, the form has the cover only: what drafts follow stays as it is.
+      const drafting = formData.has("tone");
+      try {
+        await trpc.changelogStyle.update.mutate({
+          project: projectSlug,
+          ...(drafting && {
+            tone: String(formData.get("tone")),
+            examples: formData.getAll("examples").map(Number),
+            screenshotMarkers: formData.get("screenshotMarkers") === "on",
+          }),
+          coverDesign: String(formData.get("coverDesign") ?? "") as CoverDesign | "",
+          coverBackground: String(formData.get("coverBackground") ?? "") || null,
+        });
+      } catch (error) {
+        const message = errorMessage(error);
+        toast.error(message);
+        return { error: message };
       }
-      return result;
+      toast.success("Changelog saved");
+      router.refresh();
+      return {};
     },
   });
   // The picks still published (one unpublished since doesn't count), in the changelog's order whatever the order

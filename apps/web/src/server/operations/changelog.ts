@@ -1484,6 +1484,52 @@ export const getChangelogStyle = defineOperation({
   run: async ({ projectId }) => styleView(await changelogStyle(projectId)),
 });
 
+/**
+ * Settings → Changelog's form, page-shaped (internal): what's saved as the form shows it (the examples still published, by
+ * number; a cover design that can't draw, your background without one, as the automatic pick), and every published
+ * entry to pick examples from, as the changelog lists them.
+ */
+export const getChangelogStyleSettings = defineOperation({
+  name: "changelogStyle.settings",
+  title: "Get the changelog settings",
+  summary: "Settings → Changelog's form: the writing style and cover defaults as saved, and the published entries to pick examples from.",
+  method: "GET",
+  internal: true,
+  scope: "read",
+  access: "admin",
+  input: z.object({}),
+  output: z.object({
+    tone: z.string(),
+    examples: z.array(z.number()),
+    screenshotMarkers: z.boolean(),
+    coverDesign: z.enum(COVER_DESIGNS).nullable(),
+    coverBackground: z.object({ id: z.string(), url: z.string() }).nullable(),
+    published: z.array(z.object({ number: z.number(), title: z.string(), sample: z.boolean() })),
+  }),
+  run: async ({ projectId }) => {
+    const [style, published] = await Promise.all([
+      changelogStyle(projectId),
+      prisma.changelogEntry.findMany({
+        where: { projectId, publishedAt: { not: null } },
+        // As the changelog lists them; ties in one order, so the examples saved are always in the same one.
+        orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
+        select: { number: true, title: true, sample: true },
+      }),
+    ]);
+    const background = style.coverBackground;
+    return {
+      tone: style.tone,
+      // The picks still published, in the changelog's order (newest first), whatever order they were picked in.
+      examples: published.filter((entry) => style.examples.some((picked) => picked.number === entry.number)).map((entry) => entry.number),
+      screenshotMarkers: style.screenshotMarkers,
+      // Your background without a background (removed from the API) is the automatic pick, as it draws.
+      coverDesign: style.coverDesign && (style.coverDesign !== "background" || background) ? (style.coverDesign as CoverDesign) : null,
+      coverBackground: background && { id: background.id, url: background.url },
+      published,
+    };
+  },
+});
+
 export const updateChangelogStyle = defineOperation({
   name: "changelogStyle.update",
   title: "Update the writing style",

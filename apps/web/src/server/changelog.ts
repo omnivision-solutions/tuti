@@ -25,7 +25,6 @@ import {
   removeChangelogPullRequest as removePullRequestOperation,
   unpublishChangelogEntry as unpublishOperation,
   updateChangelogEntry,
-  updateChangelogStyle,
 } from "./operations/changelog";
 import { takeChangelogScreenshots as takeScreenshotsOperation } from "./operations/screenshots";
 import { saveChangelogTranslation, VERSION_CHANGED } from "./operations/changelog-translations";
@@ -232,23 +231,6 @@ export async function removeChangelogPullRequest(projectSlug: string, number: nu
 export async function takeChangelogScreenshots(projectSlug: string, number: number, shows: string[]): Promise<FormState> {
   const shots = (Array.isArray(shows) ? shows : []).map((show) => ({ show: String(show) }));
   return asAdmin(projectSlug, "Only project owners and admins can take screenshots", (context) => call(takeScreenshotsOperation, context, { number: Number(number), shots }));
-}
-
-/** Saves Settings → Changelog's form: instructions (stored as tone notes), the published entries picked as examples, the screenshots' markers and the cover's defaults (see changelogStyle.update). */
-export async function saveChangelogStyle(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
-  // Without AI, the form has the cover only: what drafts follow stays as it is.
-  const drafting = formData.has("tone");
-  const input = {
-    ...(drafting && {
-      tone: String(formData.get("tone")),
-      examples: formData.getAll("examples").map(Number),
-      screenshotMarkers: formData.get("screenshotMarkers") === "on",
-    }),
-    coverDesign: String(formData.get("coverDesign") ?? "") as CoverDesign | "",
-    coverBackground: String(formData.get("coverBackground") ?? "") || null,
-  };
-  // A setting (Settings → Changelog), like AI answers: owners and admins.
-  return asAdmin(projectSlug, "Only project owners and admins can change the writing style", (context) => call(updateChangelogStyle, context, input));
 }
 
 /** A reader's reaction to a published entry on the portal, or taking it back (see changelog.react). */
