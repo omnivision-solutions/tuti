@@ -41,9 +41,7 @@ export function TrpcProvider({ base = "", children }: { base?: string; children:
   return (
     <QueryClientProvider client={queryClient}>
       <Provider trpcClient={client} queryClient={queryClient}>
-        <ClientContext value={client}>
-          <InOrderProvider>{children}</InOrderProvider>
-        </ClientContext>
+        <ClientContext value={client}>{children}</ClientContext>
       </Provider>
     </QueryClientProvider>
   );
@@ -61,10 +59,13 @@ function queue(): InOrder {
   };
 }
 
-/** The page's one queue (TrpcProvider gives it), so saves from different components land in order too. */
+/** The page's one queue (a settings page's SettingsPane gives it), so saves from different components land in order too. */
 const InOrderContext = createContext<InOrder | null>(null);
 
-/** Gives `children` one queue for their saves (useInOrder). TrpcProvider has one; tests can use it alone. */
+/**
+ * Gives `children` one queue for their saves (useInOrder), for as long as they're mounted: a page's, never the app's, so a
+ * save that never settles holds back that page's later saves only, and the next page starts with a fresh queue.
+ */
 export function InOrderProvider({ children }: { children: React.ReactNode }) {
   const [inOrder] = useState(queue);
   return <InOrderContext value={inOrder}>{children}</InOrderContext>;
@@ -72,7 +73,7 @@ export function InOrderProvider({ children }: { children: React.ReactNode }) {
 
 /**
  * Saves one at a time, in the order they're asked for, as server actions ran: tRPC mutations otherwise overlap, and a
- * later save could land before an earlier one and be overwritten by it. One queue for the page (InOrderProvider), so a
+ * later save could land before an earlier one and be overwritten by it. One queue for the page (InOrderProvider, in SettingsPane), so a
  * component's save and another's on the same page (a model typed for Checks, then the Checks switch) keep their order;
  * outside one, the component's own. A save waits for the one before it, which may have failed.
  */
