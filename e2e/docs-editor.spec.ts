@@ -5,7 +5,7 @@ import { expect, test, type Browser, type Page } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";
-import { apiFor, createProject, editorFocused, signUp } from "./helpers";
+import { apiFor, createProject, signUp } from "./helpers";
 
 async function editor(browser: Browser) {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -546,17 +546,12 @@ test("table and code context controls remain reachable on small laptops and phon
     const article = team.getByRole("textbox", { name: "Article", exact: true });
     const formatting = team.getByRole("toolbar", { name: "Formatting", exact: true });
     await article.click();
-    await editorFocused(article);
-    await team.keyboard.press("ControlOrMeta+Home");
-    // Wait for ProseMirror to read Home's selectionchange before extending it.
-    await expect.poll(() => article.evaluate((element) => {
-      const { selection } = (element as unknown as { editor: { state: { selection: { from: number; empty: boolean } } } }).editor.state;
-      return selection.from === 1 && selection.empty;
-    })).toBe(true);
-    await team.keyboard.press("ControlOrMeta+Shift+ArrowRight");
-    await expect.poll(() => article.evaluate(() => window.getSelection()?.toString())).toBe("Owners");
+    await expect(article).toBeFocused();
+    // Selected with the editor's own Select all, not the browser's (a Ctrl+Home, Shift+arrows): ProseMirror, just after
+    // it takes the focus, puts back the caret it last read over a browser selection it hasn't read yet.
+    await article.press("ControlOrMeta+a");
     await expect(team.getByRole("toolbar", { name: "Text selection", exact: true })).toBeVisible();
-    await team.keyboard.press("ArrowRight");
+    // The table in its place (only in the editor: nothing's saved).
     await formatting.getByRole("button", { name: "Insert" }).click();
     await team.getByRole("menuitem", { name: "Table", exact: true }).click();
     await expect(formatting.getByRole("group", { name: "Table", exact: true })).toBeVisible();

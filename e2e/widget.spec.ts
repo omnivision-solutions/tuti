@@ -7,7 +7,7 @@ import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
-import { apiFor, createApiKey, createProject, editorFocused, expectMoreView, openPersonDetails, newPerson, png, postFeedback, signInWithPassword, signUp } from "./helpers";
+import { apiFor, createApiKey, createProject, expectMoreView, openPersonDetails, newPerson, png, postFeedback, replaceText, signInWithPassword, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 import { latestEmailTo, linkIn } from "./mail";
 import { heldModelReply, modelRequests, nextDecision, nextModelReply, releaseModelReply } from "./model";
@@ -857,15 +857,6 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   await phone.context().close();
   await laptop.context().close();
 });
-
-/**
- * Replaces an editor's text once Edit has put the keyboard in it. Before then, the caret the editor moves to the text's
- * end as it starts can land between fill's select-all and its typing, adding to the text instead.
- */
-async function replaceText(editor: Locator, text: string) {
-  await editorFocused(editor);
-  await editor.fill(text);
-}
 
 test("someone a customer's site signs in comments on an update in the widget, edits and deletes their own; signed out, it says how to sign in", async ({ browser }, testInfo) => {
   test.setTimeout(120_000);

@@ -7,7 +7,7 @@ import { APP_URL, portalUrl } from "./env";
 import { setAnalysis } from "./autopilot";
 import { query } from "./db";
 import { connectGithub, mergedOnGithub, mergePullRequest, publishRelease } from "./github";
-import { afterIntersections, apiFor, createProject, editorFocused, newPerson, postFeedback, signUp } from "./helpers";
+import { afterIntersections, apiFor, createProject, newPerson, postFeedback, replaceText, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { publishedOn } from "./changelog-dates";
 import { modelRequests, nextModelReply } from "./model";
@@ -1830,7 +1830,7 @@ test("readers comment on an entry's page: they edit and delete their own, the te
   // Emptied, it's refused; Cancel drops that, and Edit opens on the saved text afresh. Once Edit has put the keyboard in
   // it: the caret the editor moves to the text's end as it starts would otherwise undo the select-all (a Delete at the
   // end, which deletes nothing).
-  await editorFocused(edit);
+  await expect(edit).toBeFocused();
   await edit.press("ControlOrMeta+a");
   await edit.press("Delete");
   // (What Save sends, once the editor's caught up.)
@@ -1841,8 +1841,7 @@ test("readers comment on an entry's page: they edit and delete their own, the te
   await comments.getByRole("button", { name: "Edit your comment" }).click();
   await expect(edit).toContainText("Finally! My eyes thank you.");
   await expect(comments.getByText("Write something first")).toHaveCount(0);
-  await editorFocused(edit);
-  await edit.fill("Finally! Works on my phone too.");
+  await replaceText(edit, "Finally! Works on my phone too.");
   await comments.getByRole("button", { name: "Save" }).click();
   await expect(ada.getByText("Comment saved")).toBeVisible();
   await expect(comments.getByRole("textbox", { name: "Edit your comment" })).toHaveCount(0);
@@ -1874,8 +1873,7 @@ test("readers comment on an entry's page: they edit and delete their own, the te
   // Its own it edits.
   const teamOwn = teamComments.getByRole("listitem").filter({ hasText: "Tess Team" });
   await teamOwn.getByRole("button", { name: "Edit your comment" }).click();
-  await editorFocused(teamComments.getByRole("textbox", { name: "Edit your comment" }));
-  await teamComments.getByRole("textbox", { name: "Edit your comment" }).fill("Glad it helps! More soon.");
+  await replaceText(teamComments.getByRole("textbox", { name: "Edit your comment" }), "Glad it helps! More soon.");
   await teamComments.getByRole("button", { name: "Save" }).click();
   await expect(team.getByText("Comment saved")).toBeVisible();
   await expect(teamOwn).toContainText("Glad it helps! More soon.");

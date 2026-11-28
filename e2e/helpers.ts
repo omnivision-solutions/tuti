@@ -263,11 +263,14 @@ export async function holdActions(page: Page) {
 }
 
 /**
- * Waits until a rich text editor has the keyboard and ProseMirror has settled its caret: 20ms after taking the focus,
- * it puts back the caret it last read over one it hasn't read yet, undoing a select-all or a Ctrl+Home made in between.
- * A page timer of the same delay, set once the editor has the focus, runs after that check.
+ * Replaces a rich text editor's text once Edit has put the keyboard in it: before then, the caret the editor puts at the
+ * text's end as it starts would land on what's typed. Selected with the editor's own Select all, not the browser's
+ * (fill's): ProseMirror, just after it takes the focus, puts back the caret it last read over a browser selection it
+ * hasn't read yet.
  */
-export async function editorFocused(editor: Locator) {
+export async function replaceText(editor: Locator, text: string) {
   await expect(editor).toBeFocused();
-  await editor.evaluate(() => new Promise((resolve) => setTimeout(resolve, 20)));
+  await editor.press("ControlOrMeta+a");
+  await editor.page().keyboard.insertText(text);
+  await expect(editor).toHaveText(text);
 }
