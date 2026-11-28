@@ -92,6 +92,8 @@ const EXEMPT = [
   // Routes that stay routes (T10): the caller from the context function (the cookie session, and until T11 the mobile
   // app's token as api-auth.ts reads it), then createCaller; the streams also need the stream itself.
   { files: /^src\/app\/api\/live\/route\.ts$/, imports: /^server\/(api-auth|live|session|trpc\/context)\.ts$/ },
+  // The widget's Messages stream: its caller from the context function, the stream itself, and who hears a change.
+  { files: /^src\/app\/api\/widget\/live\/route\.ts$/, imports: /^server\/(live|trpc\/context|widget-person)\.ts$/ },
   // Signing in itself, built from server/auth: Better Auth's handler and the hand-offs on both sides.
   { files: /^src\/app\/(api\/auth\/|portal\/\[project\]\/\(site\)\/(continue|sso)\/route\.ts$|app\/\(account-pages\)\/auth\/continue\/page\.tsx$)/, imports: /^server\/auth\// },
   // proxy.ts: its gate in front of a private portal (the reader and team function, server/auth/portal-readers.ts) and

@@ -1,34 +1,42 @@
-import { prisma } from "@tuti/db";
-
-import { visitorHash } from "@/server/auth/visitor-session";
-import { widgetTokenUser } from "@/server/auth/widget-session";
 import { inboxStream } from "@/server/live";
-import { getSession } from "@/server/session";
-import { hears, widgetPerson } from "@/server/widget-person";
+import { ContextError, requestContext } from "@/server/trpc/context";
+import { createCaller, unlessRefused } from "@/server/trpc/server";
+import { hears } from "@/server/widget-person";
 
 /**
  * The widget's live updates for someone's Messages (`?project=<slug>`; server/live.ts): only their own
- * conversations. Who they are comes in a header, never the URL: `Authorization: Widget <token>` for
- * someone the page signed in, `Visitor <token>` for a signed-out visitor, or neither for someone signed
- * in on the portal itself (its cookie). Ends when that token or session does; the panel closes it when
- * the page signs someone else in or out.
+ * conversations. Who they are comes in a header, never the URL, as /api/trpc reads it (server/trpc/context.ts):
+ * `Authorization: Widget <token>` for someone the page signed in, `Visitor <token>` for a signed-out visitor, or
+ * neither for someone signed in on the portal itself (its cookie). Who may hear is the router's (live.widget), asked as
+ * the stream opens and at each keepalive: it ends when that token or session does; the panel closes it when the page
+ * signs someone else in or out.
  */
 export async function GET(request: Request) {
   const slug = new URL(request.url).searchParams.get("project") ?? "";
-  const [, kind, token] = /^(Widget|Visitor) (\S{1,8192})$/.exec(request.headers.get("authorization") ?? "") ?? [];
-  const who = await widgetPerson(slug, { token: kind === "Widget" ? token : null, visitor: kind === "Visitor" ? token : null });
+  const who = await listening(request, slug);
   if (!who) {
     return new Response("Sign in to message the team", { status: 401 });
   }
-  const session = kind ? null : await getSession();
-  const { projectId } = who;
   return inboxStream(request, {
     wants: (change) => hears(who, change),
-    stillAllowed: async () =>
-      kind === "Widget"
-        ? (await widgetTokenUser(projectId, token!)) !== null
-        : kind === "Visitor"
-          ? visitorHash(projectId, token!) !== null
-          : !!session && (await prisma.session.count({ where: { id: session.session.id, expiresAt: { gt: new Date() } } })) > 0,
+    // Still them: the same person, by the same token or session.
+    stillAllowed: async () => {
+      const now = await listening(request, slug);
+      return !!now && now.userId === who.userId && now.visitorHash === who.visitorHash;
+    },
   });
+}
+
+/** Who hears the project's Messages on this request (live.widget), or null where the router refuses them. */
+async function listening(request: Request, slug: string) {
+  let context;
+  try {
+    context = await requestContext(request.headers);
+  } catch (error) {
+    if (error instanceof ContextError) {
+      return null;
+    }
+    throw error;
+  }
+  return unlessRefused(createCaller(context).live.widget({ project: slug }));
 }

@@ -205,7 +205,10 @@ import {
 } from "./languages";
 import { checkLicense } from "./license";
 import { removeLink } from "./links";
-import { getInboxLive } from "./live";
+import {
+  getInboxLive,
+  getWidgetLive,
+} from "./live";
 import {
   mergePost,
   updatePost,
@@ -345,6 +348,7 @@ export const all = [
   getGithubConnect,
   finishGithubConnect,
   getInboxLive,
+  getWidgetLive,
   getCodeChangeButton,
   getChangelogCover,
   getChangelogStyleCover,
