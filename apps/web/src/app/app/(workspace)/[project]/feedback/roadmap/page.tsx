@@ -13,7 +13,8 @@ export const metadata: Metadata = { title: "Roadmap" };
 export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/feedback/roadmap">) {
   const { project: slug } = await props.params;
   const searchParams = await props.searchParams;
-  const asked = typeof searchParams.board === "string" ? searchParams.board : undefined;
+  // A board's slug, else all of them (one too long for any board too: the address may say anything).
+  const asked = typeof searchParams.board === "string" && searchParams.board.length <= 200 ? searchParams.board : undefined;
   // The team's (others get a 404), with Feedback's menu alongside.
   const [{ boards, board, completedDays, columns }, menu] = await Promise.all([
     (await serverCaller()).roadmap.team({ project: slug, board: asked }),

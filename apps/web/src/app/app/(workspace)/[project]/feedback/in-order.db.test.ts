@@ -30,3 +30,11 @@ test("Feedback's list (a post open beside it), its Roadmap and its Boards keep t
   expect(contains(await RoadmapPage(props({})), InOrderProvider)).toBe(true);
   expect(contains(await BoardsPage(props({})), InOrderProvider)).toBe(true);
 });
+
+test("the Roadmap with a board in its address no board has (too long for any) shows every board, not an error", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  actAs(owner);
+  const props = { params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({ board: "x".repeat(300) }) } as never;
+  await expect(RoadmapPage(props)).resolves.toBeTruthy();
+});
