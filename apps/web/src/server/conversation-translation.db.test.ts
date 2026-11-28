@@ -1,9 +1,10 @@
 import { prisma } from "@tuti/db";
 import { handlers, noticeText, noticeWait, translateMessage, translationSettings } from "@tuti/jobs";
 import { creditsOn, type ModelFake, startExpoPushFake, startModelFake } from "@tuti/testkit";
+import { TRPCError } from "@trpc/server";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
-import { actAs, createProject, signUp } from "@/test/helpers";
+import { actAs as signIn, callerAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
 import { mailSubdomain } from "./inbound";
@@ -14,6 +15,27 @@ import { listening, notifyInboxNow, subscribeInbox } from "./live";
 import { call } from "./operations/run";
 import { getSupportSettings, updateSupportSettings } from "./operations/support";
 import { summarizeConversation } from "./operations/support-ai";
+
+/** Who the app's calls below act as: `actAs` signs them in for server actions, and tRPC calls go as them too. */
+let acting: TestUser | null = null;
+const actAs = (user: TestUser | null) => {
+  acting = user;
+  signIn(user);
+};
+
+/** A call from the Inbox through tRPC, as an action's was: `{}`, the refusal's message, or what went wrong thrown. */
+async function fromInbox(run: (caller: Awaited<ReturnType<typeof callerAs>>) => Promise<unknown>) {
+  try {
+    await run(await callerAs(acting));
+    return {};
+  } catch (error) {
+    if (error instanceof TRPCError && error.cause instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error instanceof TRPCError && error.cause ? error.cause : error;
+  }
+}
+const retryTranslation = (slug: string, number: number) => fromInbox((caller) => caller.conversations.retryTranslation({ project: slug, number }));
 
 /**
  * Queuing a job fails for the keys in `failing` (Hatchet unreachable), and for the `failingNth` key's call of that number
@@ -363,7 +385,7 @@ test("the app: Try again translates a failed message again; the composer preview
   ];
   const held = vi.spyOn(handlers, "translateMessage").mockResolvedValueOnce({ skipped: "held" } as never);
   try {
-    expect(await inbox.retryTranslation(project.slug, 1)).toEqual({});
+    expect(await retryTranslation(project.slug, 1)).toEqual({});
     // NOTIFYs arrive in order: once the marker's heard, so is the retry's.
     await notifyInboxNow({ projectId: project.id, conversationId: "last", userId: null, visitorHash: null });
     await vi.waitFor(() => expect(last).toHaveLength(1));
@@ -375,13 +397,13 @@ test("the app: Try again translates a failed message again; the composer preview
   // Then translated, asked again.
   model.reply(translated("I haven't been able to sign in since yesterday."));
   await prisma.conversationMessage.update({ where: { id: failed.id }, data: { translationError: "The translation provider didn't answer" } });
-  expect(await inbox.retryTranslation(project.slug, 1)).toEqual({});
+  expect(await retryTranslation(project.slug, 1)).toEqual({});
   expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: failed.id } })).toMatchObject({
     teamText: "I haven't been able to sign in since yesterday.",
     translationError: null,
   });
   // Nothing failed now: nothing is asked.
-  expect(await inbox.retryTranslation(project.slug, 1)).toEqual({});
+  expect(await retryTranslation(project.slug, 1)).toEqual({});
   expect(model.requests).toHaveLength(4);
 
   // The preview under the composer, then sent as it is.
@@ -417,7 +439,7 @@ test("Try again twice at once translates the message once", async () => {
   model.fail(500);
   const failed = await customerWrites(project.id, conversation.id, "Ich kann mich seit gestern nicht mehr anmelden.");
   model.reply(translated("I haven't been able to sign in since yesterday."));
-  expect(await Promise.all([inbox.retryTranslation(project.slug, 1), inbox.retryTranslation(project.slug, 1)])).toEqual([{}, {}]);
+  expect(await Promise.all([retryTranslation(project.slug, 1), retryTranslation(project.slug, 1)])).toEqual([{}, {}]);
   // German's, the two failed asks, and one translation: the second Try again found it claimed.
   expect(model.requests).toHaveLength(4);
   expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: failed.id } })).toMatchObject({ teamText: "I haven't been able to sign in since yesterday.", translationError: null });
@@ -433,12 +455,12 @@ test("Try again is refused with translation off or without AI, and the message k
   expect(why).not.toBeNull();
 
   await call(updateSupportSettings, team, { translate: false });
-  expect(await inbox.retryTranslation(project.slug, 1)).toEqual({ error: "This project doesn't translate conversations" });
+  expect(await retryTranslation(project.slug, 1)).toEqual({ error: "This project doesn't translate conversations" });
   expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: failed.id } })).toMatchObject({ translationError: why });
 
   await prisma.project.update({ where: { id: project.id }, data: { translateConversations: true } });
   vi.stubEnv("OPENAI_API_KEY", "");
-  expect(await inbox.retryTranslation(project.slug, 1)).toEqual({ error: "AI isn't set up on this server, so conversations can't be translated" });
+  expect(await retryTranslation(project.slug, 1)).toEqual({ error: "AI isn't set up on this server, so conversations can't be translated" });
   expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: failed.id } })).toMatchObject({ translationError: why });
   expect(model.requests).toHaveLength(3);
 });
@@ -453,7 +475,7 @@ test("Try again that can't be queued gives the message back its reason, so it sh
   expect(why).not.toBeNull();
   jobs.failing.add("translateMessage");
   try {
-    await expect(inbox.retryTranslation(project.slug, 1)).rejects.toThrow("Hatchet unreachable");
+    await expect(retryTranslation(project.slug, 1)).rejects.toThrow("Hatchet unreachable");
   } finally {
     jobs.failing.clear();
   }
@@ -492,7 +514,7 @@ test("Try again tells open Inbox pages even when a later message couldn't be que
   jobs.queued.clear();
   jobs.failingNth = { key: "translateMessage", n: 2 };
   try {
-    await expect(inbox.retryTranslation(project.slug, 1)).rejects.toThrow("Hatchet unreachable");
+    await expect(retryTranslation(project.slug, 1)).rejects.toThrow("Hatchet unreachable");
     // NOTIFYs arrive in order: once the marker's heard, so is the retry's.
     await notifyInboxNow({ projectId: project.id, conversationId: "last", userId: null, visitorHash: null });
     await vi.waitFor(() => expect(last).toHaveLength(1));
@@ -543,7 +565,7 @@ test("the team's email and push about a message wait for its translation, and sh
     // Try again translates it, and nobody is told about it a second time.
     actAs(owner);
     model.reply(translated("I haven't been able to sign in since yesterday."));
-    await inbox.retryTranslation(project.slug, 1);
+    await retryTranslation(project.slug, 1);
     expect(expo.sent).toHaveLength(told);
   } finally {
     await expo.close();

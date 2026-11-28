@@ -1,13 +1,14 @@
 "use client";
 
 import { LanguagesIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { MessageText } from "@/components/inbox/message-text";
 import { Button } from "@/components/ui/button";
 import { nativeLanguageName } from "@/lib/language-name";
-import { retryTranslation } from "@/server/inbox";
+import { errorMessage, useTRPCClient } from "@/components/trpc";
 
 /** The line under a translated message: muted, and on the team's green bubble in its text colour (the bubble's own rule). */
 const LINE = "inbox-translation mt-1 flex flex-wrap items-center gap-x-1 text-xs leading-4.5 text-muted-foreground [&>svg]:size-3.25 [&>svg]:flex-none";
@@ -87,6 +88,8 @@ export function MessageTranslation({
 }) {
   const [other, setOther] = useState(false);
   const [retrying, startRetry] = useTransition();
+  const trpc = useTRPCClient();
+  const router = useRouter();
   // Queued again (this one or another's Try again): "Translating…" until the result is in.
   const { retried, markRetried } = useContext(RetriedTranslations);
   // Where the keyboard's focus goes once Try again's line is gone.
@@ -136,10 +139,14 @@ export function MessageTranslation({
               focusableWhenDisabled
               onClick={() =>
                 startRetry(async () => {
-                  const result = await retryTranslation(projectSlug, number).catch(() => ({ error: "Couldn't ask for it again: try again in a moment" }));
+                  const result = await trpc.conversations.retryTranslation.mutate({ project: projectSlug, number }).then(
+                    () => ({ error: null }),
+                    (error: unknown) => ({ error: errorMessage(error) }),
+                  );
                   if (result.error) {
                     toast.error(result.error);
                   } else {
+                    router.refresh();
                     markRetried();
                     textRef.current?.focus();
                   }

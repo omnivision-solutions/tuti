@@ -4,7 +4,7 @@ import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { apiFor, createProject, signUp } from "./helpers";
+import { apiFor, createProject, signUp, trpcRequest } from "./helpers";
 import { modelRequests, nextModelReply } from "./model";
 
 test.use({ viewport: { width: 1440, height: 900 } });
@@ -144,7 +144,9 @@ test("a customer's message that couldn't be translated shows as written, with Tr
   await expect(messages).toContainText("Couldn't translate it");
   await checkpoint(owner, "translation-failed");
   await nextModelReply(translated(english, "de"), slug);
+  const retrying = trpcRequest(owner, "conversations.retryTranslation");
   await messages.getByRole("button", { name: "Try again" }).click();
+  await retrying;
   await expect(messages).toContainText(english);
   await expect(messages).toContainText("Translated from Deutsch");
   await expect(messages.getByRole("button", { name: "Try again" })).toBeHidden();

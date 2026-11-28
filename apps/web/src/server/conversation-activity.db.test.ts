@@ -1,12 +1,14 @@
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
+import { TRPCError } from "@trpc/server";
 import { expect, test } from "vitest";
 
-import { actAs, createProject, failTransaction, signUp } from "@/test/helpers";
+import { actAs as signIn, callerAs, createProject, failTransaction, signUp, type TestUser } from "@/test/helpers";
 
-import { assignConversation, loadConversationActivity, markConversationSpam, setConversationStatus } from "./inbox";
+import { loadConversationActivity } from "./inbox";
 import { runWorkflows } from "./inbox-path";
 import { getConversationActivity } from "./operations/conversation-activity";
+import { OperationError } from "./operations/define";
 import { addMessage, createConversation, replyToConversation, startConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 import { createWorkflow, deleteWorkflow } from "./operations/workflows";
@@ -14,6 +16,28 @@ import { deleteUser } from "./operations/users";
 import { removeMember } from "./team";
 import { upsertProjectUser } from "./project-users";
 import { spamVerdict } from "./spam";
+
+/** Who the app's calls below act as: `actAs` signs them in for server actions, and tRPC calls go as them too. */
+let acting: TestUser | null = null;
+const actAs = (user: TestUser | null) => {
+  acting = user;
+  signIn(user);
+};
+
+/** A call from the Inbox through tRPC, as an action's was: `{}`, the refusal's message, or what went wrong thrown. */
+async function fromInbox(run: (caller: Awaited<ReturnType<typeof callerAs>>) => Promise<unknown>) {
+  try {
+    await run(await callerAs(acting));
+    return {};
+  } catch (error) {
+    if (error instanceof TRPCError && error.cause instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error instanceof TRPCError && error.cause ? error.cause : error;
+  }
+}
+/** The Inbox's Status, Assign and Report spam (conversations.update through tRPC). */
+const save = (slug: string, number: number, change: { status?: "closed"; assignee?: string; spam?: boolean }) => fromInbox((caller) => caller.conversations.update({ project: slug, number, ...change }));
 
 /**
  * A conversation's Activity (docs/plan.md, Inbox automation, W16): one row per event, written with the change it
@@ -103,11 +127,11 @@ test("a teammate's changes, in the app and by the API, each with who did it; an 
 
   // In the app.
   actAs(owner);
-  expect(await setConversationStatus(project.slug, number, "closed")).toEqual({});
-  expect(await assignConversation(project.slug, number, owner.id)).toEqual({});
-  expect(await markConversationSpam(project.slug, number, true)).toEqual({});
+  expect(await save(project.slug, number, { status: "closed" })).toEqual({});
+  expect(await save(project.slug, number, { assignee: owner.email })).toEqual({});
+  expect(await save(project.slug, number, { spam: true })).toEqual({});
   // Changing nothing writes nothing.
-  expect(await setConversationStatus(project.slug, number, "closed")).toEqual({});
+  expect(await save(project.slug, number, { status: "closed" })).toEqual({});
   // By the API: the key, never its creator.
   await call(updateConversation, viaKey, { number, spam: false, status: "open", assignee: member.email, priority: true, handledBy: "ai" });
   await call(updateConversation, viaKey, { number, handledBy: "team" });

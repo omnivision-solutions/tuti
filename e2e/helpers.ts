@@ -1,7 +1,7 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { deflateSync } from "node:zlib";
 
-import { type Browser, expect, type Locator, type Page, type Route } from "@playwright/test";
+import { type Browser, expect, type Locator, type Page, type Request, type Route } from "@playwright/test";
 
 import { APP_URL, CLOUD_URL, portalUrl, TRIAL_URL } from "./env";
 import { latestEmailTo, linkIn } from "./mail";
@@ -235,14 +235,24 @@ export async function openPersonDetails(page: Page) {
 }
 
 /**
- * Holds the page's server actions until the returned `release()` is called, so what a page shows while one runs (a
+ * The page's next call to a tRPC procedure (`conversations.update`), batched or not: the save it waits for went through
+ * tRPC (docs/plan.md, "One way in").
+ */
+export const trpcRequest = (page: Page, procedure: string) =>
+  page.waitForRequest((request) => new URL(request.url()).pathname.split("/api/trpc/")[1]?.split(",").includes(procedure) ?? false);
+
+/** Whether a request is one of the page's saves: a server action, or a tRPC mutation (a POST to /api/trpc). */
+export const isSave = (request: Request) => request.method() === "POST" && (!!request.headers()["next-action"] || new URL(request.url()).pathname.includes("/api/trpc/"));
+
+/**
+ * Holds the page's saves (isSave) until the returned `release()` is called, so what a page shows while one runs (a
  * button that's off, still focused) is asserted without racing it.
  */
 export async function holdActions(page: Page) {
   let letGo!: () => void;
   const held = new Promise<void>((resolve) => (letGo = resolve));
   const handler = async (route: Route) => {
-    if (route.request().method() === "POST" && route.request().headers()["next-action"]) await held;
+    if (isSave(route.request())) await held;
     await route.fallback();
   };
   await page.route("**/*", handler);

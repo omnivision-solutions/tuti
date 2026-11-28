@@ -2,8 +2,9 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, test, vi } from "vitest";
 
-// The server action isn't called while rendering.
-vi.mock("@/server/inbox", () => ({ retryTranslation: vi.fn() }));
+// Try again's call (tRPC) isn't made while rendering.
+vi.mock("@/components/trpc", () => ({ useTRPCClient: () => ({}), errorMessage: String }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 const { MessageTranslation, RetriedTranslations, translationLine } = await import("./message-translation");
 

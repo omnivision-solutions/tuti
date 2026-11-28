@@ -3,8 +3,10 @@ import { act, createElement as h } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 
-const retryTranslation = vi.hoisted(() => vi.fn(async (): Promise<{ error?: string }> => ({})));
-vi.mock("@/server/inbox", () => ({ retryTranslation }));
+// Try again's call, through tRPC (conversations.retryTranslation), and the page's refresh after it.
+const retryTranslation = vi.hoisted(() => vi.fn(async () => ({})));
+vi.mock("@/components/trpc", () => ({ useTRPCClient: () => ({ conversations: { retryTranslation: { mutate: retryTranslation } } }), errorMessage: String }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {} }) }));
 
 const { MessageTranslation, TranslationRetries } = await import("./message-translation");
 
@@ -35,7 +37,7 @@ test("Try again's Translating… shows on every message it re-queued, not only t
   await page(root, { m1: "Out of credits", m2: "Out of credits", m3: null }, ["m1", "m2"]);
   const tryAgain = [...element.querySelectorAll("button")].find((button) => button.textContent === "Try again")!;
   await act(async () => tryAgain.click());
-  expect(retryTranslation).toHaveBeenCalledWith("acme", 1);
+  expect(retryTranslation).toHaveBeenCalledWith({ project: "acme", number: 1 });
   // The page comes back refreshed: their failures cleared (the operation claimed them), none translated yet.
   await page(root, { m1: null, m2: null, m3: null }, []);
   expect(says("m1")).toContain("Translating…");
