@@ -35,10 +35,10 @@ export async function GET(request: Request, context: RouteContext<"/app/[project
     redirect(`/app/auth/sign-in?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`);
   }
   const caller = createCaller(signedIn);
-  // The updates it names, as they are now: refused (not on the team), nothing to show them.
+  // The updates it names, as they are now (for Approve, with its post update's parts): refused (not on the team), nothing to show them.
   const read = async () => {
     try {
-      return (await caller.codeChanges.button({ project: slug, id, actions: ids })).actions;
+      return (await caller.codeChanges.button({ project: slug, id, actions: ids, parts: !!actionId })).actions;
     } catch (error) {
       if (error instanceof TRPCError && error.code !== "INTERNAL_SERVER_ERROR") {
         return null;

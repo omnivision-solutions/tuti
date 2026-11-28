@@ -8,7 +8,7 @@ import OldChangePage from "@/app/app/(workspace)/[project]/autopilot/[id]/page";
 import { publishCodeChangeActionNow, stopCodeChangeAction } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, callerAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -296,4 +296,14 @@ test("refused without its token, and to someone off the team even with their own
   }
   expect(await statusOf(link.id)).toBe("PENDING");
   expect(await statusOf(scheduled)).toBe("SCHEDULED");
+});
+
+test("what a button names comes with a post update's parts only when asked (Approve): Publish now and Stop don't read them", async () => {
+  const c = await change();
+  const scheduled = scheduledOf(c);
+  const caller = await callerAs(owner);
+  const read = async (parts?: boolean) => (await caller.codeChanges.button({ project: project.slug, id: c.id, actions: [scheduled], parts })).actions;
+  expect((await read()).map((action) => action.parts)).toEqual([null]);
+  expect((await read(false)).map((action) => action.parts)).toEqual([null]);
+  expect((await read(true)).map((action) => action.parts)).toEqual([[scheduled]]);
 });

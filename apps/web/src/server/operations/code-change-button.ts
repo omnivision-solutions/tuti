@@ -6,8 +6,8 @@ import { defineOperation } from "./define";
 
 /**
  * What a button in Autopilot's email (app/…/autopilot/[id]/act) acts on: the updates it names, of its pull request in
- * this project, as they are now. A post's update says which parts it's made of now (an Approve sent before it was one
- * only acts while it's still just the part the email showed). The button itself acts through the operations it runs.
+ * this project, as they are now. With `parts`, a post's update says which parts it's made of now (Approve asks: one sent
+ * before it was one only acts while it's still just the part the email showed). The button itself acts through the operations it runs.
  */
 export const getCodeChangeButton = defineOperation({
   name: "codeChanges.button",
@@ -17,7 +17,7 @@ export const getCodeChangeButton = defineOperation({
   internal: true,
   scope: "read",
   access: "team",
-  input: z.object({ id: z.string().min(1).max(100), actions: z.array(z.string().min(1).max(100)).max(100) }),
+  input: z.object({ id: z.string().min(1).max(100), actions: z.array(z.string().min(1).max(100)).max(100), parts: z.boolean().optional() }),
   output: z.object({
     actions: z.array(
       z.object({
@@ -27,7 +27,7 @@ export const getCodeChangeButton = defineOperation({
         postId: z.string().nullable(),
         articleId: z.string().nullable(),
         waitReason: z.string().nullable(),
-        /** A post's update's parts now (their ids), or null for anything else. */
+        /** With `parts`, a post's update's parts now (their ids); null for anything else, or when not asked. */
         parts: z.array(z.string()).nullable(),
       }),
     ),
@@ -40,7 +40,7 @@ export const getCodeChangeButton = defineOperation({
     const actions = await Promise.all(
       found.map(async (action) => ({
         ...action,
-        parts: POST_UPDATE.includes(action.kind) && action.postId ? (await postUpdate(action.postId)).parts.map((part) => part.id) : null,
+        parts: input.parts && POST_UPDATE.includes(action.kind) && action.postId ? (await postUpdate(action.postId)).parts.map((part) => part.id) : null,
       })),
     );
     return { actions };
