@@ -1,6 +1,23 @@
 import type { MediaUrls } from "@tuti/content";
+import { type TRPCClient, TRPCClientError } from "@trpc/client";
 
-import { createUpload, finishUpload, uploadStatus } from "@/server/media";
+import type { AppRouter } from "@/server/trpc/router";
+
+/** The tRPC client a component has (useTRPCClient): uploads go through the uploads.* procedures. */
+export type Uploader = TRPCClient<AppRouter>;
+
+/**
+ * The server's refusal as the `{ error }` callers show, in its words; anything else rejects, as the callers expect, so
+ * they say it in their own (translated) words: offline, or the server failing unexpectedly ("Something went wrong").
+ */
+async function said<T>(call: Promise<T>): Promise<T | { error: string }> {
+  return call.catch((error: unknown) => {
+    if (error instanceof TRPCClientError && error.shape && error.data?.code !== "INTERNAL_SERVER_ERROR") {
+      return { error: error.message };
+    }
+    throw error;
+  });
+}
 
 /**
  * Why an upload failed here in the browser (not the server's words), so a page can say it in its language: the upload
@@ -10,10 +27,11 @@ export type UploadFailure = { error: string; reason?: "failed" | "unusable" | "t
 
 /** Uploads straight to media storage, then waits until the image is processed. */
 export async function uploadImage(
+  trpc: Uploader,
   projectSlug: string,
   file: File,
 ): Promise<{ mediaId: string; src: string; urls: MediaUrls; w: number; h: number } | UploadFailure> {
-  const created = await createUpload(projectSlug, { type: file.type, size: file.size });
+  const created = await said(trpc.uploads.create.mutate({ project: projectSlug, type: file.type, size: file.size }));
   if ("error" in created) {
     return created;
   }
@@ -23,12 +41,12 @@ export async function uploadImage(
   if (!put?.ok) {
     return { error: "The upload failed. Try again.", reason: "failed" };
   }
-  const finished = await finishUpload(created.mediaId);
-  if (finished.error) {
-    return { error: finished.error };
+  const finished = await said(trpc.uploads.finish.mutate({ project: projectSlug, mediaId: created.mediaId }));
+  if ("error" in finished) {
+    return finished;
   }
   for (let attempt = 0; attempt < 60; attempt++) {
-    const status = await uploadStatus(created.mediaId);
+    const status = await said(trpc.uploads.status.query({ project: projectSlug, mediaId: created.mediaId }));
     if ("error" in status) {
       return status;
     }
@@ -44,8 +62,8 @@ export async function uploadImage(
 }
 
 /** Uploads a file attachment or a video (articles) straight to media storage; it's ready once the server has checked it. A video has its `src`. */
-export async function uploadFile(projectSlug: string, file: File): Promise<{ mediaId: string; name: string; size: number; src?: string } | UploadFailure> {
-  const created = await createUpload(projectSlug, { name: file.name, type: file.type, size: file.size });
+export async function uploadFile(trpc: Uploader, projectSlug: string, file: File): Promise<{ mediaId: string; name: string; size: number; src?: string } | UploadFailure> {
+  const created = await said(trpc.uploads.create.mutate({ project: projectSlug, name: file.name, type: file.type, size: file.size }));
   if ("error" in created) {
     return created;
   }
@@ -55,6 +73,6 @@ export async function uploadFile(projectSlug: string, file: File): Promise<{ med
   if (!put?.ok) {
     return { error: "The upload failed. Try again.", reason: "failed" };
   }
-  const finished = await finishUpload(created.mediaId);
-  return finished.error ? { error: finished.error } : { mediaId: created.mediaId, name: created.name ?? file.name, size: file.size, src: finished.src };
+  const finished = await said(trpc.uploads.finish.mutate({ project: projectSlug, mediaId: created.mediaId }));
+  return "error" in finished ? finished : { mediaId: created.mediaId, name: created.name ?? file.name, size: file.size, src: finished.src };
 }

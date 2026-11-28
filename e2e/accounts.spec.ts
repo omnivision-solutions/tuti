@@ -79,11 +79,10 @@ test("a team member switches projects, edits their account, signs out and back i
   const uploadReached = new Promise<void>((resolve) => (uploadArrived = resolve));
   const uploadHeld = new Promise<void>((resolve) => (releaseUpload = resolve));
   let savedEarly = false;
-  await olive.route("**/app/account", async (route) => {
-    if (route.request().method() === "POST") {
-      uploadArrived();
-      await uploadHeld;
-    }
+  const uploads = (url: URL) => url.pathname.endsWith("/api/trpc/uploads.create");
+  await olive.route(uploads, async (route) => {
+    uploadArrived();
+    await uploadHeld;
     await route.continue();
   });
   await olive.route("**/api/auth/update-user", (route) => {
@@ -97,7 +96,7 @@ test("a team member switches projects, edits their account, signs out and back i
   releaseUpload();
   await expect(olive.getByRole("img", { name: "Photo preview" })).toBeVisible();
   expect(savedEarly).toBe(false);
-  await olive.unroute("**/app/account");
+  await olive.unroute(uploads);
   await olive.unroute("**/api/auth/update-user");
   // Saved with Enter in Name: what's typed while it saves stays, with focus there, and is the next change to save.
   let saveArrived!: () => void;

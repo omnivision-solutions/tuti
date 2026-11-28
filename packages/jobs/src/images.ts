@@ -59,18 +59,38 @@ export async function imageUploaded(input: JobInput<"imageUploaded">, log: JobLo
     for (const f of files) {
       await storage.put(f.key, f.body, f.type);
     }
-    await storage.delete(original);
     const size = files.reduce((sum, f) => sum + f.body.byteLength, 0);
-    await prisma.media.update({
-      where: { id: media.id },
+    // Only from PROCESSING: a job queued twice may run twice at once, and the first to finish decides. Ready before the
+    // original goes, so a second run that then can't read it finds this one's outcome.
+    const { count } = await prisma.media.updateMany({
+      where: { id: media.id, status: "PROCESSING" },
       data: { status: "READY", width: info.width, height: info.height, size },
     });
+    if (count === 0) {
+      // Another run settled it first. Never delete while it's PROCESSING or UPLOADING again (a retried finish's run may
+      // be writing these same keys). Gone or FAILED, nothing here is anyone's; READY, only what isn't among its own
+      // files (keys come from the id and widths, so smaller widths and the email copy may be shared).
+      const settled = await prisma.media.findUnique({ where: { id: media.id }, select: { status: true, width: true } });
+      if (!settled || settled.status === "FAILED" || (settled.status === "READY" && settled.width)) {
+        const kept = new Set(settled?.status === "READY" && settled.width ? [...imageWidths(settled.width).map((width) => imageKey(media.id, width)), emailImageKey(media.id)] : []);
+        await Promise.all(files.filter((f) => !kept.has(f.key)).map((f) => storage.delete(f.key).catch(() => {})));
+      }
+      log.warn(`media ${media.id} was settled by another run, skipping`);
+      return { skipped: true };
+    }
+    await storage.delete(original).catch((error: unknown) => log.warn(`media ${media.id}: deleting its original failed: ${String(error)}`));
     log.info(`media ${media.id}: ${info.width}x${info.height}, ${files.length} files, ${size} bytes`);
     return { ready: true, width: info.width, height: info.height, files: files.length };
   } catch (error) {
+    // Another run of this job finished first (and deleted the original this one couldn't read): its outcome stands.
+    const now = await prisma.media.findUnique({ where: { id: media.id }, select: { status: true } });
+    if (now?.status !== "PROCESSING") {
+      log.warn(`media ${media.id} was settled by another run, skipping`);
+      return { skipped: true };
+    }
     // Not an image we take (or broken): nothing is kept, and it stops counting against the quota.
     await storage.delete(original);
-    await prisma.media.update({ where: { id: media.id }, data: { status: "FAILED", size: 0 } });
+    await prisma.media.updateMany({ where: { id: media.id, status: "PROCESSING" }, data: { status: "FAILED", size: 0 } });
     if (error instanceof RefusedImage || isUnreadableImage(error)) {
       log.warn(`media ${media.id} refused: ${(error as Error).message}`);
       return { ready: false };

@@ -7,7 +7,7 @@ vi.mock("@/server/changelog", () => ({}));
 vi.mock("@/server/rewrite", () => ({}));
 vi.mock("@/server/branding", () => ({}));
 vi.mock("@/server/images", () => ({ generateImage: vi.fn() }));
-vi.mock("@/server/media", () => ({ uploadStatus: vi.fn() }));
+vi.mock("@/components/trpc", () => ({ useTRPCClient: () => ({}) }));
 vi.mock("@/lib/upload-image", () => ({ uploadImage: vi.fn(), uploadFile: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }) }));

@@ -6,10 +6,18 @@ import { configFile, type S3Fake, startS3Fake } from "@tuti/testkit";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
+// The jobs as they are, each enqueue counted (two finishes at once queue one image job).
+const jobs = vi.hoisted(() => ({ enqueue: vi.fn() }));
+vi.mock("@tuti/jobs", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@tuti/jobs")>();
+  jobs.enqueue.mockImplementation(real.enqueue);
+  return { ...real, enqueue: jobs.enqueue };
+});
+
+import { actAs, uploadsAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
-import { createUpload, finishUpload, setAvatar, uploadStatus } from "./media";
+import { setAvatar } from "./media";
 import { postVoters } from "./post-lists";
 import { createPost } from "./posts";
 
@@ -17,6 +25,7 @@ let s3: S3Fake;
 let owner: TestUser;
 let ada: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
+const { createUpload, finishUpload, uploadStatus } = await uploadsAs(() => project.slug);
 
 beforeAll(async () => {
   s3 = await startS3Fake();
@@ -192,7 +201,7 @@ describe("limits", () => {
     const other = await createProject(owner);
     await prisma.session.updateMany({ where: { userId: ada.id }, data: { boundTo: other.id } });
     request.host = `${other.slug}.localhost:3100`;
-    expect(await createUpload(project.slug, { type: "image/png", size: 1000 })).toEqual({ error: "Project not found" });
+    expect(await createUpload(project.slug, { type: "image/png", size: 1000 })).toEqual({ error: "No such project, or it isn't yours" });
     expect(await createUpload(other.slug, { type: "image/png", size: 1000 })).toMatchObject({ mediaId: expect.any(String) });
     request.host = "";
   });
@@ -218,6 +227,172 @@ describe("finishing", () => {
     expect(await uploadStatus(created.mediaId)).toEqual({ status: "FAILED" });
   });
 
+  // Both read the upload as waiting before either claims it: each held where storage is asked (HEAD) till the other is too.
+  test("two finishes at once process the image once", async () => {
+    const file = await photo(100, 100);
+    const created = (await createUpload(project.slug, { type: "image/jpeg", size: file.length })) as { mediaId: string; uploadUrl: string };
+    await fetch(created.uploadUrl, { method: "PUT", body: new Uint8Array(file) });
+    let arrived = 0;
+    let bothIn!: () => void;
+    const together = new Promise<void>((resolve) => (bothIn = resolve));
+    s3.beforeHead = async (key) => {
+      if (key === originalKey(created.mediaId) && ++arrived === 2) {
+        bothIn();
+      }
+      await together;
+    };
+    jobs.enqueue.mockClear();
+    const results = await Promise.all([finishUpload(created.mediaId), finishUpload(created.mediaId)]);
+    s3.beforeHead = undefined;
+    expect(results).toEqual([{}, {}]);
+    expect(jobs.enqueue.mock.calls.filter(([name]) => name === "imageUploaded")).toEqual([["imageUploaded", { mediaId: created.mediaId }]]);
+    expect(await uploadStatus(created.mediaId)).toMatchObject({ status: "READY" });
+  });
+
+  test("a finish that lands after another found the upload wrong leaves it failed, and processes nothing", async () => {
+    const file = await photo(100, 100);
+    const created = (await createUpload(project.slug, { type: "image/jpeg", size: file.length })) as { mediaId: string; uploadUrl: string };
+    const key = originalKey(created.mediaId);
+    // Another size than declared: the first finish fails it.
+    await fetch(created.uploadUrl, { method: "PUT", body: new Uint8Array(Buffer.concat([file, file])) });
+    let arrived = 0;
+    let secondIn!: () => void;
+    let releaseSecond!: () => void;
+    const second = new Promise<void>((resolve) => (secondIn = resolve));
+    const released = new Promise<void>((resolve) => (releaseSecond = resolve));
+    s3.beforeHead = async (each) => {
+      if (each !== key) {
+        return;
+      }
+      if (++arrived === 1) {
+        await second;
+        return;
+      }
+      secondIn();
+      await released;
+    };
+    jobs.enqueue.mockClear();
+    const late = finishUpload(created.mediaId);
+    const first = finishUpload(created.mediaId);
+    const [one, other] = [first, late];
+    const done = await Promise.race([one.then(() => "first"), other.then(() => "late")]);
+    // Whichever asked storage first fails it; then the right file is there for the other, which read it as waiting.
+    expect(await (done === "first" ? one : other)).toEqual({ error: "The upload didn't match the file. Try again." });
+    s3.objects.set(key, { body: file, contentType: "image/jpeg" });
+    releaseSecond();
+    expect(await (done === "first" ? other : one)).toEqual({ error: "The upload didn't match the file. Try again." });
+    s3.beforeHead = undefined;
+    expect(await uploadStatus(created.mediaId)).toEqual({ status: "FAILED" });
+    expect(jobs.enqueue.mock.calls.filter(([name]) => name === "imageUploaded")).toEqual([]);
+  });
+
+  test("an image whose job couldn't be queued waits to be finished again, and a retry processes it once", async () => {
+    const file = await photo(100, 100);
+    const created = (await createUpload(project.slug, { type: "image/jpeg", size: file.length })) as { mediaId: string; uploadUrl: string };
+    await fetch(created.uploadUrl, { method: "PUT", body: new Uint8Array(file) });
+    jobs.enqueue.mockClear();
+    jobs.enqueue.mockImplementationOnce(async () => {
+      throw new Error("The queue is down");
+    });
+    expect(await finishUpload(created.mediaId)).toEqual({ error: "The image couldn't be processed" });
+    expect(await uploadStatus(created.mediaId)).toEqual({ status: "UPLOADING" });
+    expect(await finishUpload(created.mediaId)).toEqual({});
+    // The failed attempt, then the retry's one job.
+    expect(jobs.enqueue.mock.calls.filter(([name]) => name === "imageUploaded")).toHaveLength(2);
+    expect(await uploadStatus(created.mediaId)).toMatchObject({ status: "READY" });
+  });
+
+  // A job queued twice (an enqueue that timed out but went through, then a retry): two runs at once for one image.
+  test("the image job run twice at once keeps the image ready, its size counted once, and leaves no files behind", async () => {
+    const quiet = { info: () => {}, warn: () => {} };
+    const filesOf = (id: string) => [...s3.objects.entries()].filter(([key]) => key.includes(id) && key !== originalKey(id));
+    /** An upload claimed with its job queued but not run here: the runs below are it. */
+    const claimed = async () => {
+      const file = await photo(400, 300);
+      const created = (await createUpload(project.slug, { type: "image/jpeg", size: file.length })) as { mediaId: string; uploadUrl: string };
+      await fetch(created.uploadUrl, { method: "PUT", body: new Uint8Array(file) });
+      jobs.enqueue.mockImplementationOnce(async () => {});
+      expect(await finishUpload(created.mediaId)).toEqual({});
+      return created.mediaId;
+    };
+
+    // Two runs: whichever reads the original second waits till the other is done (and has deleted it).
+    const id = await claimed();
+    let reads = 0;
+    let oneDone!: () => void;
+    const done = new Promise<void>((resolve) => (oneDone = resolve));
+    s3.beforeGet = async (key) => {
+      if (key === originalKey(id) && ++reads === 2) {
+        await done;
+      }
+    };
+    const results = await Promise.all([0, 1].map(() => handlers.imageUploaded({ mediaId: id }, quiet).finally(oneDone)));
+    s3.beforeGet = undefined;
+    expect(results.map((result) => (result.ready ? "ready" : result.skipped ? "skipped" : JSON.stringify(result))).sort()).toEqual(["ready", "skipped"]);
+    const media = await prisma.media.findUniqueOrThrow({ where: { id } });
+    expect(media.status).toBe("READY");
+    // The ready run's files, counted once: the other wrote the same keys, which stay.
+    expect(filesOf(id).length).toBeGreaterThan(0);
+    expect(media.size).toBe(filesOf(id).reduce((sum, [, object]) => sum + object.body.length, 0));
+    // Run again later: nothing to do.
+    expect(await handlers.imageUploaded({ mediaId: id }, quiet)).toEqual({ skipped: true });
+
+    // Settled otherwise while a run works on it (another run failed it): what this run wrote is deleted.
+    const failed = await claimed();
+    s3.beforeGet = async (key) => {
+      if (key === originalKey(failed)) {
+        await prisma.media.update({ where: { id: failed }, data: { status: "FAILED", size: 0 } });
+      }
+    };
+    expect(await handlers.imageUploaded({ mediaId: failed }, quiet)).toEqual({ skipped: true });
+    s3.beforeGet = undefined;
+    expect(await prisma.media.findUniqueOrThrow({ where: { id: failed }, select: { status: true, size: true } })).toEqual({ status: "FAILED", size: 0 });
+    expect(filesOf(failed)).toEqual([]);
+
+    // Waiting again meanwhile (its claim given back, a retried finish's run to come): the keys aren't this run's to delete.
+    const retried = await claimed();
+    s3.beforeGet = async (key) => {
+      if (key === originalKey(retried)) {
+        await prisma.media.update({ where: { id: retried }, data: { status: "UPLOADING" } });
+      }
+    };
+    expect(await handlers.imageUploaded({ mediaId: retried }, quiet)).toEqual({ skipped: true });
+    s3.beforeGet = undefined;
+    expect(filesOf(retried).length).toBeGreaterThan(0);
+
+    // Both runs at work at once (both read the original): the one that lost keeps every file the ready image uses.
+    const parallel = await claimed();
+    let arrived = 0;
+    let bothIn!: () => void;
+    const together = new Promise<void>((resolve) => (bothIn = resolve));
+    s3.beforeGet = async (key) => {
+      if (key === originalKey(parallel) && ++arrived === 2) {
+        bothIn();
+      }
+      if (key === originalKey(parallel)) {
+        await together;
+      }
+    };
+    const both = await Promise.all([0, 1].map(() => handlers.imageUploaded({ mediaId: parallel }, quiet)));
+    s3.beforeGet = undefined;
+    expect(both.map((result) => (result.ready ? "ready" : result.skipped ? "skipped" : JSON.stringify(result))).sort()).toEqual(["ready", "skipped"]);
+    const ready = await prisma.media.findUniqueOrThrow({ where: { id: parallel } });
+    const own = [...imageWidths(ready.width!).map((width) => imageKey(parallel, width)), emailImageKey(parallel)];
+    expect(own.filter((key) => !s3.objects.has(key))).toEqual([]);
+
+    // Settled READY at other widths meanwhile: only what isn't among its files goes (the email copy is shared).
+    const wider = await claimed();
+    s3.beforeGet = async (key) => {
+      if (key === originalKey(wider)) {
+        await prisma.media.update({ where: { id: wider }, data: { status: "READY", width: 2400, height: 1800 } });
+      }
+    };
+    expect(await handlers.imageUploaded({ mediaId: wider }, quiet)).toEqual({ skipped: true });
+    s3.beforeGet = undefined;
+    expect(s3.objects.has(imageKey(wider, 400))).toBe(false);
+    expect(s3.objects.has(emailImageKey(wider))).toBe(true);
+  });
+
   test("only the uploader can finish an upload or see its status", async () => {
     const file = await photo(100, 100);
     const created = (await createUpload(project.slug, { type: "image/jpeg", size: file.length })) as { mediaId: string; uploadUrl: string };
@@ -229,6 +404,18 @@ describe("finishing", () => {
     actAs(ada);
     expect(await finishUpload(created.mediaId)).toEqual({});
     expect(await finishUpload(created.mediaId)).toEqual({ error: "Upload not found" }); // only once
+  });
+
+  test("an upload is finished, and its status read, only in the project it was made in", async () => {
+    const file = await photo(100, 100);
+    const created = (await createUpload(project.slug, { type: "image/jpeg", size: file.length })) as { mediaId: string; uploadUrl: string };
+    await fetch(created.uploadUrl, { method: "PUT", body: new Uint8Array(file) });
+    // Another project ada may act in, named with the upload's id.
+    const other = await createProject(owner);
+    const elsewhere = await uploadsAs(() => other.slug);
+    expect(await elsewhere.finishUpload(created.mediaId)).toEqual({ error: "Upload not found" });
+    expect(await elsewhere.uploadStatus(created.mediaId)).toEqual({ error: "Upload not found" });
+    expect(await finishUpload(created.mediaId)).toEqual({});
   });
 });
 

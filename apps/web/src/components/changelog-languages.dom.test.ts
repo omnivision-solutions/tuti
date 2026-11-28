@@ -13,7 +13,7 @@ vi.mock("@/components/changelog", () => ({ ChangelogSavingContext, ChangelogSave
 const router = { refresh: vi.fn() };
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 vi.mock("next/link", () => ({ default: ({ href, ...props }: { href: string }) => h("a", { href, ...props }) }));
-vi.mock("@/server/media", () => ({ uploadStatus: vi.fn() }));
+vi.mock("@/components/trpc", () => ({ useTRPCClient: () => ({}) }));
 vi.mock("@/server/images", () => ({ generateImage: vi.fn() }));
 // The editor's Ask AI (its server action reads the app's addresses as it loads): unused here, and kept offline.
 vi.mock("@/server/rewrite", () => ({}));

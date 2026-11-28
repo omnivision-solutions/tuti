@@ -613,14 +613,6 @@ const matrix: Matrix = {
     removePostLink: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.removePostLink(slug, f.postId, f.linkId) },
   },
   media: {
-    // Anyone who may post in the project may upload; finishing and status are the uploader's own.
-    createUpload: {
-      allowed: "signed in",
-      refusesSsoUsers: true,
-      call: (slug) => media.createUpload(slug, { type: "image/png", size: 1000 }),
-    },
-    finishUpload: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => media.finishUpload(f.mediaId) },
-    uploadStatus: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => media.uploadStatus(f.mediaId) },
     // Their own avatar, from their own upload.
     setAvatar: { allowed: "signed in", call: () => media.setAvatar(null) },
   },
@@ -1445,15 +1437,17 @@ test.each(cases)("$name", async ({ name, rule }) => {
  */
 type Caller = Awaited<ReturnType<typeof callerAs>>;
 /**
- * `peopleOnly`: a key, even a read and write one, is refused (`people_only`). `seed`: what the call acts on, put there
- * before the refused calls (so the snapshot shows they left it) and again before the read and write key's call (after
- * the allowed one took it away).
+ * `peopleOnly`: a key, even a read and write one, is refused (`people_only`). `uploadersOwn`: the uploader's own (the
+ * fixture's upload is the allowed actor's), so anyone else, a portal's reader too, is refused. `seed`: what the call acts
+ * on, put there before the refused calls (so the snapshot shows they left it) and again before the read and write key's
+ * call (after the allowed one took it away).
  */
 type ProcedureCase = Omit<Case, "call" | "takesIds"> & {
   scope: "read" | "write";
   peopleOnly?: boolean;
+  uploadersOwn?: true;
   seed?: (fixture: Fixture) => Promise<unknown>;
-  call: (caller: Caller, slug: string) => Promise<unknown>;
+  call: (caller: Caller, slug: string, fixture: Fixture) => Promise<unknown>;
 };
 
 /** Conversation #1 linked to post #1, for Unlink. */
@@ -1507,6 +1501,10 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   "team.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.team.list({ project: slug }) },
   "project.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.project.get({ project: slug }) },
   "project.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.project.update({ project: slug, name: "Renamed by the matrix" }) },
+  // Anyone who may post in the project may upload; finishing and status are the uploader's own. A person's, never a key's.
+  "uploads.create": { allowed: "signed in", refusesSsoUsers: true, peopleOnly: true, scope: "write", call: (caller, slug) => caller.uploads.create({ project: slug, type: "image/png", size: 1000 }) },
+  "uploads.finish": { allowed: "signed in", refusesSsoUsers: true, peopleOnly: true, uploadersOwn: true, scope: "write", call: (caller, slug, f) => caller.uploads.finish({ project: slug, mediaId: f.mediaId }) },
+  "uploads.status": { allowed: "signed in", refusesSsoUsers: true, peopleOnly: true, uploadersOwn: true, scope: "read", call: (caller, slug, f) => caller.uploads.status({ project: slug, mediaId: f.mediaId }) },
   "votes.set": { allowed: "signed in", refusesSsoUsers: true, scope: "write", call: (caller, slug) => caller.votes.set({ project: slug, number: 1, voted: true }) },
 };
 
@@ -1537,14 +1535,17 @@ test.each(Object.entries(procedures).map(([name, rule]) => ({ name, rule: rule! 
   const before = await snapshot();
 
   for (const actor of refusedActors({ ...rule, call: async () => {} })) {
-    expect({ actor, outcome: await procedureOutcome(rule.call(await callerAs(userFor(actor)), fixture.slug)) }).toEqual({ actor, outcome: expect.stringMatching(REFUSED) });
+    expect({ actor, outcome: await procedureOutcome(rule.call(await callerAs(userFor(actor)), fixture.slug, fixture)) }).toEqual({ actor, outcome: expect.stringMatching(REFUSED) });
   }
-  // A teammate naming another project's slug, and keys naming a project not theirs.
-  expect(await procedureOutcome(rule.call(await callerAs(users.OWNER), otherProject.slug))).toMatch(REFUSED);
-  expect(await procedureOutcome(rule.call(await callerAs(writeKey), otherProject.slug))).toMatch(REFUSED);
-  expect(await procedureOutcome(rule.call(await callerAs(otherKey), fixture.slug))).toMatch(REFUSED);
+  // A teammate naming another project's slug (for the team's procedures: anyone signed in may act in another project), and
+  // keys naming a project not theirs.
+  if (rule.allowed !== "signed in" && rule.allowed !== "public") {
+    expect(await procedureOutcome(rule.call(await callerAs(users.OWNER), otherProject.slug, fixture))).toMatch(REFUSED);
+  }
+  expect(await procedureOutcome(rule.call(await callerAs(writeKey), otherProject.slug, fixture))).toMatch(REFUSED);
+  expect(await procedureOutcome(rule.call(await callerAs(otherKey), fixture.slug, fixture))).toMatch(REFUSED);
   if (rule.scope === "write") {
-    expect(await procedureOutcome(rule.call(await callerAs(readKey), fixture.slug))).toBe("FORBIDDEN");
+    expect(await procedureOutcome(rule.call(await callerAs(readKey), fixture.slug, fixture))).toBe("FORBIDDEN");
   }
   expect(await snapshot()).toEqual(before);
 
@@ -1554,8 +1555,8 @@ test.each(Object.entries(procedures).map(([name, rule]) => ({ name, rule: rule! 
   await onPortal(reader, { id: fixture.projectId, slug: fixture.slug });
   // As the portal left things: a refused call changes nothing of it.
   const asPortal = await snapshot();
-  const asReader = await procedureOutcome(rule.call(await callerAs(reader), fixture.slug));
-  if (rule.allowed === "signed in" || rule.allowed === "public") {
+  const asReader = await procedureOutcome(rule.call(await callerAs(reader), fixture.slug, fixture));
+  if ((rule.allowed === "signed in" || rule.allowed === "public") && !rule.uploadersOwn) {
     expect(asReader).toBe("ok");
   } else {
     expect(asReader).toMatch(REFUSED);
@@ -1564,10 +1565,11 @@ test.each(Object.entries(procedures).map(([name, rule]) => ({ name, rule: rule! 
   request.host = "";
 
   rule.before?.();
-  expect(await procedureOutcome(rule.call(await callerAs(userFor(allowedActor({ ...rule, call: async () => {} }))), fixture.slug))).toBe("ok");
+  expect(await procedureOutcome(rule.call(await callerAs(userFor(allowedActor({ ...rule, call: async () => {} }))), fixture.slug, fixture))).toBe("ok");
+  const byKey = rule.peopleOnly ? "FORBIDDEN" : "ok";
   if (rule.scope === "read") {
-    expect(await procedureOutcome(rule.call(await callerAs(readKey), fixture.slug))).toBe("ok");
+    expect(await procedureOutcome(rule.call(await callerAs(readKey), fixture.slug, fixture))).toBe(byKey);
   }
   await rule.seed?.(fixture);
-  expect(await procedureOutcome(rule.call(await callerAs(writeKey), fixture.slug))).toBe(rule.peopleOnly ? "FORBIDDEN" : "ok");
+  expect(await procedureOutcome(rule.call(await callerAs(writeKey), fixture.slug, fixture))).toBe(byKey);
 });
