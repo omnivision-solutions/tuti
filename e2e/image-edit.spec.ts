@@ -10,8 +10,17 @@ import { apiFor, createProject, newPerson, signUp } from "./helpers";
 /** An image added to the text from the / menu, then picked (clicked) and edited with AI (the model fake answers), replacing it. Its media id before and after. */
 async function editImageInText(team: Page, text: ReturnType<Page["getByRole"]>, bar: string, title: string, checkpoint: ReturnType<typeof checkpoints>) {
   await text.click();
-  // The end of the whole text: right after a save the editor may still put the caret at its start.
-  await team.keyboard.press("ControlOrMeta+End");
+  // The end of the whole text: right after a save the editor may still put the caret at its start. The editor reads a
+  // moved caret a task later (selectionchange), and Enter splits where it last read it, so Enter waits until the editor
+  // itself has the caret at the end (End again if its focusing put the caret back meanwhile).
+  await expect(async () => {
+    await team.keyboard.press("ControlOrMeta+End");
+    const atEnd = await text.evaluate((element) => {
+      const { state, view } = (element as unknown as { editor: { state: { selection: { empty: boolean; to: number }; doc: { content: { size: number } } }; view: { hasFocus: () => boolean } } }).editor;
+      return view.hasFocus() && state.selection.empty && state.selection.to === state.doc.content.size - 1;
+    });
+    expect(atEnd).toBe(true);
+  }).toPass();
   await team.keyboard.press("Enter");
   const chooser = team.waitForEvent("filechooser");
   await team.keyboard.type("/image");
