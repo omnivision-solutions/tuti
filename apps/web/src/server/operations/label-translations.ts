@@ -80,12 +80,13 @@ async function labelFor(db: Prisma.TransactionClient | typeof prisma, kind: Kind
   return row ?? null;
 }
 
+/** The project's languages besides its own, in the order they were added, as Translations lists them. */
+export const translationLanguages = (projectId: string) =>
+  prisma.projectLanguage.findMany({ where: { projectId }, orderBy: [{ createdAt: "asc" }, { code: "asc" }], select: { code: true, automatic: true } });
+
 /** A label's translations in each of the project's languages (in the order they were added), as get…Translations answers. */
 async function translationsOf(kind: Kind, projectId: string, slug: string) {
-  const [label, languages] = await Promise.all([
-    labelFor(prisma, kind, projectId, slug),
-    prisma.projectLanguage.findMany({ where: { projectId }, orderBy: [{ createdAt: "asc" }, { code: "asc" }], select: { code: true, automatic: true } }),
-  ]);
+  const [label, languages] = await Promise.all([labelFor(prisma, kind, projectId, slug), translationLanguages(projectId)]);
   if (!label) {
     throw new OperationError(404, "not_found", `There's no ${kind.noun} “${slug}”`);
   }
@@ -100,6 +101,14 @@ const tabOnly = ({ language, name, keepUpToDate }: ReturnType<typeof translation
 export const tabTranslations = async (projectId: string, slug: string) => (await translationsOf(TAB, projectId, slug)).map(tabOnly);
 /** A board's translations, as boards.getTranslations answers. */
 export const boardTranslations = (projectId: string, slug: string) => translationsOf(BOARD, projectId, slug);
+/** The same from a board already read (as labelFor reads it: hidden while it's off or the team's alone), and translationLanguages. */
+export const boardTranslationsOf = (
+  board: { name: string; description: string | null; translations: unknown; off: boolean; postVisibility: string },
+  languages: Awaited<ReturnType<typeof translationLanguages>>,
+) =>
+  languages.map(({ code, automatic }) =>
+    translationIn({ name: board.name, description: board.description ?? "", translations: board.translations, sample: board.off || board.postVisibility === "TEAM" }, code, automatic),
+  );
 
 /**
  * A label's name (and a collection's or board's description) in one language: the team's own, or kept up to date (made again in the

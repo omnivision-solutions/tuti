@@ -272,8 +272,8 @@ export function EditBoardDialog({
           <LabelTranslations kind="board" projectSlug={projectSlug} slug={board.slug} defaultName={translations.defaultName} translations={translations.rows} ai={translations.ai} />
         )}
         <DialogFooter>
-          <Button type="submit" form={id("form")} disabled={pending}>
-            Save
+          <Button type="submit" form={id("form")} disabled={pending} focusableWhenDisabled>
+            {pending ? "Saving…" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

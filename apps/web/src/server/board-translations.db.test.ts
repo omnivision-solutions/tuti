@@ -169,3 +169,12 @@ test("translating a board leaves its updatedAt (the sitemap's lastmod) as the te
   expect(await inGerman("ideas")).toEqual({ name: "Vorschläge", description: "" });
   expect((await board("ideas")).updatedAt).toEqual(updatedAt);
 });
+
+test("a board made the team's alone while it's being translated: the translation isn't written", async () => {
+  await german();
+  await prisma.board.create({ data: { projectId: project.id, name: "Ideas", slug: "ideas" } });
+  model.reply(labelsReply({ "0.n": "Ideen" }), () => prisma.board.updateMany({ where: { projectId: project.id, slug: "ideas" }, data: { postVisibility: "TEAM" } }));
+  await handlers.retryArticleTranslations({}, log);
+  await languageTranslationsDone();
+  expect((await board("ideas")).translations).toEqual({});
+});

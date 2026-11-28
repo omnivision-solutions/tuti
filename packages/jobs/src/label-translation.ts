@@ -203,7 +203,7 @@ async function writeLabel(label: Label, projectId: string, language: string, sta
       label.table === "collection"
         ? await tx.$queryRaw<{ name: string; description: string; translations: LabelTranslations }[]>`SELECT name, description, translations FROM collection WHERE id = ${label.id} FOR UPDATE`
         : label.table === "board"
-          ? await tx.$queryRaw<{ name: string; description: string; translations: LabelTranslations }[]>`SELECT name, coalesce(description, '') AS description, translations FROM board WHERE id = ${label.id} FOR UPDATE`
+          ? await tx.$queryRaw<{ name: string; description: string; translations: LabelTranslations }[]>`SELECT name, coalesce(description, '') AS description, translations FROM board WHERE id = ${label.id} AND ${SHOWN_BOARD} FOR UPDATE`
           : await tx.$queryRaw<{ name: string; description: string; translations: LabelTranslations }[]>`SELECT name, '' AS description, translations FROM docs_tab WHERE id = ${label.id} FOR UPDATE`;
     const now = rows[0];
     const current = now?.translations[language];
