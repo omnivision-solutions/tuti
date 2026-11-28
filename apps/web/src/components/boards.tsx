@@ -29,6 +29,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { LabelTranslations, type LabelTranslationRow } from "@/components/label-translations";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -158,8 +159,20 @@ type BoardFields = {
   postVisibility: PostVisibility;
 };
 
-/** A board's settings: its name, address and description, and its words for posting, with a preview of them on the portal. */
-export function EditBoardDialog({ projectSlug, board }: { projectSlug: string; board: BoardFields }) {
+/**
+ * A board's settings: its name, address and description, and its words for posting, with a preview of them on the portal;
+ * then its Translations, once the project has another language (docs/plan.md L14).
+ */
+export function EditBoardDialog({
+  projectSlug,
+  board,
+  translations,
+}: {
+  projectSlug: string;
+  board: BoardFields;
+  /** Its name in the project's other languages (none: no Translations), as LabelTranslations takes them. */
+  translations?: { rows: LabelTranslationRow[]; defaultName: string; ai: boolean };
+}) {
   const [open, setOpen] = useState(false);
   // What the preview shows, as it's typed; opening the dialog starts again from what's saved.
   const saved = () => ({
@@ -200,7 +213,7 @@ export function EditBoardDialog({ projectSlug, board }: { projectSlug: string; b
     >
       <DialogTrigger render={<Button variant="ghost" size="sm" />}>Edit</DialogTrigger>
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-4xl">
-        <form {...keepingFields(action)}>
+        <form id={id("form")} {...keepingFields(action)}>
           <DialogHeader>
             <DialogTitle>Edit board</DialogTitle>
             <DialogDescription>If you change the URL, links to the old one keep working.</DialogDescription>
@@ -253,12 +266,16 @@ export function EditBoardDialog({ projectSlug, board }: { projectSlug: string; b
             </FieldGroup>
             <BoardPreview {...draft} />
           </div>
-          <DialogFooter>
-            <Button type="submit" disabled={pending}>
-              Save
-            </Button>
-          </DialogFooter>
         </form>
+        {/* Outside the form: each language saves on its own (a submit in its dialog would reach this form too). */}
+        {translations && translations.rows.length > 0 && (
+          <LabelTranslations kind="board" projectSlug={projectSlug} slug={board.slug} defaultName={translations.defaultName} translations={translations.rows} ai={translations.ai} />
+        )}
+        <DialogFooter>
+          <Button type="submit" form={id("form")} disabled={pending}>
+            Save
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

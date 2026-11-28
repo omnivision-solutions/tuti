@@ -131,6 +131,15 @@ test("kept up to date is refused with AI off (it would never be made) and on a s
   expect(labelIn(await billing(), "fr")).toEqual({ name: "Facturation", description: "" });
 });
 
+test("a sample collection with no translation yet, in a language Automatic for new pages: not kept up to date (never translated)", async () => {
+  await setUp();
+  await prisma.collection.updateMany({ where: { projectId: project.id, slug: "billing" }, data: { sample: true, translations: {} } });
+  expect(await translations()).toEqual([
+    { language: "de", name: null, description: null, keepUpToDate: false },
+    { language: "fr", name: null, description: null, keepUpToDate: false },
+  ]);
+});
+
 test("a new collection in a language Automatic for new pages: kept up to date before its translation is made, not 'not translated'", async () => {
   await call(updateLanguages, as(), { languages: [{ code: "de" }, { code: "fr", newPages: "manual" }] });
   let meanwhile: unknown;

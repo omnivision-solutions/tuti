@@ -3,10 +3,10 @@
 import type { Language } from "@tuti/shared";
 
 import type { FormState } from "./form-state";
-import { updateCollectionTranslation, updateTabTranslation } from "./operations/label-translations";
-import { asTeam, call } from "./operations/run";
+import { updateBoardTranslation, updateCollectionTranslation, updateTabTranslation } from "./operations/label-translations";
+import { asAdmin, asTeam, call } from "./operations/run";
 
-/** A collection's and a tab's settings → Translations (see the collections.* and tabs.*Translation operations). */
+/** A collection's, a tab's and a board's settings → Translations (see the collections.*, tabs.* and boards.*Translation operations). */
 
 const DENIED = "Only the project's team can edit the docs";
 
@@ -31,3 +31,15 @@ export async function saveTabTranslation(projectSlug: string, slug: string, lang
   );
 }
 
+
+/** A board's name and description in `language`: the team's own, or kept up to date (owners and admins, as its settings). */
+export async function saveBoardTranslation(projectSlug: string, slug: string, language: string, input: LabelTranslationInput): Promise<FormState> {
+  return asAdmin(projectSlug, "Only project owners and admins can manage boards", (context) =>
+    call(updateBoardTranslation, context, {
+      slug,
+      language: language as Language,
+      keepUpToDate: input.keepUpToDate,
+      ...(!input.keepUpToDate && { name: input.name, description: input.description }),
+    }),
+  );
+}

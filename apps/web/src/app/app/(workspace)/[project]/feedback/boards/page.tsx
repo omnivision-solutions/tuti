@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { prisma, type PostStatus } from "@tuti/db";
-import { boardLimit, planDisplay, roomierPlan } from "@tuti/shared";
+import { aiEnabled, boardLimit, isLanguage, LANGUAGES, planDisplay, roomierPlan } from "@tuti/shared";
 import { ArrowUpRightIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -16,6 +16,7 @@ import { ACTIVE_STATUSES } from "@/lib/post-filters";
 import { isAdminRole } from "@/lib/roles";
 import { portalAddress } from "@/server/custom-domains";
 import { getMembership } from "@/server/membership";
+import { boardTranslations } from "@/server/operations/label-translations";
 
 export const metadata: Metadata = { title: "Boards" };
 
@@ -30,7 +31,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
   const isAdmin = isAdminRole(role);
   const portal = await portalAddress(project.slug);
 
-  const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true } });
+  const { plan, language } = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, language: true } });
   const boards = await prisma.board.findMany({
     where: { projectId: project.id },
     orderBy: { createdAt: "asc" },
@@ -64,6 +65,24 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
   const full = limit !== null && boards.length >= limit;
   const room = limit === null || on < limit;
   const someOff = boards.some((board) => board.off);
+  // Each board's name in the project's other languages, for its settings (owners and admins; none: no Translations).
+  const translated = isAdmin
+    ? new Map(
+        await Promise.all(
+          boards.map(
+            async (board) =>
+              [board.id, (await boardTranslations(project.id, board.slug)).flatMap((row) => (isLanguage(row.language) ? [{ ...row, native: LANGUAGES[row.language].native }] : []))] as const,
+          ),
+        ),
+      )
+    : null;
+  // A board readers don't see (off, or the team's alone) isn't translated, as a sample collection isn't: no Keep up to date.
+  const translations = (board: (typeof boards)[number]) =>
+    translated && {
+      rows: translated.get(board.id)!,
+      defaultName: isLanguage(language) ? LANGUAGES[language].name : language,
+      ai: aiEnabled() && !board.off && board.postVisibility !== "TEAM",
+    };
 
   return (
     <PaneLayout>
@@ -144,7 +163,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
                   </span>
                   {isAdmin && (
                     <div className="-mb-1 flex items-center gap-1">
-                      <EditBoardDialog projectSlug={project.slug} board={board} />
+                      <EditBoardDialog projectSlug={project.slug} board={board} translations={translations(board) ?? undefined} />
                       {board.off && <BoardOnButton projectSlug={project.slug} boardId={board.id} name={board.name} off teamOnly={board.postVisibility === "TEAM"} stuck={limit !== null && on > limit} />}
                       <BoardMenu
                         projectSlug={project.slug}

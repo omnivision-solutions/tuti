@@ -11,14 +11,17 @@ import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { saveCollectionTranslation, saveTabTranslation } from "@/server/label-translations";
+import { saveBoardTranslation, saveCollectionTranslation, saveTabTranslation } from "@/server/label-translations";
 
 export type LabelTranslationRow = { language: string; native: string; name: string | null; description?: string | null; keepUpToDate: boolean };
-/** What's translated: a collection (a name and description) or a tab (a name). */
-type Kind = "collection" | "tab";
+/** What's translated: a collection or a board (a name and description), or a tab (a name). */
+type Kind = "collection" | "tab" | "board";
+/** Each kind's limits, as its operation's. */
+const NAME_MAX: Record<Kind, number> = { collection: 60, tab: 40, board: 60 };
+const DESCRIPTION_MAX: Partial<Record<Kind, number>> = { collection: 300, board: 280 };
 
 /**
- * A collection's or a tab's settings → Translations (docs/plan.md, Languages, L13): a row per language with its name (and a
+ * A collection's, a tab's or a board's settings → Translations (docs/plan.md, Languages, L13 and L14): a row per language with its name (and a
  * collection's description) there, Automatic or Edited, and Edit; not translated yet, "readers see the <default> name" and Add.
  */
 export function LabelTranslations({
@@ -57,7 +60,8 @@ function TranslationRow({ kind, projectSlug, slug, defaultName, row, ai }: { kin
       {/* Its code for the eye; its name for a screen reader, which reads the row as that language's. */}
       <span className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-md bg-muted px-1.5 font-mono text-xs font-semibold uppercase">
         <span aria-hidden>{row.language}</span>
-        <span lang={row.language} className="sr-only">
+        {/* Not the chip's capitals: a screen reader would spell them out. */}
+        <span lang={row.language} className="sr-only normal-case">
           {row.native}
         </span>
       </span>
@@ -144,9 +148,13 @@ function TranslationDialog({
             startTransition(async () => {
               const name = String(form.get("name") ?? "");
               const result =
-                kind === "collection"
-                  ? await saveCollectionTranslation(projectSlug, slug, row.language, { keepUpToDate: keep, name, description: String(form.get("description") ?? "") })
-                  : await saveTabTranslation(projectSlug, slug, row.language, { keepUpToDate: keep, name });
+                kind === "tab"
+                  ? await saveTabTranslation(projectSlug, slug, row.language, { keepUpToDate: keep, name })
+                  : await (kind === "collection" ? saveCollectionTranslation : saveBoardTranslation)(projectSlug, slug, row.language, {
+                      keepUpToDate: keep,
+                      name,
+                      description: String(form.get("description") ?? ""),
+                    });
               if (result.error) {
                 setError(result.error);
                 return;
@@ -168,19 +176,19 @@ function TranslationDialog({
               name="name"
               lang={row.language}
               defaultValue={row.name ?? ""}
-              maxLength={kind === "collection" ? 60 : 40}
+              maxLength={NAME_MAX[kind]}
               required={!keep}
               aria-invalid={error ? true : undefined}
               aria-describedby={error ? `${id}-error` : undefined}
               onChange={() => setKeep(false)}
             />
           </div>
-          {kind === "collection" && (
+          {DESCRIPTION_MAX[kind] && (
             <div className="flex flex-col gap-2">
               <label htmlFor={`${id}-description`} className="text-sm font-medium">
                 Description
               </label>
-              <Textarea id={`${id}-description`} name="description" lang={row.language} defaultValue={row.description ?? ""} maxLength={300} className="min-h-16" onChange={() => setKeep(false)} />
+              <Textarea id={`${id}-description`} name="description" lang={row.language} defaultValue={row.description ?? ""} maxLength={DESCRIPTION_MAX[kind]} className="min-h-16" onChange={() => setKeep(false)} />
             </div>
           )}
           {ai && (
