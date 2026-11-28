@@ -131,6 +131,8 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
   const boards = visitor.getByRole("navigation", { name: "Board" });
   await expect(boards.getByRole("link")).toHaveText(["All boards 6", "Feature requests 4", "Bug reports 1"]);
   await expect(visitor.getByRole("link", { name: "Offline mode" })).toBeVisible();
+  // Its Team only board goes unnamed.
+  await expect(visitor.getByRole("listitem").filter({ hasText: "Offline mode" })).not.toContainText("Internal");
   await expect(boards.getByRole("link", { name: "All boards" })).toHaveAttribute("aria-current", "page");
   // Pills without an outline: the open one a neutral fill (not the accent), the others on the paper.
   const accent = await visitor.evaluate(() => {
