@@ -144,7 +144,6 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
   const [menu, portal] = await Promise.all([
     feedbackMenu({
       project: membership.project,
-      role: membership.role,
       view: tab,
       board,
       counts: !board && !q && !group ? counts : undefined,

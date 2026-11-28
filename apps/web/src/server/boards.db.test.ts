@@ -3,9 +3,8 @@ import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { generateMetadata as boardMetadata } from "@/app/portal/[project]/(site)/feedback/[board]/page";
-import { actAs, createProject, signUp } from "@/test/helpers";
+import { actAs, createBoard, createProject, deleteBoard, setBoardOff, signUp, updateBoard } from "@/test/helpers";
 
-import { createBoard, deleteBoard, setBoardOff, updateBoard } from "./boards";
 
 let project: Awaited<ReturnType<typeof createProject>>;
 let boardId: string;

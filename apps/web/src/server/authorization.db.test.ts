@@ -30,7 +30,6 @@ import * as apiReferences from "./api-references";
 import * as appSearch from "./app-search";
 import * as appWidget from "./app-widget";
 import * as assistant from "./assistant";
-import * as boards from "./boards";
 import * as branding from "./branding";
 import * as changelog from "./changelog";
 import * as changelogSeen from "./changelog-seen";
@@ -94,7 +93,6 @@ const modules = {
   "app-search": appSearch,
   "app-widget": appWidget,
   assistant,
-  boards,
   branding,
   github,
   docs,
@@ -182,16 +180,6 @@ const matrix: Matrix = {
   "api-keys": {
     createApiKey: { allowed: "ADMIN", call: (slug) => apiKeys.createApiKey(slug, "Zapier", "READ") },
     revokeApiKey: { allowed: "ADMIN", takesIds: true, call: (slug, f) => apiKeys.revokeApiKey(slug, f.apiKeyId) },
-  },
-  boards: {
-    createBoard: { allowed: "ADMIN", call: (slug) => boards.createBoard(slug, {}, form({ name: "Ideas", slug: "ideas" })) },
-    updateBoard: {
-      allowed: "ADMIN",
-      takesIds: true,
-      call: (slug, f) => boards.updateBoard(slug, f.boardId, {}, form({ name: "Ideas", slug: "ideas" })),
-    },
-    deleteBoard: { allowed: "ADMIN", takesIds: true, call: (slug, f) => boards.deleteBoard(slug, f.emptyBoardId) },
-    setBoardOff: { allowed: "ADMIN", takesIds: true, call: (slug, f) => boards.setBoardOff(slug, f.emptyBoardId, true) },
   },
   credits: {
     buyCredits: { allowed: "ADMIN", call: (slug) => withEnv({ TUTI_CONFIG: configFile({ customDomains: { target: "customers.example.net" }, credits: { enabled: true } }) }, () => credits.buyCredits(slug, 10)) },
@@ -1402,6 +1390,19 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   "aiModels.setting": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.aiModels.setting({ project: slug, group: "changelog" }) },
   "aiModels.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.aiModels.update({ project: slug, levels: { changelog: "balanced" } }) },
   "articles.screenshotsStatus": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.articles.screenshotsStatus({ project: slug, slug: "matrix-article" }) },
+  // Feedback → Boards: the team reads it; owners and admins change boards.
+  "boards.create": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.boards.create({ project: slug, name: "Ideas", slug: `ideas-${crypto.randomUUID().slice(0, 8)}` }) },
+  "boards.delete": {
+    allowed: "ADMIN",
+    scope: "write",
+    takesIds: true,
+    // Back for the next caller once one deleted it.
+    seed: (f) => prisma.board.upsert({ where: { id: f.emptyBoardId }, create: { id: f.emptyBoardId, projectId: f.projectId, slug: "empty", name: "Empty" }, update: {} }),
+    call: (caller, slug, f) => caller.boards.delete({ project: slug, board: f.emptyBoardId }),
+  },
+  "boards.page": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.boards.page({ project: slug }) },
+  "boards.setOff": { allowed: "ADMIN", scope: "write", takesIds: true, call: (caller, slug, f) => caller.boards.setOff({ project: slug, board: f.emptyBoardId, off: true }) },
+  "boards.update": { allowed: "ADMIN", scope: "write", takesIds: true, call: (caller, slug, f) => caller.boards.update({ project: slug, board: f.boardId, name: "Ideas", slug: "ideas" }) },
   "branding.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.branding.get({ project: slug }) },
   "branding.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.branding.update({ project: slug, seo: { title: "Matrix" } }) },
   "changelog.cover": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.changelog.cover({ project: slug, number: 1, design: "title" }) },
@@ -1452,6 +1453,8 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
     call: (caller, slug) => caller.conversations.upload({ project: slug, filename: "invoice.pdf", contentType: "application/pdf", size: 1000 }),
   },
   "customize.preview": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.customize.preview({ project: slug, path: "/" }) },
+  // Feedback's menu, beside its list, the Roadmap, Boards and a post.
+  "feedback.menu": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.feedback.menu({ project: slug }) },
   // Connecting GitHub (the /api/github routes): owners and admins, as Settings → Integrations. A state that isn't ours
   // finishes nothing, for whoever may.
   "githubConnect.finish": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.githubConnect.finish({ project: slug, state: "not-a-state" }) },

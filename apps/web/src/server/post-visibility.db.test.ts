@@ -11,9 +11,8 @@ import RoadmapPage from "@/app/portal/[project]/(site)/roadmap/page";
 import WidgetPage from "@/app/portal/[project]/widget/page";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
-import { actAs, createProject, findSimilarPosts, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, findSimilarPosts, setBoardOff, signUp, type TestUser } from "@/test/helpers";
 
-import { setBoardOff } from "./boards";
 import { publishedEntries } from "./changelog-queries";
 import { getChangelogEntry, listChangelog } from "./operations/changelog";
 import { emailedOnCompletion } from "./operations/code-changes";

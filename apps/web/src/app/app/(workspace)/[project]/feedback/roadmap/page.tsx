@@ -39,7 +39,7 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
     emailedOnMove(project.id, columns.flat()),
     prisma.post.findMany({ where: { id: { in: ids } }, select: { id: true, eta: true, body: true, owner: { select: { name: true, image: true } } } }),
     // Feedback's menu, its queries alongside the roadmap's.
-    feedbackMenu({ project, role: membership.role }),
+    feedbackMenu({ project }),
   ]);
   const plan = new Map(plans.map(({ id, ...rest }) => [id, rest]));
 

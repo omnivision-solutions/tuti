@@ -7,12 +7,11 @@ import { billingFile, creditsOn, type FakeStripeEvent, startStripeFake, type Str
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { POST as webhook } from "@/app/api/stripe/webhook/route";
-import { createBoard, setBoardOff } from "@/server/boards";
 import { acceptInvitation, createInvitation } from "@/server/invitations";
 import { getPlan, requirePlan, subscribePlan } from "@/server/operations/plan";
 import { call } from "@/server/operations/run";
 import { createProject } from "@/server/projects";
-import { actAs, addMember, createProject as projectOf, redirectTarget, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addMember, createBoard, createProject as projectOf, redirectTarget, setBoardOff, signUp, type TestUser } from "@/test/helpers";
 
 /** Free trials (docs/plan.md, Plans): an account's first project is on the trial's plan until it ends, then on the default plan unless it bought one. */
 

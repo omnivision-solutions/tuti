@@ -78,8 +78,14 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "assistant.get": () => ({}),
   // Like widget.update: admins only in the app (see the authorization matrix).
   "assistant.update": () => ({ tone: "Plain", length: "short", instructions: "Say hi", offLimits: ["refund"] }),
+  "boards.create": () => ({ name: "Matrix board", slug: `matrix-${randomUUID().slice(0, 8)}` }),
+  "boards.delete": (f) => ({ board: f.emptyBoardId }),
   "boards.getTranslations": () => ({ slug: "feature-requests" }),
   "boards.list": () => ({}),
+  // Internal (tRPC only): through the caller, below.
+  "boards.page": () => ({}),
+  "boards.setOff": (f) => ({ board: f.emptyBoardId, off: true }),
+  "boards.update": (f) => ({ board: f.boardId, name: "Feature requests", slug: "feature-requests", description: "Renamed by the matrix" }),
   "boards.updateTranslation": () => ({ slug: "feature-requests", language: "de", keepUpToDate: false, name: "Funktionswünsche" }),
   "branding.get": () => ({}),
   // Like widget.update: admins only in the app (see the authorization matrix).
@@ -191,6 +197,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "duplicates.dismiss": (f) => ({ id: f.suggestionId }),
   "duplicates.list": () => ({}),
   "emailPreferences.update": () => ({ followedPosts: false, author: { id: "matrix-reader" } }),
+  // Internal (tRPC only): through the caller, below.
+  "feedback.menu": () => ({}),
   // Connecting GitHub (the /api/github routes): a state that isn't ours finishes nothing ("expired").
   "githubConnect.finish": () => ({ state: "not-a-state" }),
   "githubConnect.get": () => ({}),
@@ -588,8 +596,12 @@ async function createFixture(own: "domain" | "site" = "domain") {
   const screenshotRun = await prisma.screenshotRun.create({
     data: { projectId: project.id, startedById: owner.id, state: "DONE", screenshots: { create: { projectId: project.id, position: 0, show: marker, failed: "Not reached" } } },
   });
+  // An empty board beside the first, for boards.delete (a project keeps one).
+  const emptyBoard = await prisma.board.create({ data: { projectId: project.id, name: "Empty", slug: `empty-${randomUUID().slice(0, 8)}` } });
   return {
     marker,
+    boardId: board.id,
+    emptyBoardId: emptyBoard.id,
     // What articles.saveTranslation's `version` is for the German version as it is (articles.getTranslation's).
     // What changelog.getTranslation gives for entry #1's German, which has no version yet.
     changelogVersion: contentHash(JSON.stringify([null, translationSource({ title: "Matrix entry", body: "", content: null }).hash])),

@@ -21,6 +21,14 @@ import {
   updateAssistantSettings,
 } from "./assistant";
 import {
+  createBoard,
+  deleteBoard,
+  getBoardsPage,
+  getFeedbackMenu,
+  setBoardOff,
+  updateBoard,
+} from "./boards";
+import {
   getBranding,
   updateBranding,
 } from "./branding";
@@ -550,6 +558,12 @@ export const all = [
   updateCollectionTranslation,
   getTabTranslations,
   updateTabTranslation,
+  getBoardsPage,
+  getFeedbackMenu,
+  createBoard,
+  updateBoard,
+  setBoardOff,
+  deleteBoard,
   getBoardTranslations,
   updateBoardTranslation,
   getPortalPreview,

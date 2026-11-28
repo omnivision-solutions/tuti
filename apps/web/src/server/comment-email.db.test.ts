@@ -5,13 +5,12 @@ import { billingFile, configFile } from "@tuti/testkit";
 import { startSmtpFake } from "@tuti/testkit/smtp";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import { setBoardOff } from "@/server/boards";
 import { resumeEmailSending } from "@/server/email-pause";
 import { createComment, createPost } from "@/server/operations/create";
 import { mergePost } from "@/server/operations/manage";
 import { setVote } from "@/server/operations/more";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, setBoardOff, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
 /** Someone else's comment on a post, emailed to its author a few minutes on (packages/jobs/src/comment-email.ts). */
