@@ -178,6 +178,9 @@ importers:
       '@tuti/testkit':
         specifier: workspace:*
         version: link:packages/testkit
+      '@types/node':
+        specifier: ^22.20.4
+        version: 22.20.4
       '@types/pg':
         specifier: ^8.23.1
         version: 8.23.1

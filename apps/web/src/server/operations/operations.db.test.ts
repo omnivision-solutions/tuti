@@ -701,8 +701,12 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   }
 
   if (operation.name === "languages.update" || operation.name === "languages.retranslate") {
-    // The collection and tab names there are, translated into the language (docs/plan.md L13), whichever project's key.
-    model.otherwise(JSON.stringify({ segments: { "0.n": "Abrechnung", "1.n": "Schnittstelle" } }), '"0.n":"Billing"');
+    // The collection, tab and board names there are, translated into the language (docs/plan.md L13, L14), whichever project's key.
+    model.otherwise(JSON.stringify({ segments: { "0.n": "Abrechnung", "1.n": "Schnittstelle", "2.n": "Funktionswünsche" } }), '"0.n":"Billing"');
+  }
+  if (operation.name === "languages.update" || operation.name === "languages.retranslate" || operation.name === "glossary.update") {
+    // A project whose only label is its first board (L14): the other project's, whichever key.
+    model.otherwise(JSON.stringify({ segments: { "0.n": "Funktionswünsche" } }), '"0.n":"Feature requests"');
   }
   // Another project's key: nothing of this project comes back, and nothing changes.
   if (operation.name === "conversations.summarize") {

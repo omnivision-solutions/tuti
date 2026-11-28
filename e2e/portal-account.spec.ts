@@ -250,13 +250,13 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await expect(changelog).toBeEnabled();
   await bo.reload();
   await expect(changelog).toBeChecked();
-  // An entry the team publishes with Email announcement reaches him.
+  // An entry the team publishes with Email reaches him.
   const publish = async (title: string) => {
     await team.goto(`/app/${slug}/changelog/new`);
     await team.getByLabel("Title").fill(title);
     await team.getByRole("button", { name: "Save draft" }).first().click();
     await expect(team).toHaveURL(new RegExp(`/app/${slug}/changelog/\\d+$`));
-    return team.getByRole("group", { name: "Goes to" }).getByRole("switch", { name: "Email announcement" });
+    return team.getByRole("group", { name: "Published in" }).getByRole("switch", { name: "Email" });
   };
   const emailSubscribers = await publish("Dark mode is here");
   await expect(emailSubscribers).toBeChecked();

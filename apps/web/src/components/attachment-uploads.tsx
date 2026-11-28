@@ -6,12 +6,14 @@ import { useRef, useState } from "react";
 import { fileSize } from "@/components/inbox/message-attachments";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useTranslations } from "next-intl";
 
 /** Asks the server where to upload a file (the team's reply, the widget): the URL to PUT it to, the type it was signed with, and its id. */
 export type StartUpload = (file: { filename: string; contentType: string; size: number }) => Promise<{ error: string } | { id: string; contentType: string; uploadUrl: string }>;
 
 /** A file attached: `startedAt`, when its upload started (unsent, the server deletes it a day after). */
-export type Upload = { key: string; name: string; size: number; startedAt: number; id?: string; error?: string };
+/** `serverSaid`: `error` is the server's own words, English (L5); the rest are the page's own, in its language. */
+export type Upload = { key: string; name: string; size: number; startedAt: number; id?: string; error?: string; serverSaid?: true };
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -21,6 +23,7 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024;
  * `initial`: files uploaded already (a draft's, kept), attached as it starts.
  */
 export function useUploads(start: StartUpload, initial: Upload[] = []) {
+  const t = useTranslations("widget");
   const [uploads, setUploads] = useState<Upload[]>(initial);
   const update = (key: string, change: Partial<Upload>) => setUploads((current) => current.map((u) => (u.key === key ? { ...u, ...change } : u)));
 
@@ -29,20 +32,20 @@ export function useUploads(start: StartUpload, initial: Upload[] = []) {
       const key = crypto.randomUUID();
       setUploads((current) => [...current, { key, name: file.name, size: file.size, startedAt: Date.now() }]);
       if (file.size > MAX_FILE_BYTES) {
-        update(key, { error: "Over 10 MB" });
+        update(key, { error: t("overTenMB") });
         continue;
       }
       void (async () => {
         try {
           const started = await start({ filename: file.name, contentType: file.type || "application/octet-stream", size: file.size });
           if ("error" in started) {
-            update(key, { error: started.error });
+            update(key, { error: started.error, serverSaid: true });
             return;
           }
           const put = await fetch(started.uploadUrl, { method: "PUT", body: file, headers: { "content-type": started.contentType } });
-          update(key, put.ok ? { id: started.id } : { error: "Couldn't upload it" });
+          update(key, put.ok ? { id: started.id } : { error: t("couldntUpload") });
         } catch {
-          update(key, { error: "Couldn't upload it" });
+          update(key, { error: t("couldntUpload") });
         }
       })();
     }
@@ -62,19 +65,20 @@ export function useUploads(start: StartUpload, initial: Upload[] = []) {
 
 /** The files to send, each with its size, "Uploading…" or why it failed, and a button to remove it. */
 export function UploadList({ uploads, remove }: Pick<ReturnType<typeof useUploads>, "uploads" | "remove">) {
+  const t = useTranslations("widget");
   if (uploads.length === 0) {
     return null;
   }
   return (
-    <ul className="flex flex-col gap-1" aria-label="Files to send">
+    <ul className="flex flex-col gap-1" aria-label={t("filesToSend")}>
       {uploads.map((u) => (
         <li key={u.key} className="flex min-w-0 items-center gap-1.5 text-sm">
           <PaperclipIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
           <span className="min-w-0 truncate">{u.name}</span>
-          <span className={u.error ? "shrink-0 text-xs text-destructive" : "shrink-0 text-xs text-muted-foreground"}>
-            {u.error ?? (u.id ? fileSize(u.size) : "Uploading…")}
+          <span lang={u.serverSaid ? "en" : undefined} className={u.error ? "shrink-0 text-xs text-destructive" : "shrink-0 text-xs text-muted-foreground"}>
+            {u.error ?? (u.id ? fileSize(u.size) : t("uploading"))}
           </span>
-          <Button type="button" variant="ghost" size="icon-xs" aria-label={`Remove ${u.name}`} onClick={() => remove(u.key)}>
+          <Button type="button" variant="ghost" size="icon-xs" aria-label={t("removeFile", { name: u.name })} onClick={() => remove(u.key)}>
             <XIcon />
           </Button>
         </li>
@@ -86,6 +90,8 @@ export function UploadList({ uploads, remove }: Pick<ReturnType<typeof useUpload
 /** "Attach files": picks files for `attach`. */
 /** `iconOnly`: the paperclip alone, its name in a tooltip (on hover and keyboard focus) (the Inbox's reply box, where Send is the one word). */
 export function AttachButton({ attach, iconOnly = false }: { attach: (files: FileList | null) => void; iconOnly?: boolean }) {
+  // The portal's words (the widget's Messages in its language; the team's Inbox, English).
+  const t = useTranslations("widget");
   const picker = useRef<HTMLInputElement>(null);
   return (
     <>
@@ -94,7 +100,7 @@ export function AttachButton({ attach, iconOnly = false }: { attach: (files: Fil
         type="file"
         multiple
         hidden
-        aria-label="Files to attach"
+        aria-label={t("filesToAttach")}
         onChange={(event) => {
           attach(event.target.files);
           event.target.value = "";
@@ -102,15 +108,15 @@ export function AttachButton({ attach, iconOnly = false }: { attach: (files: Fil
       />
       {iconOnly ? (
         <Tooltip>
-          <TooltipTrigger render={<Button type="button" variant="ghost" size="icon-sm" aria-label="Attach files" onClick={() => picker.current?.click()} />}>
+          <TooltipTrigger render={<Button type="button" variant="ghost" size="icon-sm" aria-label={t("attachFiles")} onClick={() => picker.current?.click()} />}>
             <PaperclipIcon />
           </TooltipTrigger>
-          <TooltipContent>Attach files</TooltipContent>
+          <TooltipContent>{t("attachFiles")}</TooltipContent>
         </Tooltip>
       ) : (
         <Button type="button" variant="ghost" size="sm" onClick={() => picker.current?.click()}>
           <PaperclipIcon />
-          Attach files
+          {t("attachFiles")}
         </Button>
       )}
     </>

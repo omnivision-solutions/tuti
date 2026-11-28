@@ -1,6 +1,7 @@
 "use server";
 
 import { Prisma, prisma } from "@tuti/db";
+import { queueLabels } from "@tuti/jobs";
 import { boardLimit, effectivePlan, planDisplay, type PlanKey, upgradeFor } from "@tuti/shared";
 import { refresh } from "next/cache";
 import { z } from "zod";
@@ -95,6 +96,8 @@ export async function createBoard(projectSlug: string, _prev: FormState, formDat
     }
     throw error;
   }
+  // Its name and description in the project's other languages (docs/plan.md L14), in the background.
+  await queueLabels(project.id);
   refresh();
   return {};
 }
@@ -138,6 +141,8 @@ export async function updateBoard(
     }
     throw error;
   }
+  // A new name, description or visibility (a board the team alone had now shown): translated again, in the background.
+  await queueLabels(project.id);
   refresh();
   return {};
 }
@@ -175,6 +180,8 @@ export async function setBoardOff(projectSlug: string, boardId: string, off: boo
   if (error) {
     return { error };
   }
+  // Turned on: translated, if it wasn't yet (in the background).
+  if (!off) await queueLabels(project.id);
   refresh();
   return {};
 }

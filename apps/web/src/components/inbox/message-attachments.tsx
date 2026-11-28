@@ -11,7 +11,20 @@ type Attachment = { id: string; filename: string; size: number; image: boolean; 
  * What came with a message: images shown, other files to download; and what couldn't be kept (`imported`: from
  * another tool, named or not, for any reason: too big, unreachable, no media storage).
  */
-export function MessageAttachments({ attachments, dropped, imported = false, cards = false }: { attachments: Attachment[]; dropped: number; imported?: string | boolean; cards?: boolean }) {
+export function MessageAttachments({
+  attachments,
+  dropped,
+  imported = false,
+  cards = false,
+  words,
+}: {
+  attachments: Attachment[];
+  dropped: number;
+  imported?: string | boolean;
+  cards?: boolean;
+  /** The widget's, in its reader's language: the list's name and what wasn't brought across; the Inbox's are English. */
+  words?: { attachments: string; dropped: string };
+}) {
   if (attachments.length === 0 && dropped === 0) {
     return null;
   }
@@ -30,7 +43,7 @@ export function MessageAttachments({ attachments, dropped, imported = false, car
         </div>
       )}
       {files.length > 0 && (
-        <ul className={cn("flex flex-col gap-1", cards && "mt-2")} aria-label="Attachments">
+        <ul className={cn("flex flex-col gap-1", cards && "mt-2")} aria-label={words?.attachments ?? "Attachments"}>
           {files.map((file) => (
             <li key={file.id} className={cn("flex min-w-0 items-center gap-1.5 text-sm", cards && "grid min-w-55 grid-cols-[1.875rem_minmax(0,1fr)] gap-x-2.25 gap-y-0 rounded-lg bg-card/80 px-2.25 py-1.75 max-md:min-w-0")}>
               <PaperclipIcon className={cn("size-3.5 shrink-0 text-muted-foreground", cards && "row-span-2 row-start-1 h-8 w-7.5 rounded-sm bg-secondary p-1.75")} aria-hidden />
@@ -48,7 +61,9 @@ export function MessageAttachments({ attachments, dropped, imported = false, car
       )}
       {dropped > 0 && (
         <p className="text-xs text-muted-foreground">
-          {imported
+          {words
+            ? words.dropped
+            : imported
             ? `${dropped === 1 ? "1 attachment wasn't" : `${dropped} attachments weren't`} brought across${typeof imported === "string" ? ` from ${imported}` : ""}.`
             : `${dropped === 1 ? "1 attachment wasn't kept" : `${dropped} attachments weren't kept`}: this server has no file storage.`}
         </p>
