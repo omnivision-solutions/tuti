@@ -663,6 +663,10 @@ const matrix: Matrix = {
       call: (slug) => labelTranslations.saveCollectionTranslation(slug, "guides", "de", { keepUpToDate: false, name: "Anleitungen", description: "" }),
     },
     saveTabTranslation: { allowed: "MEMBER", call: (slug) => labelTranslations.saveTabTranslation(slug, "docs", "de", { keepUpToDate: false, name: "Dokumentation" }) },
+    saveBoardTranslation: {
+      allowed: "ADMIN",
+      call: (slug) => labelTranslations.saveBoardTranslation(slug, "feature-requests", "de", { keepUpToDate: false, name: "Funktionswünsche", description: "" }),
+    },
   },
   glossary: {
     saveGlossary: { allowed: "ADMIN", call: (slug) => glossary.saveGlossary(slug, [{ term: "Acme", keep: true, translations: {} }]) },

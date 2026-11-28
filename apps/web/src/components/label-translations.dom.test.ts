@@ -75,6 +75,8 @@ test("each row says its language to a screen reader (the code chip is for the ey
   const named = box.querySelector<HTMLElement>("li .sr-only")!;
   expect(named.textContent).toBe("Deutsch");
   expect(named.closest("[aria-hidden]")).toBeNull();
+  // Not in the chip's capitals, which a screen reader may spell out.
+  expect(named.classList).toContain("normal-case");
 });
 
 test("with AI off (or on a sample collection, where the page passes ai false), the dialog has no Keep up to date", async () => {

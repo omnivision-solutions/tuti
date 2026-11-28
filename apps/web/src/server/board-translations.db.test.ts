@@ -7,6 +7,7 @@ import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { createBoard, setBoardOff, updateBoard } from "./boards";
 import { updateGlossary } from "./operations/glossary";
+import { boardTranslationsOf, getBoardTranslations, translationLanguages, updateBoardTranslation } from "./operations/label-translations";
 import { retranslateLanguage, updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
 
@@ -124,3 +125,63 @@ test("Retranslate makes a board's translation kept up to date again", async () =
   expect(await inGerman("ideas")).toEqual({ name: "Vorschläge", description: "" });
 });
 
+
+test("a board's settings: its name and description in each language, kept up to date or the team's own", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de" }, { code: "fr", newPages: "manual" }] });
+  model.reply(labelsReply({ "0.n": "Ideen", "0.d": "Was wir bauen sollten." }));
+  await createBoard(project.slug, {}, form({ name: "Ideas", slug: "ideas", description: "What we should build." }));
+  await languageTranslationsDone();
+  const translations = async () => (await call(getBoardTranslations, as(), { slug: "ideas" })).translations;
+  expect(await translations()).toEqual([
+    { language: "de", name: "Ideen", description: "Was wir bauen sollten.", keepUpToDate: true },
+    { language: "fr", name: null, description: null, keepUpToDate: false },
+  ]);
+  expect(await call(updateBoardTranslation, as(), { slug: "ideas", language: "fr", keepUpToDate: false, name: "Idées", description: "Ce qu'il faut construire." })).toEqual({
+    language: "fr",
+    name: "Idées",
+    description: "Ce qu'il faut construire.",
+    keepUpToDate: false,
+  });
+  expect(labelIn({ ...(await board("ideas")), description: "What we should build." }, "fr")).toEqual({ name: "Idées", description: "Ce qu'il faut construire." });
+  await expect(call(updateBoardTranslation, as(), { slug: "nowhere", language: "fr", keepUpToDate: false, name: "Nulle part" })).rejects.toMatchObject({ status: 404 });
+});
+
+test("a board readers don't see: not 'kept up to date' with no translation yet (none is made), and Keep up to date can still be set", async () => {
+  await german();
+  await prisma.board.create({ data: { projectId: project.id, name: "Internal", slug: "internal", postVisibility: "TEAM" } });
+  expect((await call(getBoardTranslations, as(), { slug: "internal" })).translations).toEqual([{ language: "de", name: null, description: null, keepUpToDate: false }]);
+  // A board turned off too, and both as the Boards page reads them (boardTranslationsOf, from the boards it already has).
+  await prisma.board.create({ data: { projectId: project.id, name: "Old ideas", slug: "old", off: true } });
+  expect((await call(getBoardTranslations, as(), { slug: "old" })).translations).toEqual([{ language: "de", name: null, description: null, keepUpToDate: false }]);
+  const languages = await translationLanguages(project.id);
+  for (const slug of ["internal", "old"]) {
+    expect(boardTranslationsOf(await board(slug), languages)).toEqual([{ language: "de", name: null, description: null, keepUpToDate: false }]);
+  }
+  // Set, it's translated once readers see it (the job leaves it until then: no request now).
+  expect(await call(updateBoardTranslation, as(), { slug: "internal", language: "de", keepUpToDate: true })).toEqual({ language: "de", name: null, description: null, keepUpToDate: true });
+  await languageTranslationsDone();
+  expect(model.requests).toHaveLength(0);
+});
+
+test("translating a board leaves its updatedAt (the sitemap's lastmod) as the team's last change, by the job or in its settings", async () => {
+  await german();
+  await prisma.board.create({ data: { projectId: project.id, name: "Ideas", slug: "ideas" } });
+  const { updatedAt } = await board("ideas");
+  model.reply(labelsReply({ "0.n": "Ideen" }));
+  await handlers.retryArticleTranslations({}, log);
+  await languageTranslationsDone();
+  expect(await inGerman("ideas")).toEqual({ name: "Ideen", description: "" });
+  expect((await board("ideas")).updatedAt).toEqual(updatedAt);
+  await call(updateBoardTranslation, as(), { slug: "ideas", language: "de", keepUpToDate: false, name: "Vorschläge" });
+  expect(await inGerman("ideas")).toEqual({ name: "Vorschläge", description: "" });
+  expect((await board("ideas")).updatedAt).toEqual(updatedAt);
+});
+
+test("a board made the team's alone while it's being translated: the translation isn't written", async () => {
+  await german();
+  await prisma.board.create({ data: { projectId: project.id, name: "Ideas", slug: "ideas" } });
+  model.reply(labelsReply({ "0.n": "Ideen" }), () => prisma.board.updateMany({ where: { projectId: project.id, slug: "ideas" }, data: { postVisibility: "TEAM" } }));
+  await handlers.retryArticleTranslations({}, log);
+  await languageTranslationsDone();
+  expect((await board("ideas")).translations).toEqual({});
+});
