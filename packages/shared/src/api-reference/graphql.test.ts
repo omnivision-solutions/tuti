@@ -467,19 +467,18 @@ test("an example is the caller's own: changing it leaves the next doc's alone", 
   expect(second.responses[0]!.example).toEqual({});
 });
 
+test("more arguments than a doc holds is too large to show", () => {
+  expect(readGraphql(`type Query { one(${many(60_000, (n) => `a${n}: Int`)}): Int }`)).toEqual({ error: expect.stringContaining("too large") });
+  // Schemas this size take a second or two to parse: more on a busy machine.
+}, 30_000);
+
 test.each([
   [
     "a wide union many root fields return",
     `type Query { ${many(700, (n) => `r${n}: Wide`)} } union Wide = ${Array.from({ length: 700 }, (_, n) => `M${n}`).join(" | ")} ${many(700, (n) => `type M${n} { id: ID }`)}`,
   ],
   ["more root fields than a doc holds", `type Query { ${many(30_000, (n) => `r${n}: Int`)} }`],
-  ["more arguments than a doc holds", `type Query { one(${many(60_000, (n) => `a${n}: Int`)}): Int }`],
-])("%s is too large to show", (_name, sdl) => {
-  expect(readGraphql(sdl)).toEqual({ error: expect.stringContaining("too large") });
-  // Schemas this size take a second or two to parse: more on a busy machine.
-}, 30_000);
-
-test.each([
+  ["a type many root fields return, spelled out at each", `type Query { ${many(400, (n) => `r${n}: Big`)} } type Big { ${many(400, (n) => `f${n}: Int`)} }`],
   [
     "an enum value's name in every example",
     `type Query { ${many(150, (n) => `r${n}: T`)} } type T { ${many(200, (n) => `f${n}: E`)} } enum E { ${"A".repeat(250)} }`,
@@ -488,7 +487,7 @@ test.each([
     "a union's first member's name in every example",
     `type Query { ${many(150, (n) => `r${n}: T`)} } type T { ${many(200, (n) => `f${n}: U`)} } union U = ${"M".repeat(250)} type ${"M".repeat(250)} { id: ID }`,
   ],
-])("%s counts: a doc too large with them is given up before it's built", (_name, sdl) => {
+])("%s: a doc too large is given up before it's built", (_name, sdl) => {
   // A doc that's built is measured, so one never measured was given up on the way.
   const measured = vi.spyOn(JSON, "stringify");
   const result = readGraphql(sdl);
@@ -653,12 +652,6 @@ test("a doc is measured once built, whatever was reckoned on the way", () => {
   const result = readGraphql(`type Query { ok: Boolean } ${many(100_000, (n) => `scalar S${n}`)}`);
   expect(result).toEqual({ error: expect.stringContaining("too large") });
 }, 30_000);
-
-test("a schema too large to show at all is an error", () => {
-  const fields = Array.from({ length: 400 }, (_, n) => `f${n}: Int`).join(" ");
-  const roots = Array.from({ length: 400 }, (_, n) => `r${n}: Big`).join(" ");
-  expect(readGraphql(`type Query { ${roots} } type Big { ${fields} }`)).toEqual({ error: expect.stringContaining("too large") });
-});
 
 test.each([
   ["nothing", "", "empty"],

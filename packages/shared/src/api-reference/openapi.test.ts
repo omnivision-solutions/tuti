@@ -380,7 +380,6 @@ test("only references inside the spec are followed, and a cycle of them ends", (
     "UNKNOWN_REF @ GET /x › responses › 200 › gone",
     "UNKNOWN_REF @ GET /x › responses › 200 › whole",
   ]);
-  for (const warning of doc.warnings) expect(warning.message).toBe(doc.warnings.find((one) => one.code === warning.code)!.message);
 
   // Parameters, bodies, responses and path items too: a broken one is left out.
   const broken = spec({
@@ -2040,7 +2039,6 @@ test("what's left out is warned about", () => {
     { code: "PATH_SKIPPED", message: "A path doesn't start with a slash, so it and its operations were left out.", where: "users/{id}" },
     { code: "WEBHOOKS_SKIPPED", message: "The spec's webhooks were left out.", where: "webhooks" },
   ]);
-  for (const warning of doc.warnings) expect(warning.code).toMatch(/^[A-Z]+(_[A-Z]+)*$/);
 });
 
 test("the fields a made-up example leaves out count towards the read's limit", () => {

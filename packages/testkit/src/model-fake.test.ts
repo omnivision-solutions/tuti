@@ -72,6 +72,15 @@ test("a standing reply answers each request it matches that no step takes, is ne
   expect(() => model.done()).toThrow("a request with no reply scripted: review 4");
 });
 
+test("a reply with a match waits for the request that contains it; one without takes the next unmatched reply", async () => {
+  const ask = async (content: string) => (await chat({ model: "acme/tiny", messages: [{ role: "system", content: "s" }, { role: "user", content }] })).choices[0]!.message.content;
+  model.reply("For the question", undefined, "How do I invite?");
+  model.reply("For anything");
+  expect(await ask("Draft the notes")).toBe("For anything");
+  expect(await ask("Question: How do I invite?")).toBe("For the question");
+  model.done();
+});
+
 test("an unused tool-call step is reported", () => {
   model.toolCalls([{ name: "list_files", arguments: "{}" }]);
   expect(() => model.done()).toThrow("an unused step: tool calls list_files");

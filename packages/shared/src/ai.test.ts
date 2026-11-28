@@ -170,14 +170,6 @@ test("a failed request or an empty reply throws", async () => {
   await expect(complete({ system: "s", user: "u", ...ai })).rejects.toThrow("The AI reply had no text");
 });
 
-test("the model fake keeps a reply with a match for the request that contains it", async () => {
-  useFake();
-  model.reply("For the question", undefined, "How do I invite?");
-  model.reply("For anything");
-  expect(await complete({ system: "s", user: "Draft the notes", ...ai })).toBe("For anything");
-  expect(await complete({ system: "s", user: "Question: How do I invite?", ...ai })).toBe("For the question");
-});
-
 test("decisions go to the decision model, with the data policy, and come back as probabilities", async () => {
   useFake();
   vi.stubEnv("TUTI_CONFIG", configFile({ autopilot: { decisions: { model: "test/decider" } } }));
