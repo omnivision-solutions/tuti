@@ -223,6 +223,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "license.check": () => ({}),
   "links.remove": (f) => ({ number: 1, id: f.linkId }),
   "live.inbox": () => ({}),
+  // The widget's Messages stream: Messages on (below), as the owner signed in on the portal's own site.
+  "live.widget": () => ({}),
   // A key reads its creator's.
   "notifications.get": () => ({}),
   "notifications.update": () => ({ showMessageText: false }),

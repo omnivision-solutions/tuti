@@ -69,8 +69,20 @@ export async function unseenRepliesOf(projectId: string, userId: string): Promis
   return prisma.conversationMessage.count({ where: { ...unseenReplies, conversation: { projectId, ...who.where } } });
 }
 
+/** Who hears the widget's live changes (hears): the person's ids and, signed in, the address their project's app gave. */
+export type Listener = Pick<WidgetPerson, "projectId" | "userId" | "visitorHash" | "email">;
+
+/** The listener for someone signed in (their SSO address here, as signedIn has it), or a signed-out visitor by their hash. */
+export async function listener(projectId: string, who: { userId: string } | { visitorHash: string }): Promise<Listener> {
+  if ("visitorHash" in who) {
+    return { projectId, userId: null, visitorHash: who.visitorHash, email: null };
+  }
+  const sso = await prisma.ssoIdentity.findFirst({ where: { userId: who.userId, projectId }, select: { email: true } });
+  return { projectId, userId: who.userId, visitorHash: null, email: sso?.email ?? null };
+}
+
 /** Whether a live change (server/live.ts) is to one of their conversations, as `where` has them (an unverified one by their address only refetches). */
-export function hears(who: WidgetPerson, change: InboxChange): boolean {
+export function hears(who: Listener, change: InboxChange): boolean {
   if (change.projectId !== who.projectId) {
     return false;
   }
