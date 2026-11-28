@@ -41,6 +41,12 @@ export type Context = {
   projectId: string;
   /** For `access: "owner"` operations: the owner acting (for a key, whoever created it), for recording who changed what. */
   ownerId?: string;
+  /**
+   * The language of the portal page a call from the app came from, when that page is under a language's address (its
+   * PAGE_LANGUAGE_HEADER, set by the app's tRPC client): what rememberPageLanguage keeps for a reader acting as
+   * themselves. Never from REST or MCP.
+   */
+  pageLanguage?: string;
 };
 
 type Fields<I extends z.ZodType> = {

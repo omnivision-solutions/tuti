@@ -5,7 +5,7 @@ import { PROJECT_USE_KEYS } from "@/lib/project-uses";
 import { MAX_PROPERTY_FORMATS, propertyFormat, type PropertyFormats, storedPropertyFormats } from "@/lib/property-formats";
 import { portalAddress } from "@/server/custom-domains";
 
-import { authorId, describedAuthor, noSuchComment, orNoSuchComment, pageLanguage } from "./create";
+import { authorId, describedAuthor, noSuchComment, orNoSuchComment } from "./create";
 import { defineOperation, OperationError } from "./define";
 import { findVisiblePost, postNumber, postRef } from "./read";
 import { rememberPageLanguage } from "@/server/portal-language";
@@ -289,7 +289,6 @@ export const setVote = defineOperation({
     number: postNumber.describe("The post's number").meta({ examples: [42] }),
     voted: z.boolean().describe("`true` to vote for it, `false` to take the vote back").meta({ examples: [true] }),
     author: describedAuthor,
-    language: pageLanguage,
   }),
   output: z
     .object({
@@ -326,7 +325,7 @@ export const setVote = defineOperation({
     });
     // The post's news is emailed to them now: in this page's language where they have none (rememberPageLanguage).
     if (input.voted) {
-      await rememberPageLanguage(context.actor, userId, context.projectId, input.language);
+      await rememberPageLanguage(context.actor, userId, context.projectId, context.pageLanguage);
     }
     return { number: post.number, voted: input.voted, votes };
   },
@@ -430,7 +429,7 @@ export const setSubscription = defineOperation({
     });
     // The post's news is emailed to them now: in this page's language where they have none (rememberPageLanguage).
     if (input.subscribed) {
-      await rememberPageLanguage(context.actor, userId, context.projectId);
+      await rememberPageLanguage(context.actor, userId, context.projectId, context.pageLanguage);
     }
     return { number: post.number, subscribed: input.subscribed };
   },

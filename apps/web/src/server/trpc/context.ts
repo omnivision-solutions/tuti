@@ -1,4 +1,7 @@
 import { prisma, type TeamRole } from "@tuti/db";
+import { isLanguage, type Language } from "@tuti/shared";
+
+import { PAGE_LANGUAGE_HEADER } from "@/lib/language-addresses";
 
 import type { OperationError } from "../operations/define";
 import { type ApiKey, authenticateSession, sendsSession, type Teammate } from "../api-auth";
@@ -29,6 +32,8 @@ export type ReaderCookies = { preview?: string; widgetReader?: string };
 export type TrpcContext = {
   who: Who;
   reader: ReaderCookies;
+  /** The page's language a call from a portal page says (PAGE_LANGUAGE_HEADER, under a language's address only): Context's pageLanguage. */
+  pageLanguage?: Language;
   /**
    * Whether a mutation may act with this request's cookie: it came from the page's own site. Always true in process
    * (pages, REST, MCP): only /api/trpc can be asked by another site.
@@ -116,6 +121,12 @@ export function fromOwnSite(headers: Headers): boolean {
  * the cookie session, then a signed-out visitor (as the widget's Messages has always ordered them).
  */
 export async function requestContext(headers: Headers): Promise<TrpcContext> {
+  const context = await whoCalls(headers);
+  const said = headers.get(PAGE_LANGUAGE_HEADER) ?? "";
+  return isLanguage(said) ? { ...context, pageLanguage: said } : context;
+}
+
+async function whoCalls(headers: Headers): Promise<TrpcContext> {
   const memberships = new Map();
   const reader = readerCookies(headers);
   if (headers.get(CLIENT_HEADER)) {

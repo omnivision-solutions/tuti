@@ -10,8 +10,10 @@ import { portalPage, redirectKey, reservedPath } from "@tuti/shared/portal-redir
 export const LANGUAGE = { header: "x-tuti-language", prefix: "x-tuti-language-prefix", default: "x-tuti-language-default" } as const;
 
 /**
- * The page's language a portal's Resend email says it's on, as it asks the auth API (which has no language prefix) for
- * the verification email: that email's language (lib/auth.ts), only one the portal serves. The browser's word, nothing more.
+ * The page's language a call from a portal page says it's on, since the call's own address (the auth API, /api/trpc) has
+ * no language prefix: Resend email's verification email in it (lib/auth.ts), and the app's tRPC client on every call from
+ * a language's address, which a save keeps as the reader's (rememberPageLanguage). Only one the portal serves counts. The
+ * browser's word, nothing more.
  */
 export const PAGE_LANGUAGE_HEADER = "x-tuti-page-language";
 

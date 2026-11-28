@@ -1,7 +1,6 @@
 "use client";
 
 import { usePathname, useSearchParams } from "next/navigation";
-import { useLocale } from "next-intl";
 import { createContext, useCallback, useContext } from "react";
 
 import { authClientAt } from "@/lib/auth-client";
@@ -21,16 +20,6 @@ export function PortalBaseProvider({ base, slug, prefix = "", children }: { base
 /** The page's language's prefix ("/de", or "" in the default language). */
 export function usePortalLanguagePrefix() {
   return useContext(PortalBase).prefix;
-}
-
-/**
- * The page's language when its address is a language's (/de/…), else undefined: what a save through /api/trpc sends as
- * `language` (operations' pageLanguage), since the call's own address isn't the page's.
- */
-export function usePageLanguage(): string | undefined {
-  const prefix = usePortalLanguagePrefix();
-  const locale = useLocale();
-  return prefix ? locale : undefined;
 }
 
 /** The portal's project, for client components. */

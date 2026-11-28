@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { NewPostForm } from "@/components/new-post-form";
-import { usePageLanguage, usePortalHref } from "@/components/portal-base";
+import { usePortalHref } from "@/components/portal-base";
 import { StatusDot } from "@/components/post-status-badge";
 import { pillClass } from "@/components/filter-pills";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -194,7 +194,6 @@ export function WidgetFeedback({
   const { signedIn, error, known, pending } = useWidgetSignIn(projectSlug, !portalSignedIn);
   const link = usePortalHref();
   const client = useTRPCClient();
-  const language = usePageLanguage();
   const token = signedIn?.token ?? null;
   const viewer = portalSignedIn || !!signedIn;
   // Who votes here: what's known of their votes is theirs only.
@@ -255,7 +254,7 @@ export function WidgetFeedback({
         vote={async (voted) => {
           const at = identity;
           // As the widget's person: their token, or (on the portal's own site) its signed-in session.
-          return client.votes.set.mutate({ project: projectSlug, number: post.number, voted, language }, widgetCall(token)).then(
+          return client.votes.set.mutate({ project: projectSlug, number: post.number, voted }, widgetCall(token)).then(
             (result) => {
               answered(at, [{ id: post.id, voteCount: result.votes, voted }], performance.now());
               return {};

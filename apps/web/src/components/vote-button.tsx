@@ -7,7 +7,6 @@ import { useLocale, useTranslations } from "next-intl";
 import { useOptimistic, useTransition } from "react";
 import { toast } from "sonner";
 
-import { usePageLanguage } from "@/components/portal-base";
 import { useSignInHref } from "@/components/sign-in-link";
 import { errorMessage, useTRPCClient } from "@/components/trpc";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -88,7 +87,6 @@ export function VoteButton({
   const [pending, startTransition] = useTransition();
   const client = useTRPCClient();
   const router = useRouter();
-  const language = usePageLanguage();
   const [optimistic, setOptimistic] = useOptimistic({ count, voted });
   const t = useTranslations("feedback");
   const votes = t("votes", { count: optimistic.count });
@@ -125,7 +123,7 @@ export function VoteButton({
           setOptimistic((s) => ({ voted: next, count: s.count + (next ? 1 : -1) }));
           const result: { error?: string } = vote
             ? await vote(next)
-            : await client.votes.set.mutate({ project, number, voted: next, language }).then(
+            : await client.votes.set.mutate({ project, number, voted: next }).then(
                 // Saved: the page again (its count, who voted), in this transition, so the vote shown stays till it comes.
                 () => (router.refresh(), {}),
                 (error: unknown) => ({ error: errorMessage(error) }),

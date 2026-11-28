@@ -6,6 +6,7 @@ import { createTRPCContext } from "@trpc/tanstack-react-query";
 import { createContext, useContext, useState } from "react";
 import superjson from "superjson";
 
+import { PAGE_LANGUAGE_HEADER, splitLanguage } from "@/lib/language-addresses";
 import { withBase } from "@/lib/portal-base";
 import type { AppRouter } from "@/server/trpc/router";
 
@@ -49,12 +50,20 @@ export function TrpcProvider({ base = "", children }: { base?: string; children:
   const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } }));
   const [client] = useState(() => {
     const url = withBase(base, "/api/trpc");
+    // The page's language, on a language's address only (/de/…, after the portal's base): every call says it
+    // (PAGE_LANGUAGE_HEADER), since its own address isn't the page's; a save there keeps it as the reader's
+    // (rememberPageLanguage). Read from the address as each call goes, so it's the page's now.
+    const said = (): Record<string, string> => {
+      const path = window.location.pathname;
+      const language = path.startsWith(base) ? splitLanguage(path.slice(base.length) || "/")?.code : undefined;
+      return language ? { [PAGE_LANGUAGE_HEADER]: language } : {};
+    };
     return createTRPCClient<AppRouter>({
       links: [
         splitLink({
           condition: (op) => typeof op.context.authorization === "string",
-          true: httpLink({ url, transformer: superjson, headers: ({ op }) => ({ authorization: op.context.authorization as string }) }),
-          false: httpBatchLink({ url, transformer: superjson }),
+          true: httpLink({ url, transformer: superjson, headers: ({ op }) => ({ ...said(), authorization: op.context.authorization as string }) }),
+          false: httpBatchLink({ url, transformer: superjson, headers: said }),
         }),
       ],
     });

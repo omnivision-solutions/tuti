@@ -41,7 +41,7 @@ function procedure(operation: Operation) {
       // Who may, before the input is checked (as REST always answered): a typo in the slug or a refusal, then the input.
       const { project } = ((await getRawInput()) ?? {}) as { project?: unknown };
       const { actor, projectId, role, mayRead } = await projectOf(ctx, typeof project === "string" ? project : undefined, operation.access);
-      const run = await allowed({ actor, projectId }, role, mayRead);
+      const run = await allowed({ actor, projectId, pageLanguage: ctx.pageLanguage }, role, mayRead);
       if (ctx.unreadable) {
         throw ctx.unreadable;
       }
