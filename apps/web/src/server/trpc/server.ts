@@ -13,6 +13,24 @@ import { appRouter } from "./router";
 /** A caller for in-process use with a context already built (REST, MCP, tests). */
 export const createCaller = (context: TrpcContext) => createCallerFactory(appRouter)(context);
 
+/** For a route that stays a route (an image, a poll): the router in process, as the request's cookie session. */
+export const cookieCaller = async () => createCaller(sessionContext(await getSession()));
+
+/**
+ * A route's call through the router: its result, or null where the router refuses (not signed in, not allowed, not
+ * found, an input it won't take). Anything else (the database unreachable) throws.
+ */
+export async function unlessRefused<T>(call: Promise<T>): Promise<T | null> {
+  try {
+    return await call;
+  } catch (error) {
+    if (error instanceof TRPCError && error.code !== "INTERNAL_SERVER_ERROR") {
+      return null;
+    }
+    throw error;
+  }
+}
+
 /**
  * An operation through the router, for REST and MCP: its result, or the failure as they've always answered it (an
  * operation's own status, code and message; a bad input as `field: what's wrong`; anything unexpected "Something went

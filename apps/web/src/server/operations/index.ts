@@ -23,6 +23,8 @@ import {
 } from "./conversations";
 import { getConversationActivity } from "./conversation-activity";
 import { findPostsToLink, getConversationLanguage, getInboxList, setNewConversationEmails } from "./inbox";
+import { getChangelogCover, getChangelogStyleCover } from "./covers";
+import { getArticleScreenshotsStatus, getEntryScreenshotsStatus } from "./screenshot-status";
 import { getInboxConversation } from "./inbox-conversation";
 import { getInboxLive } from "./live";
 import { getCodeChangeButton } from "./code-change-button";
@@ -132,6 +134,10 @@ export const all = [
   setNewConversationEmails,
   getInboxLive,
   getCodeChangeButton,
+  getChangelogCover,
+  getChangelogStyleCover,
+  getEntryScreenshotsStatus,
+  getArticleScreenshotsStatus,
   listAssignees,
   listConversations,
   markConversationRead,

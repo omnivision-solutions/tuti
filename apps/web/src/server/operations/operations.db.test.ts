@@ -300,6 +300,11 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "screenshots.get": (f) => ({ id: f.screenshotRunId }),
   "changelog.takeScreenshots": () => ({ number: 3, shots: [{ show: "The dashboard" }] }),
   "articles.takeScreenshots": () => ({ slug: "matrix-screenshots", shots: [{ show: "The dashboard" }] }),
+  // The editors' polls while screenshots are taken, and the covers to pick from.
+  "changelog.screenshotsStatus": () => ({ number: 3 }),
+  "articles.screenshotsStatus": () => ({ slug: "matrix-screenshots" }),
+  "changelog.cover": () => ({ number: 1, design: "title" }),
+  "changelogStyle.cover": () => ({ design: "title" }),
 };
 
 let owner: TestUser;
