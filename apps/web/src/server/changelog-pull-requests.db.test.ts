@@ -460,8 +460,14 @@ test("in-process, a ruled-out pull request analysed some other way before its tu
   const ruledOut = await prisma.codeChange.create({ data: { projectId: project.id, repoId, repo, number: 3, url: url(3), title: "Bump dependencies", author: "a", mergedAt: new Date(days(2)), state: "NOTHING_TO_DO" } });
   // #2's analysis takes a while (the analyses run one after another after the request answers)...
   let finish: () => void = () => undefined;
-  queue.enqueue.mockImplementationOnce(() => new Promise<undefined>((resolve) => (finish = () => resolve(undefined))));
+  const started = new Promise<void>((started) =>
+    queue.enqueue.mockImplementationOnce(() => {
+      started();
+      return new Promise<undefined>((resolve) => (finish = () => resolve(undefined)));
+    }),
+  );
   await add(2, 3);
+  await started;
   // ...and meanwhile someone ran "Analyse anyway" on #3, which is done.
   await prisma.codeChange.update({ where: { id: ruledOut.id }, data: { state: "READY", forUsers: true } });
   finish();
