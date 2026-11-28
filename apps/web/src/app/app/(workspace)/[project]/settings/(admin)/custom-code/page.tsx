@@ -1,31 +1,30 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 
 import { CustomCodeSettings } from "@/components/custom-code-settings";
 import { PortalSettingsPane } from "@/components/portal-settings-pane";
 import { portalUrl } from "@/lib/hosts";
 import { CUSTOM_CODE_MAX } from "@/lib/portal-look";
-import { portalAddress } from "@/server/custom-domains";
-import { portalPreview } from "@/server/customize";
-import { getAdminProject } from "@/server/membership";
-import { branding } from "@/server/operations/branding";
+import { serverCaller } from "@/server/trpc/server";
 
 export const metadata: Metadata = { title: "Custom code · Settings" };
 
 /** Settings → Portal → Custom code: the team's CSS for the portal, and HTML for it on their own address. */
 export default async function CustomCodePage(props: PageProps<"/app/[project]/settings/custom-code">) {
   const { project: slug } = await props.params;
-  const project = await getAdminProject(slug);
-  if (!project) {
-    notFound();
-  }
-  const [brand, address] = await Promise.all([branding({ id: project.id }), portalAddress(slug)]);
+  const trpc = await serverCaller();
+  // Owners and admins only (settings.access): anyone else gets a 404.
+  const [, brand, { portalUrl: address }, preview] = await Promise.all([
+    trpc.settings.access({ project: slug }),
+    trpc.branding.get({ project: slug }),
+    trpc.project.get({ project: slug }),
+    trpc.customize.preview({ project: slug, path: "/" }),
+  ]);
   return (
-    <PortalSettingsPane page="custom-code" preview={await portalPreview(slug, "/")}>
+    <PortalSettingsPane page="custom-code" preview={preview}>
       <CustomCodeSettings
         projectSlug={slug}
-        css={brand!.customCss}
-        html={brand!.customHtml}
+        css={brand.customCss}
+        html={brand.customHtml}
         max={CUSTOM_CODE_MAX}
         ownAddress={address !== portalUrl(slug) ? address : null}
       />

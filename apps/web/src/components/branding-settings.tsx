@@ -3,7 +3,6 @@
 import { UPLOAD_IMAGE_TYPES } from "@tuti/content/media";
 import { ImageIcon, MonitorIcon, MoonIcon, PlusIcon, SunIcon, UploadIcon, XIcon } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -45,7 +44,6 @@ export function useBrandingForm(
 ) {
   const preview = usePreview();
   const trpc = useTRPCClient();
-  const router = useRouter();
   return useCustomizeForm({
     save: async (prev, formData) => {
       if (!input) {
@@ -56,12 +54,11 @@ export function useBrandingForm(
       } catch (error) {
         return { error: errorMessage(error) };
       }
-      // The page shows what's saved too (as the server action's refresh did).
-      router.refresh();
       return {};
     },
     onSaved: () => {
       toast.success(message);
+      // Refreshes the page too (usePreviewPage's reload), so what it shows is what's saved: one refresh a save.
       preview.reload();
     },
     toDraft,

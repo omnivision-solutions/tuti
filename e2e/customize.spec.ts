@@ -440,7 +440,10 @@ test("the team's own CSS shows in the preview as it's typed, and on the portal o
   expect(await owner.locator('[data-slot="portal-settings"]').evaluate((pane) => pane.scrollWidth - pane.clientWidth)).toBeLessThanOrEqual(0);
   await checkpoint(owner, "customize-custom-code-phone");
   await owner.setViewportSize({ width: 1440, height: 900 });
+  // Saved through tRPC (branding.update), not a server action.
+  const saved = owner.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/api/trpc/branding.update"));
   await owner.getByRole("button", { name: "Save changes" }).click();
+  await saved;
   await expect(owner.getByText("Custom code saved")).toBeVisible();
 
   const visitor = await newPerson(browser, portalUrl(slug));
