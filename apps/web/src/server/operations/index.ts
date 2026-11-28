@@ -161,6 +161,10 @@ import {
 import { updateEmailPreferences } from "./email-preferences";
 import { listGithubRepositories } from "./github";
 import {
+  finishGithubConnect,
+  getGithubConnect,
+} from "./github-connect";
+import {
   getGlossary,
   updateGlossary,
 } from "./glossary";
@@ -333,6 +337,8 @@ export const all = [
   getInboxList,
   getConversationLanguage,
   setNewConversationEmails,
+  getGithubConnect,
+  finishGithubConnect,
   getInboxLive,
   getCodeChangeButton,
   getChangelogCover,

@@ -6,7 +6,7 @@ import { type GithubFake, startGithubFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { signValue, verifyValue } from "@/lib/github";
-import { actAs, addMember, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addMember, callerAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 import { publishChangelogEntry } from "@/server/operations/changelog";
 import { call } from "@/server/operations/run";
@@ -174,17 +174,44 @@ describe("connecting", () => {
     actAs(owner);
     // No install cookie (e.g. arriving from GitHub's settings): nothing to connect.
     expect(location(await setup(new Request(`${APP}/api/github/setup?installation_id=502`)))).toBe(`${APP}/app?github=expired`);
-    // Forged, expired or other-purpose states.
+    // Forged, expired or other-purpose states: each right in every other way (the owner's own, for an installation they can see).
+    const fields = [project.slug, "502", "install", owner.id];
     for (const state of [
       `${project.id}.502.9999999999.forged`,
-      signValue("callback", [project.id, "502"], Date.now() - 60 * 60 * 1000),
-      signValue("install", [project.id, "502"]),
+      signValue("callback", fields, Date.now() - 60 * 60 * 1000),
+      signValue("install", fields),
       // Started by another admin of the project (their link, opened by the owner).
-      signValue("callback", [project.id, "502", "install", (await addMember(project.id, "ADMIN")).id]),
+      signValue("callback", [project.slug, "502", "install", (await addMember(project.id, "ADMIN")).id]),
     ]) {
       const response = await callback(new Request(`${APP}/api/github/callback?code=code-3&state=${encodeURIComponent(state)}`));
       expect(location(response)).toBe(`${APP}/app?github=expired`);
     }
+    expect(await connected(project.id)).toBeNull();
+  });
+
+  test("a member who isn't an owner or admin can't connect at any step, even with a state and cookie made for them", async () => {
+    github.user("code-m", [{ id: 503, account: "acme" }]);
+    const member = await addMember(project.id, "MEMBER");
+    actAs(member);
+    expect(location(await install(new Request(`${APP}/api/github/install?project=${project.slug}`, FROM_APP)))).toBe(`${APP}/app?github=expired`);
+    expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=503`, FROM_APP)))).toBe(`${APP}/app?github=expired`);
+    request.cookie = `${request.cookie}; tuti_github_install=${signValue("install", [project.slug])}`;
+    expect(location(await setup(new Request(`${APP}/api/github/setup?installation_id=503`)))).toBe(`${APP}/app?github=expired`);
+    for (const purpose of ["choose", "install"]) {
+      const state = signValue("callback", [project.slug, "503", purpose, member.id]);
+      expect(location(await callback(new Request(`${APP}/api/github/callback?code=code-m&state=${encodeURIComponent(state)}`)))).toBe(`${APP}/app?github=expired`);
+    }
+    expect(await connected(project.id)).toBeNull();
+  });
+
+  test("a state signed for one project finishes nothing under another's slug, even for an admin of both", async () => {
+    github.user("code-x", [{ id: 504, account: "acme" }]);
+    const other = await createProject(owner);
+    // Asked for directly (as /api/trpc could be): the owner's own state, for an installation they can see, but for `project`.
+    const state = signValue("callback", [project.slug, "504", "install", owner.id]);
+    const finished = await (await callerAs(owner)).githubConnect.finish({ project: other.slug, state, code: "code-x" });
+    expect(finished.result).toBe("expired");
+    expect(await connected(other.id)).toBeNull();
     expect(await connected(project.id)).toBeNull();
   });
 

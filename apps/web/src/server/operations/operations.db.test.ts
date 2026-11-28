@@ -191,6 +191,9 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "duplicates.dismiss": (f) => ({ id: f.suggestionId }),
   "duplicates.list": () => ({}),
   "emailPreferences.update": () => ({ followedPosts: false, author: { id: "matrix-reader" } }),
+  // Connecting GitHub (the /api/github routes): a state that isn't ours finishes nothing ("expired").
+  "githubConnect.finish": () => ({ state: "not-a-state" }),
+  "githubConnect.get": () => ({}),
   "githubRepositories.list": () => ({}),
   "glossary.get": () => ({}),
   "glossary.update": () => ({ terms: [{ term: "Acme", keep: true }, { term: "Board", translations: { de: "Tafel" } }] }),
