@@ -21,6 +21,8 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
   ]);
 
   return (
+    // One queue for the page's moves (useInOrder): a card dragged, then moved again from its menu, lands in that order.
+    <InOrderProvider>
     <PaneLayout>
       {menu}
       <Pane aria-label="Roadmap">
@@ -42,12 +44,10 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
         }
       />
       <PaneBody className="flex flex-col gap-4 p-2 @min-[48rem]/app:p-3">
-      {/* One queue for the page's moves (useInOrder): a card dragged, then moved again from its menu, lands in that order. */}
-      <InOrderProvider>
-        <RoadmapBoard projectSlug={slug} completedDays={completedDays} columns={columns} />
-      </InOrderProvider>
+      <RoadmapBoard projectSlug={slug} completedDays={completedDays} columns={columns} />
       </PaneBody>
       </Pane>
     </PaneLayout>
+    </InOrderProvider>
   );
 }
