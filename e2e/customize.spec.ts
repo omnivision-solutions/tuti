@@ -226,7 +226,10 @@ test("the team sets the portal's search listing, seeing it as a search result an
   await checkpoint(owner, "customize-seo-phone");
   await owner.setViewportSize({ width: 1440, height: 900 });
 
+  // Saved through tRPC (branding.update), not a server action.
+  const saved = owner.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/api/trpc/branding.update"));
   await owner.getByRole("button", { name: "Save changes" }).click();
+  await saved;
   await expect(owner.getByText("SEO saved")).toBeVisible();
   // Saved with the rest: still there when the page is opened again.
   await owner.reload();
