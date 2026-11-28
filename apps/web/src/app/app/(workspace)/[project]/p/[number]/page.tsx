@@ -136,7 +136,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
     post.duplicateOf ? 0 : votersToEmail(project.id, post.id),
     // Feedback's menu, its queries alongside the post's.
     // Only where it leaves the post's pane room for its two columns (48rem of it, with its padding).
-    feedbackMenu({ project, role: membership.role, className: "@max-[76rem]/app:hidden!" }),
+    feedbackMenu({ project, className: "@max-[76rem]/app:hidden!" }),
   ]);
   const total = totals.get(post.id);
   const sort = commentSort((await props.searchParams).sort);

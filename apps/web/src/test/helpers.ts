@@ -309,6 +309,53 @@ async function cookieCallerNow() {
   return createCaller(sessionContext(await getSession()));
 }
 
+/** A form's text field, as the boards' forms send it ("" when it's missing). */
+const formField = (form: FormData, name: string) => {
+  const value = form.get(name);
+  return typeof value === "string" ? value : "";
+};
+type Visibility = "PUBLIC" | "PRIVATE" | "TEAM";
+const visibilityOf = (form: FormData) => {
+  const value = formField(form, "postVisibility");
+  return value ? { postVisibility: value as Visibility } : {};
+};
+
+/** Feedback → Boards → New board as its form sends it (boards.create through the router, as whoever actAs() signed in). */
+export async function createBoard(project: string, _prev: unknown, form: FormData): Promise<{ error?: string }> {
+  const caller = await cookieCallerNow();
+  return asForm(() => caller.boards.create({ project, name: formField(form, "name"), slug: formField(form, "slug"), description: formField(form, "description"), ...visibilityOf(form) }));
+}
+
+/** A board's Edit as its form sends it (boards.update through the router): every field, "" for the default words. */
+export async function updateBoard(project: string, board: string, _prev: unknown, form: FormData): Promise<{ error?: string }> {
+  const caller = await cookieCallerNow();
+  return asForm(() =>
+    caller.boards.update({
+      project,
+      board,
+      name: formField(form, "name"),
+      slug: formField(form, "slug"),
+      description: formField(form, "description"),
+      postButton: formField(form, "postButton"),
+      titlePlaceholder: formField(form, "titlePlaceholder"),
+      detailsPlaceholder: formField(form, "detailsPlaceholder"),
+      ...visibilityOf(form),
+    }),
+  );
+}
+
+/** A board's Turn off or Turn on (boards.setOff through the router). */
+export async function setBoardOff(project: string, board: string, off: boolean): Promise<{ error?: string }> {
+  const caller = await cookieCallerNow();
+  return asForm(() => caller.boards.setOff({ project, board, off }));
+}
+
+/** A board's Delete (boards.delete through the router). */
+export async function deleteBoard(project: string, board: string): Promise<{ error?: string }> {
+  const caller = await cookieCallerNow();
+  return asForm(() => caller.boards.delete({ project, board }));
+}
+
 /**
  * A post's comment as the post page's form sends it (comments.create through the router, as whoever actAs() signed in):
  * its `postId`, `body`, `content`, `replyTo`, `internal` and `emailVoters` fields, as the form has them.

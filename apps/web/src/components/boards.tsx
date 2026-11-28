@@ -2,6 +2,7 @@
 
 import { cn } from "cn";
 import { EllipsisIcon, PlusIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useActionState, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -36,8 +37,33 @@ import { Textarea } from "@/components/ui/textarea";
 import { BOARD_VISIBILITY_DESCRIPTIONS, POST_VISIBILITIES, VISIBILITY_LABELS } from "@/lib/visibility-labels";
 import type { PostVisibility } from "@tuti/db";
 import { BOARD_TEXT_DEFAULTS, BOARD_TEXT_LIMITS, boardTexts } from "@/lib/board-texts";
-import { createBoard, deleteBoard, setBoardOff, updateBoard } from "@/server/boards";
-import type { FormState } from "@/server/form-state";
+import { errorMessage, useInOrder, useTRPCClient } from "@/components/trpc";
+
+type FormState = { error?: string };
+
+/** A save through the router, in the page's order (useInOrder), then the page again: nothing, or what it refused with. */
+function useBoardSave() {
+  const client = useTRPCClient();
+  const inOrder = useInOrder();
+  const router = useRouter();
+  return {
+    client,
+    save: (call: () => Promise<unknown>): Promise<FormState> =>
+      inOrder(call).then(
+        () => {
+          router.refresh();
+          return {};
+        },
+        (error: unknown) => ({ error: errorMessage(error) }),
+      ),
+  };
+}
+
+/** A form's text field ("" when it's missing). */
+const field = (form: FormData, name: string) => {
+  const value = form.get(name);
+  return typeof value === "string" ? value : "";
+};
 
 function slugify(value: string) {
   return value
@@ -82,8 +108,18 @@ function CreateBoardForm({ projectSlug, onCreated }: { projectSlug: string; onCr
   const formRef = useRef<HTMLFormElement>(null);
   const [slug, setSlug] = useState("");
   const [slugEdited, setSlugEdited] = useState(false);
-  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await createBoard(projectSlug, prev, formData);
+  const { client, save } = useBoardSave();
+  const [state, action, pending] = useActionState<FormState, FormData>(async (_prev, formData) => {
+    const visibility = field(formData, "postVisibility");
+    const result = await save(() =>
+      client.boards.create.mutate({
+        project: projectSlug,
+        name: field(formData, "name"),
+        slug: field(formData, "slug"),
+        description: field(formData, "description"),
+        ...(visibility && { postVisibility: visibility as PostVisibility }),
+      }),
+    );
     if (!result.error) {
       formRef.current?.reset();
       setSlug("");
@@ -188,9 +224,23 @@ export function EditBoardDialog({
     value: draft[field],
     onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft({ ...draft, [field]: event.target.value }),
   });
+  const { client, save } = useBoardSave();
   const [state, action, pending] = useActionState<FormState, FormData>(
-    async (prev, formData) => {
-      const result = await updateBoard(projectSlug, board.id, prev, formData);
+    async (_prev, formData) => {
+      const visibility = field(formData, "postVisibility");
+      const result = await save(() =>
+        client.boards.update.mutate({
+          project: projectSlug,
+          board: board.id,
+          name: field(formData, "name"),
+          slug: field(formData, "slug"),
+          description: field(formData, "description"),
+          postButton: field(formData, "postButton"),
+          titlePlaceholder: field(formData, "titlePlaceholder"),
+          detailsPlaceholder: field(formData, "detailsPlaceholder"),
+          ...(visibility && { postVisibility: visibility as PostVisibility }),
+        }),
+      );
       if (!result.error) {
         setOpen(false);
         toast.success("Board updated");
@@ -335,9 +385,10 @@ function BoardPreview(draft: { name: string; description: string; postButton: st
 function useBoardOff({ projectSlug, boardId, name, off, teamOnly, stuck }: BoardOffProps) {
   const [pending, startTransition] = useTransition();
   const [asking, setAsking] = useState(false);
+  const { client, save } = useBoardSave();
   const turn = () =>
     startTransition(async () => {
-      const result = await setBoardOff(projectSlug, boardId, !off);
+      const result = await save(() => client.boards.setOff.mutate({ project: projectSlug, board: boardId, off: !off }));
       if (result.error) {
         toast.error(result.error);
       } else {
@@ -403,6 +454,7 @@ export function BoardMenu({ deletable, ...props }: BoardOffProps & { deletable: 
   const off = useBoardOff(props);
   const [deleting, setDeleting] = useState(false);
   const [pending, startTransition] = useTransition();
+  const { client, save } = useBoardSave();
   // Always there (a board that's off has Turn on in it too), so the focus has somewhere to stay as Turn on comes and goes.
   return (
     <>
@@ -434,7 +486,7 @@ export function BoardMenu({ deletable, ...props }: BoardOffProps & { deletable: 
               variant="destructive"
               onClick={() =>
                 startTransition(async () => {
-                  const result = await deleteBoard(props.projectSlug, props.boardId);
+                  const result = await save(() => client.boards.delete.mutate({ project: props.projectSlug, board: props.boardId }));
                   if (result.error) {
                     toast.error(result.error);
                   } else {

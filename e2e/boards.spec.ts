@@ -4,7 +4,7 @@ import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { apiFor, createProject, newPerson, signUp } from "./helpers";
+import { apiFor, createProject, newPerson, signUp, trpcRequest } from "./helpers";
 
 test("a team adds, renames and deletes boards; old board links keep working", async ({ browser }, testInfo) => {
   // A long journey: the team's boards, then the portal's overview, board pages and phones.
@@ -44,7 +44,9 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await newBoard.getByLabel("Name").fill("Bug reports");
   await expect(newBoard.getByLabel("URL")).toHaveValue("bug-reports");
   await newBoard.getByLabel("Description").fill("Something broken? Tell us here.");
+  const created = trpcRequest(owner, "boards.create");
   await newBoard.getByRole("button", { name: "Create board" }).click();
+  await created;
   await expect(owner.getByText("Board created")).toBeVisible();
   await expect(newBoard).toBeHidden();
   await owner.setViewportSize({ width: 1280, height: 720 });
@@ -65,7 +67,9 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   const dialog = owner.getByRole("dialog", { name: "Edit board" });
   await dialog.getByLabel("URL").fill("bugs");
   await checkpoint(owner, "team-edit-board", { fullPage: false });
+  const updated = trpcRequest(owner, "boards.update");
   await dialog.getByRole("button", { name: "Save" }).click();
+  await updated;
   await expect(row("Bug reports")).toContainText("/feedback/bugs");
 
   const visitor = await newPerson(browser, portalUrl(slug));
@@ -168,13 +172,17 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await row("Bug reports").getByRole("button", { name: "More for Bug reports" }).click();
   await owner.getByRole("menuitem", { name: "Turn off" }).click();
   await expect(owner.getByRole("alertdialog")).toContainText("You can turn it on again any time.");
+  const turnedOff = trpcRequest(owner, "boards.setOff");
   await owner.getByRole("alertdialog").getByRole("button", { name: "Turn off" }).click();
+  await turnedOff;
   await expect(owner.getByText("Bug reports is off the portal")).toBeVisible();
   await expect(row("Bug reports")).toContainText("Not on the portal: only the team sees it and its posts.");
   await expect(row("Bug reports")).toContainText("/feedback/bugs");
   await checkpoint(owner, "team-board-off");
   expect((await visitor.goto("/feedback/bugs"))?.status()).toBe(404);
+  const turnedOn = trpcRequest(owner, "boards.setOff");
   await row("Bug reports").getByRole("button", { name: "Turn on" }).click();
+  await turnedOn;
   await expect(owner.getByText("Bug reports is on the portal")).toBeVisible();
   // Its Turn on button gone, the focus is on the board's menu (not lost to the page).
   await expect(row("Bug reports").getByRole("button", { name: "More for Bug reports" })).toBeFocused();
@@ -192,7 +200,9 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   // Delete the empty board: gone from the team's list and from the portal.
   await row("Bug reports").getByRole("button", { name: "More for Bug reports" }).click();
   await owner.getByRole("menuitem", { name: "Delete" }).click();
+  const deleted = trpcRequest(owner, "boards.delete");
   await owner.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+  await deleted;
   // (While the dialog is open the list is hidden from queries, so wait for the result first.)
   await expect(owner.getByText("Bug reports deleted")).toBeVisible();
   await expect(row("Bug reports")).toHaveCount(0);
@@ -245,7 +255,9 @@ test("a board's own words for posting: the team sees them in a preview as they t
   // The button is the form's own: no other one says "Submit post".
   await expect(preview).not.toContainText("Submit post");
   await checkpoint(owner, "team-board-texts-preview", { fullPage: false });
+  const textsSaved = trpcRequest(owner, "boards.update");
   await dialog.getByRole("button", { name: "Save" }).click();
+  await textsSaved;
   await expect(owner.getByText("Board updated")).toBeVisible();
   // Closed without saving, the dialog opens again with what's saved.
   const edit = owner.getByRole("listitem").filter({ hasText: "Feature requests" }).getByRole("button", { name: "Edit" });

@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
-import { prisma, type PostStatus } from "@tuti/db";
-import { aiEnabled, boardLimit, isLanguage, LANGUAGES, planDisplay, roomierPlan } from "@tuti/shared";
+import { boardLimit, planDisplay, roomierPlan } from "@tuti/shared";
 import { ArrowUpRightIcon } from "lucide-react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 
 import { BoardMenu, BoardOnButton, EditBoardDialog, NewBoardDialog } from "@/components/boards";
 import { VisibilityBadge } from "@/components/visibility-badge";
@@ -12,51 +10,18 @@ import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { ACTIVE_STATUSES } from "@/lib/post-filters";
-import { isAdminRole } from "@/lib/roles";
-import { portalAddress } from "@/server/custom-domains";
-import { getMembership } from "@/server/membership";
-import { boardTranslationsOf, translationLanguages } from "@/server/operations/label-translations";
+import { InOrderProvider } from "@/components/trpc";
+import { serverCaller } from "@/server/trpc/server";
 
 export const metadata: Metadata = { title: "Boards" };
 
 /** Feedback → Boards: the portal's boards, each with its settings; "New board" in a dialog (owners and admins). */
 export default async function BoardsPage(props: PageProps<"/app/[project]/feedback/boards">) {
   const { project: slug } = await props.params;
-  const membership = await getMembership(slug);
-  if (!membership) {
-    notFound();
-  }
-  const { project, role } = membership;
-  const isAdmin = isAdminRole(role);
-  const portal = await portalAddress(project.slug);
-
-  const { plan, language } = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, language: true } });
-  const boards = await prisma.board.findMany({
-    where: { projectId: project.id },
-    orderBy: { createdAt: "asc" },
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      description: true,
-      postButton: true,
-      titlePlaceholder: true,
-      detailsPlaceholder: true,
-      postVisibility: true,
-      off: true,
-      translations: true,
-    },
-  });
-  // Each board's posts as Feedback lists them (merged duplicates aside), and the open ones as the portal counts them.
-  // A board with none can be deleted: its merged duplicates move to their originals' boards.
-  const counts = await prisma.post.groupBy({
-    by: ["boardId", "status"],
-    where: { projectId: project.id, duplicateOfId: null },
-    _count: true,
-  });
-  const count = (boardId: string, statuses?: PostStatus[]) =>
-    counts.filter((c) => c.boardId === boardId && (!statuses || statuses.includes(c.status))).reduce((n, c) => n + c._count, 0);
+  const caller = await serverCaller();
+  // The team's (others get a 404); its settings and translations, owners and admins' (`admin`).
+  const [{ admin: isAdmin, portal, boards, plan }, menu] = await Promise.all([caller.boards.page({ project: slug }), feedbackMenu({ project: { slug } })]);
+  const project = { slug };
 
   // A project past its plan's limit (after a downgrade, or an import's boards, brought off) keeps its boards; it just
   // can't add more. One that's off turns on while there's room for one more that's on.
@@ -66,22 +31,10 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
   const full = limit !== null && boards.length >= limit;
   const room = limit === null || on < limit;
   const someOff = boards.some((board) => board.off);
-  // Each board's name in the project's other languages, for its settings (owners and admins; none: no Translations).
-  const languages = isAdmin ? await translationLanguages(project.id) : [];
-  const translated = new Map(
-    boards.map((board) => [board.id, boardTranslationsOf(board, languages).flatMap((row) => (isLanguage(row.language) ? [{ ...row, native: LANGUAGES[row.language].native }] : []))]),
-  );
-  // A board readers don't see (off, or the team's alone) isn't translated, as a sample collection isn't: no Keep up to date.
-  const translations = (board: (typeof boards)[number]) =>
-    languages.length > 0 && {
-      rows: translated.get(board.id)!,
-      defaultName: isLanguage(language) ? LANGUAGES[language].name : language,
-      ai: aiEnabled() && !board.off && board.postVisibility !== "TEAM",
-    };
 
   return (
     <PaneLayout>
-      {await feedbackMenu({ project: { ...project, plan }, role })}
+      {menu}
       <Pane aria-label="Boards">
       <PaneHeader
         title="Boards"
@@ -110,6 +63,8 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
       )}
 
       {/* A card a board: its name and who sees it, its description, its posts, where it is on the portal; then its actions. */}
+      {/* One queue for the page's saves (useInOrder): turning a board on and off again land in the order asked. */}
+      <InOrderProvider>
       <ul aria-label="Boards" className="grid gap-4 md:grid-cols-2">
         {boards.map((board) => (
           <li key={board.id}>
@@ -140,11 +95,11 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
                 <dl className="flex gap-6">
                   <div className="flex flex-col">
                     <dt className="text-xs text-muted-foreground">Posts</dt>
-                    <dd className="text-xl font-semibold tabular-nums">{count(board.id)}</dd>
+                    <dd className="text-xl font-semibold tabular-nums">{board.posts}</dd>
                   </div>
                   <div className="flex flex-col">
                     <dt className="text-xs text-muted-foreground">Still open</dt>
-                    <dd className="text-xl font-semibold tabular-nums">{count(board.id, ACTIVE_STATUSES)}</dd>
+                    <dd className="text-xl font-semibold tabular-nums">{board.open}</dd>
                   </div>
                 </dl>
                 {/* Where it is on one line, its actions on the next (the same on every card, whatever the URL's length). */}
@@ -158,7 +113,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
                   </span>
                   {isAdmin && (
                     <div className="-mb-1 flex items-center gap-1">
-                      <EditBoardDialog projectSlug={project.slug} board={board} translations={translations(board) || undefined} />
+                      <EditBoardDialog projectSlug={project.slug} board={board} translations={board.translations ?? undefined} />
                       {board.off && <BoardOnButton projectSlug={project.slug} boardId={board.id} name={board.name} off teamOnly={board.postVisibility === "TEAM"} stuck={limit !== null && on > limit} />}
                       <BoardMenu
                         projectSlug={project.slug}
@@ -167,7 +122,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
                         off={board.off}
                         teamOnly={board.postVisibility === "TEAM"}
                         stuck={limit !== null && on > limit}
-                        deletable={count(board.id) === 0 && boards.length > 1}
+                        deletable={board.posts === 0 && boards.length > 1}
                       />
                     </div>
                   )}
@@ -177,6 +132,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
           </li>
         ))}
       </ul>
+      </InOrderProvider>
       </PaneBody>
       </Pane>
     </PaneLayout>

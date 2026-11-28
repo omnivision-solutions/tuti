@@ -1,12 +1,10 @@
-import { prisma } from "@tuti/db";
-import { boardLimit } from "@tuti/shared";
+import type { PostStatus } from "@tuti/db";
 import { CopyIcon, LayoutListIcon, LightbulbIcon, MapIcon, Settings2Icon, SparklesIcon } from "lucide-react";
 
 import { NewBoardDialog } from "@/components/boards";
 import { SectionGroup, SectionLink, SectionPane } from "@/components/pane";
 import { STATUS_LABELS, StatusIcon } from "@/components/post-status-badge";
-import { isAdminRole } from "@/lib/roles";
-import { teamPostCounts } from "@/server/post-lists";
+import { serverCaller } from "@/server/trpc/server";
 
 /** The statuses the menu lists, as the list's tabs take them (Needs triage is a view of its own, above). */
 const STATUSES = [
@@ -26,31 +24,24 @@ const STATUSES = [
  */
 export async function feedbackMenu({
   project,
-  role,
   view,
   board,
   counts: given,
   className,
 }: {
-  project: { id: string; slug: string; plan: Parameters<typeof boardLimit>[0] };
-  role: Parameters<typeof isAdminRole>[0];
+  project: { slug: string };
   view?: string;
   board?: string;
   /** The list's own counts, when they're across every board (none filtered): not asked for again. */
-  counts?: Awaited<ReturnType<typeof teamPostCounts>>;
+  counts?: { all: number; duplicates: number; of: (status: PostStatus) => number };
   className?: string;
 }) {
   // On the list: a board's own link for its All, else the tab's link (a board's other tabs mark the status).
   const open = (link: string) => (view === undefined ? undefined : board && view === "all" ? link === `board:${board}` : link === view);
   const base = `/app/${project.slug}/feedback`;
-  const [boards, perBoard, counts] = await Promise.all([
-    prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { id: true, slug: true, name: true } }),
-    // As Feedback lists them: merged duplicates aside.
-    prisma.post.groupBy({ by: ["boardId"], where: { projectId: project.id, duplicateOfId: null }, _count: true }),
-    given ?? teamPostCounts(project.id, {}),
-  ]);
-  const limit = boardLimit(project.plan);
-  const canAdd = isAdminRole(role) && (limit === null || boards.length < limit);
+  const menu = await (await serverCaller()).feedback.menu({ project: project.slug, counts: !given });
+  const counts = given ?? { ...menu.counts!, of: (status: PostStatus) => menu.counts!.statuses[status] };
+  const { boards, canAdd } = menu;
   return (
     <SectionPane title="Feedback" className={className}>
       <SectionGroup>
@@ -66,7 +57,7 @@ export async function feedbackMenu({
       </SectionGroup>
       <SectionGroup label="Boards" action={canAdd && <NewBoardDialog projectSlug={project.slug} icon />}>
         {boards.map((board) => (
-          <SectionLink key={board.id} href={`${base}?board=${board.slug}&status=all`} icon={<LayoutListIcon />} count={perBoard.find((row) => row.boardId === board.id)?._count ?? 0} active={open(`board:${board.slug}`)}>
+          <SectionLink key={board.slug} href={`${base}?board=${board.slug}&status=all`} icon={<LayoutListIcon />} count={board.posts} active={open(`board:${board.slug}`)}>
             {board.name}
           </SectionLink>
         ))}

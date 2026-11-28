@@ -3,9 +3,8 @@ import { handlers, labelIn, languageTranslationsDone, queueLabels, queueStaleLab
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createBoard, createProject, setBoardOff, signUp, type TestUser, updateBoard } from "@/test/helpers";
 
-import { createBoard, setBoardOff, updateBoard } from "./boards";
 import { updateGlossary } from "./operations/glossary";
 import { boardTranslationsOf, getBoardTranslations, translationLanguages, updateBoardTranslation } from "./operations/label-translations";
 import { retranslateLanguage, updateLanguages } from "./operations/languages";
