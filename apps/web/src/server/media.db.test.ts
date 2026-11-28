@@ -302,6 +302,26 @@ describe("finishing", () => {
     expect(await uploadStatus(created.mediaId)).toMatchObject({ status: "READY" });
   });
 
+  test("an image is ready even when deleting its original fails: that's only tidying, and it counts the files kept", async () => {
+    const file = await photo(400, 300);
+    const created = (await createUpload(project.slug, { type: "image/jpeg", size: file.length })) as { mediaId: string; uploadUrl: string };
+    await fetch(created.uploadUrl, { method: "PUT", body: new Uint8Array(file) });
+    // Claimed, its job queued but not run here: the run below is it.
+    jobs.enqueue.mockImplementationOnce(async () => {});
+    expect(await finishUpload(created.mediaId)).toEqual({});
+    s3.failDeletes.add(originalKey(created.mediaId));
+    const warned: string[] = [];
+    const result = await handlers.imageUploaded({ mediaId: created.mediaId }, { info: () => {}, warn: (message) => warned.push(message) });
+    s3.failDeletes.delete(originalKey(created.mediaId));
+    expect(result).toMatchObject({ ready: true });
+    const media = await prisma.media.findUniqueOrThrow({ where: { id: created.mediaId } });
+    expect(media.status).toBe("READY");
+    const kept = [...s3.objects.entries()].filter(([key]) => key.startsWith(`m/${created.mediaId}/`));
+    expect(kept.length).toBeGreaterThan(0);
+    expect(media.size).toBe(kept.reduce((sum, [, object]) => sum + object.body.length, 0));
+    expect(warned.some((message) => message.includes("deleting its original failed"))).toBe(true);
+  });
+
   // A job queued twice (an enqueue that timed out but went through, then a retry): two runs at once for one image.
   test("the image job run twice at once keeps the image ready, its size counted once, and leaves no files behind", async () => {
     const quiet = { info: () => {}, warn: () => {} };
