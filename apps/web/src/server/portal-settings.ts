@@ -6,7 +6,7 @@ import type { FormState } from "./form-state";
 import { removeDomain, setDomain, verifyDomain } from "./operations/domain";
 import { createRedirect, deleteRedirect } from "./operations/redirects";
 import { removeSite, setSite, verifySite } from "./operations/site";
-import { addPortalReaders as addPortalReadersOperation, type PortalHomePage, removePortalReader as removePortalReaderOperation, updatePortal } from "./operations/portal";
+import { addPortalReaders as addPortalReadersOperation, removePortalReader as removePortalReaderOperation, updatePortal } from "./operations/portal";
 import { OperationError } from "./operations/define";
 import { asAdmin, call } from "./operations/run";
 
@@ -20,12 +20,6 @@ export async function setPortalAccess(projectSlug: string, access: string): Prom
 }
 
 /** Customize → Navigation → Home page (see portal.update). */
-export async function setPortalHome(projectSlug: string, home: string): Promise<{ error?: string }> {
-  return asAdmin(projectSlug, "Only project owners and admins can change the portal's home page", (context) =>
-    call(updatePortal, context, { home: home as PortalHomePage }),
-  );
-}
-
 /** Settings → Access → Readers: the form's addresses and domains, separated by commas, spaces or lines (see portalReaders.add). */
 export async function addPortalReaders(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState & { added?: string[]; emailed?: number }> {
   const emails = String(formData.get("emails") ?? "")

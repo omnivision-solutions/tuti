@@ -142,7 +142,10 @@ test("the team sets what readers can do with an article and the docs' home, seei
   await expect(preview.getByRole("heading", { name: "Acme help", level: 1 })).toBeVisible();
   await expect(preview.getByText("Answers to everything about Acme.")).toBeVisible();
   await checkpoint(owner, "customize-docs-home");
+  // Saved through tRPC (branding.update), not a server action.
+  const saved = owner.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/api/trpc/branding.update"));
   await owner.getByRole("button", { name: "Save changes" }).click();
+  await saved;
   await expect(owner.getByText("Docs home saved")).toBeVisible();
   // Saved as trimmed, and the form shows what's saved: nothing left to save.
   await expect(owner.getByLabel("Title", { exact: true })).toHaveValue("Acme help");

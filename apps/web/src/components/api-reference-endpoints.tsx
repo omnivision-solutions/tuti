@@ -255,15 +255,32 @@ export function ApiReferenceEndpoints({
   /** How many things the reader couldn't read. */
   unreadable: number;
 }) {
-  // Switches clicked and not saved yet, over what the page was given: a save's answer brings the page again, as saved.
-  const [clicked, setClicked] = useState<Record<string, boolean>>({});
+  // Switches clicked, over what the page was given, until a page drawn after their save. A save answers before the page
+  // it brings is drawn: dropped then, a switch would show the old page meanwhile (a group back on, its switches live).
+  // `page`: the page drawn as the save answered; the next one is as saved (or as a teammate changed it since).
+  const [clicked, setClicked] = useState<Record<string, { on: boolean; saved?: boolean; page?: Group[] }>>({});
   const [query, setQuery] = useState("");
-  const groupOn = (group: Group) => clicked[`group ${group.key}`] ?? group.onHelpCenter;
+  const onPage = new Map<string, boolean>([
+    ...groups.map((group) => [`group ${group.key}`, group.onHelpCenter] as const),
+    ...operations.map((operation) => [`operation ${operation.key}`, !operation.hidden] as const),
+  ]);
+  const saved = Object.entries(clicked).filter(([, choice]) => choice.saved);
+  const caughtUp = saved.filter(([id, choice]) => (choice.page && choice.page !== groups) || (onPage.get(id) ?? choice.on) === choice.on).map(([id]) => id);
+  if (caughtUp.length > 0 || saved.some(([, choice]) => !choice.page)) {
+    setClicked((now) =>
+      Object.fromEntries(
+        Object.entries(now)
+          .filter(([id]) => !caughtUp.includes(id))
+          .map(([id, choice]) => [id, choice.saved && !choice.page ? { ...choice, page: groups } : choice]),
+      ),
+    );
+  }
+  const groupOn = (group: Group) => clicked[`group ${group.key}`]?.on ?? group.onHelpCenter;
   const offGroups = new Set(groups.filter((group) => !groupOn(group)).map((group) => group.key));
   /** The group that keeps it off the help center, if one of its groups is off. */
   const offGroupOf = (operation: Operation) => groups.find((group) => offGroups.has(group.key) && [operation.group, ...operation.alsoIn].includes(group.key));
   const inOffGroup = (operation: Operation) => offGroupOf(operation) !== undefined;
-  const ownOn = (operation: Operation) => clicked[`operation ${operation.key}`] ?? !operation.hidden;
+  const ownOn = (operation: Operation) => clicked[`operation ${operation.key}`]?.on ?? !operation.hidden;
   const shown = (operation: Operation) => ownOn(operation) && !inOffGroup(operation);
 
   // What's New this visit, each with whether it arrived off the help center: kept while the page is open, though marked seen.
@@ -286,7 +303,7 @@ export function ApiReferenceEndpoints({
   const saves = useRef(new Map<string, { last: Promise<void>; clicks: number }>());
   const change = (what: "operation" | "group", key: string, on: boolean) => {
     const id = `${what} ${key}`;
-    setClicked((now) => ({ ...now, [id]: on }));
+    setClicked((now) => ({ ...now, [id]: { on } }));
     const queue = saves.current.get(id) ?? { last: Promise.resolve(), clicks: 0 };
     saves.current.set(id, queue);
     const click = ++queue.clicks;
@@ -298,10 +315,14 @@ export function ApiReferenceEndpoints({
         toast.error(result.error);
       }
       if (queue.clicks !== click) return;
-      // Saved: as the page has it now. Refused: back as it was.
+      // Saved: kept until the page has it. Refused: back as it was.
       setClicked((now) => {
         const rest = { ...now };
-        delete rest[id];
+        if (result.error) {
+          delete rest[id];
+        } else {
+          rest[id] = { on, saved: true };
+        }
         return rest;
       });
     });

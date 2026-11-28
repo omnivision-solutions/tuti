@@ -76,12 +76,12 @@ export function ContentActionsSettings({ projectSlug, actions }: { projectSlug: 
 
 /** Customize → Docs home: the heading at its top and its popular articles (see branding.update's docsHome). */
 export function DocsHomeSettings({ projectSlug, home }: { projectSlug: string; home: DocsHome }) {
-  const { state, form } = useBrandingForm(projectSlug, "Docs home saved", (data) => ({
+  const docsHome = (data: FormData) => ({
     docsHome: { title: String(data.get("title") ?? ""), subtitle: String(data.get("subtitle") ?? ""), popular: on(data, "popular") },
-  }));
+  });
+  const { state, form } = useBrandingForm(projectSlug, "Docs home saved", docsHome, false, docsHome);
   return (
     <form {...form} className="flex flex-col gap-3">
-      <input type="hidden" name="part" value="docsHome" />
       <SettingsCard>
         <SettingRow label="Title" htmlFor="docs-title">
           <Input id="docs-title" name="title" defaultValue={home.title} maxLength={DOCS_TITLE_MAX} placeholder={DOCS_HEADING.title} autoComplete="off" />
