@@ -1,4 +1,4 @@
-import { afterAll } from "vitest";
+import { afterAll, vi } from "vitest";
 
 /**
  * Tests are offline by default: they never see a real database, an AI provider (OPENAI_*; the old OPENROUTER_* only earn a warning, still kept out),
@@ -11,10 +11,14 @@ for (const name of Object.keys(process.env)) {
   }
 }
 
-// Unit test files share a worker (isolate: false in vitest.config.mts): what one sets in the environment, at import or
-// in a test, is undone before the next file.
+// Unit test files share a worker (isolate: false in vitest.config.mts): what one file changes, at import or in a test,
+// is undone before the next: spies, stubbed globals, fake timers and the environment.
 const env = { ...process.env };
 afterAll(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  vi.useRealTimers();
   for (const name of Object.keys(process.env)) {
     if (!(name in env)) delete process.env[name];
   }
