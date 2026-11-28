@@ -1,6 +1,7 @@
 import type { TeamRole } from "@tuti/db";
 
-import { type ApiKey, authenticateSession, sendsSession } from "../api-auth";
+import type { OperationError } from "../operations/define";
+import { type ApiKey, authenticateSession, sendsSession, type Teammate } from "../api-auth";
 import { sessionFrom } from "../session";
 
 /**
@@ -22,6 +23,11 @@ export type TrpcContext = {
   sameSite: boolean;
   /** Each project's membership, read once per request however many procedures ask (keyed by slug). */
   memberships: Map<string, Promise<{ projectId: string; role: TeamRole } | null>>;
+  /**
+   * REST's answer for a body it couldn't read (not a JSON object), given once the caller may run the procedure: who
+   * may comes before what they sent, as REST has always answered.
+   */
+  unreadable?: OperationError;
 };
 
 /** The header the mobile app always sends and pages never do: only with it does a bearer session token count here. */
@@ -100,3 +106,13 @@ export function sessionContext(session: Awaited<ReturnType<typeof sessionFrom>>)
 
 /** The context for a project API key, checked already (api-auth.ts: authenticate), for REST and MCP. */
 export const keyContext = (key: ApiKey): TrpcContext => ({ who: { kind: "apiKey", key }, sameSite: true, memberships: new Map() });
+
+/**
+ * The context for the mobile app's teammate on REST (api-auth.ts: authenticateTeammate, until T11), in the project its
+ * request names: their membership there, as authenticateTeammate read it, is this request's.
+ */
+export const teammateContext = (teammate: Teammate, slug: string): TrpcContext => ({
+  who: { kind: "session", userId: teammate.userId, sessionId: teammate.sessionId, boundTo: "app", via: "token" },
+  sameSite: true,
+  memberships: new Map([[slug, Promise.resolve({ projectId: teammate.projectId, role: teammate.role })]]),
+});

@@ -4,7 +4,7 @@ import { SECURE_COOKIE_PREFIX, stripSecureCookiePrefix } from "better-auth/cooki
 import { API_RATE_LIMIT, hashApiKey } from "@/lib/api-keys";
 import { auth } from "@/server/auth/auth";
 
-import type { ApiKeyActor, Operation } from "./operations";
+import type { ApiKeyActor } from "./operations";
 import { sessionFrom } from "./session";
 
 /** A key's actor, with its creator's current role in the key's project: a key acts with their powers, only while they have them. */
@@ -133,24 +133,4 @@ export async function authenticateTeammate(request: Request): Promise<Teammate |
     return apiError(403, "forbidden", "You're not on the team of a project with that slug");
   }
   return { kind: "user", userId: session.userId, sessionId: session.sessionId, projectId: member.projectId, role: member.role };
-}
-
-/**
- * Why the caller may not run the operation, or null if they may. A key's scope decides reads and writes; its creator's
- * role decides admin and owner operations, as it would for them signed in. A teammate's session reads and writes with
- * their own role, as the web app's actions do (operations/run.ts: asTeam, asAdmin, asOwner).
- */
-export function refusal(caller: ApiKey | Teammate, operation: Pick<Operation, "scope" | "access">): string | null {
-  if (caller.kind === "apiKey" && operation.scope === "write" && caller.scope === "read") {
-    return "This key can only read. Create a read + write key to change things.";
-  }
-  if (operation.access === "admin" && caller.role !== "OWNER" && caller.role !== "ADMIN") {
-    return caller.kind === "apiKey"
-      ? "This key's creator is no longer a project owner or admin, so it can't use project settings"
-      : "Only project owners and admins can use project settings";
-  }
-  if (operation.access === "owner" && caller.role !== "OWNER") {
-    return "Only project owners can change this";
-  }
-  return null;
 }

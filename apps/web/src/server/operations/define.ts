@@ -213,18 +213,22 @@ export async function runOperation<I extends z.ZodType, O>(operation: Operation<
 }
 
 /**
- * What the tRPC router builds each operation's procedure from: the run behind the same check as runOperation. The
- * input arrives checked (the procedure's parser); `role` is the caller's, which the middleware read.
+ * What the tRPC router builds each operation's procedure from: the same check as runOperation, before the input is
+ * read (so a refused caller hears that, whatever they sent, as REST always answered), then the run with what it
+ * returned. `role` is the caller's, which the middleware read; the input arrives checked (the procedure's parser).
  */
 export function procedureFor<I extends z.ZodType, O>(operation: Operation<I, O>) {
   const run = runOf(operation);
-  return async (context: Context, input: z.infer<I>, role?: TeamRole | null): Promise<O> => run(await authorize(operation, context, role), input);
+  return async (context: Context, role?: TeamRole | null) => {
+    const allowed = await authorize(operation, context, role);
+    return (input: z.infer<I>): Promise<O> => run(allowed, input);
+  };
 }
 
 /**
- * The run with no access or scope check, for the two callers that check for themselves until they move onto the
- * router: the REST and MCP routes (until T2) and operations/run.ts's `call` (until T12, which deletes this). Only the
- * owner rule is applied here, as it used to be inside those runs. A test keeps it to those callers.
+ * The run with no access or scope check, for the one caller that checks for itself until it moves onto the router:
+ * operations/run.ts's `call` (until T12, which deletes this). Only the owner rule is applied here, as it used to be
+ * inside those runs. A test keeps it to that caller.
  */
 export async function legacyRun<I extends z.ZodType, O>(operation: Operation<I, O>, context: Context, input: z.infer<I>): Promise<O> {
   const owned = operation.access === "owner" ? await authorize({ scope: "read", access: "owner" }, context) : context;

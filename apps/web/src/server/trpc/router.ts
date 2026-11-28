@@ -20,26 +20,34 @@ type ProcedureOf<Op> = Op extends { method: "GET" }
 type Groups = Any["name"] extends infer N ? (N extends `${infer G}.${string}` ? G : never) : never;
 type Procedures = { [G in Groups]: { [Op in Any as Op["name"] extends `${G}.${infer P}` ? P : never]: ProcedureOf<Op> } };
 
-/** The input a procedure takes: its operation's, plus the project's slug, checked as every surface checks it. */
+/** The input a procedure takes: its operation's, without the project's slug (read before it, below). */
 function inputOf(operation: Operation) {
   return (raw: unknown) => {
-    const { project, ...rest } = (raw ?? {}) as { project?: unknown };
+    const rest: Record<string, unknown> = { ...(raw ?? {}) };
+    delete rest.project;
     const parsed = operation.input.safeParse(rest);
     if (!parsed.success) {
       throw new OperationError(400, "invalid_input", parsed.error.issues[0]?.message ?? "Invalid input");
     }
-    return { project: typeof project === "string" ? project : undefined, data: parsed.data as unknown };
+    return parsed.data as unknown;
   };
 }
 
 function procedure(operation: Operation) {
-  const run = procedureFor(operation);
-  const built = signedInProcedure.input(inputOf(operation)).use(async ({ ctx, input, next }) => {
-    // Before the operation's own check (authorize, through procedureFor), whether a typo or a refusal.
-    return next({ ctx: await projectOf(ctx, input.project, operation.access) });
-  });
-  const resolve = ({ ctx, input }: { ctx: Awaited<ReturnType<typeof projectOf>>; input: { data: unknown } }) =>
-    run({ actor: ctx.actor, projectId: ctx.projectId }, input.data, ctx.role);
+  const allowed = procedureFor(operation);
+  const built = signedInProcedure
+    .use(async ({ ctx, getRawInput, next }) => {
+      // Who may, before the input is checked (as REST always answered): a typo in the slug or a refusal, then the input.
+      const { project } = ((await getRawInput()) ?? {}) as { project?: unknown };
+      const { actor, projectId, role } = await projectOf(ctx, typeof project === "string" ? project : undefined, operation.access);
+      const run = await allowed({ actor, projectId }, role);
+      if (ctx.unreadable) {
+        throw ctx.unreadable;
+      }
+      return next({ ctx: { run } });
+    })
+    .input(inputOf(operation));
+  const resolve = ({ ctx, input }: { ctx: { run: (input: unknown) => Promise<unknown> }; input: unknown }) => ctx.run(input);
   return operation.method === "GET" ? built.query(resolve) : built.mutation(resolve);
 }
 
