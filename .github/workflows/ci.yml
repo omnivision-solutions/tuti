@@ -31,7 +31,9 @@ jobs:
   # (each app with its Dockerfile's build settings) doesn't prove for them: the Dockerfiles and
   # .dockerignore, turbo prune's and pnpm's inputs (package.json files, the lockfile, workspace,
   # .npmrc, patches, turbo.json), the Prisma schema and config, the worker's bundle config, the
-  # start scripts and this workflow.
+  # start scripts and this workflow. ponytail: code reaching outside its app's pruned workspace
+  # (a relative import from another app, a build reading docs/ or e2e/) shows up only on main;
+  # build each app from turbo prune's output on pull requests if that starts happening.
   changes:
     name: Changes
     runs-on: ubuntu-latest
