@@ -16,6 +16,7 @@ beforeEach(() => {
   vi.stubEnv("FEATUREBASE_API_URL", fake.env.FEATUREBASE_API_URL);
   fake.pageSize = 100;
   fake.requests.length = 0;
+  fake.forbidden.clear();
   waits.length = 0;
 });
 
@@ -95,7 +96,8 @@ test("with a deadline, nothing waits or starts past it: the last answer's error 
         vi.setSystemTime(Date.now() + ms);
       },
     });
-    fake.failNext(429, 5, { "retry-after": "30" });
+    // Every request it makes fails (a fifth would answer, and the error wouldn't come back).
+    fake.failNext(429, 4, { "retry-after": "30" });
     await expect(api.get("/admins")).rejects.toMatchObject({ status: 429 });
     // A fourth wait would end past the deadline.
     expect(waits).toEqual([30_000, 30_000, 30_000]);
@@ -116,7 +118,8 @@ test("a wait that runs late past the deadline starts no request: the last answer
         vi.setSystemTime(Date.now() + 120_000);
       },
     });
-    fake.failNext(429, 5, { "retry-after": "30" });
+    // Only the first request fails: a second would answer, and the error wouldn't come back.
+    fake.failNext(429, 1, { "retry-after": "30" });
     await expect(api.get("/admins")).rejects.toMatchObject({ status: 429 });
     expect(waits).toEqual([30_000]);
     expect(fake.requests.filter((request) => request.startsWith("GET /v2/admins"))).toHaveLength(1);

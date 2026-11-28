@@ -557,10 +557,11 @@ const FAILED = "couldntLoadConversations";
 function ListStatus({ text }: { text: string }) {
   const t = useTranslations("widget");
   const region = useRef<HTMLParagraphElement>(null);
+  // The words, not `t`: a re-render with a new `t` (the same words) isn't a new failure to say again.
+  const said = text ? t(text as typeof LOADING | typeof FAILED) : "";
   useEffect(() => {
     // Already saying it: the same loading (the page answered, then the list loads) isn't said again; a
     // repeated failure is emptied at once and said again (a retry that fails as fast as this).
-    const said = text ? t(text as typeof LOADING | typeof FAILED) : "";
     if (region.current!.textContent === said) {
       if (text === LOADING) {
         return;
@@ -571,7 +572,7 @@ function ListStatus({ text }: { text: string }) {
       region.current!.textContent = said;
     }, 100);
     return () => clearTimeout(timer);
-  }, [text, t]);
+  }, [text, said]);
   return <p ref={region} role="status" className="sr-only" />;
 }
 
