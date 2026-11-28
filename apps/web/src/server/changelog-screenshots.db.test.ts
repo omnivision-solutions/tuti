@@ -184,6 +184,9 @@ test("a placement that waited on the entry while the run went on reads its scree
   await untilWaitingOnLock(1);
   browserUse.release();
   await vi.waitFor(async () => expect((await prisma.screenshotRun.findUniqueOrThrow({ where: { id: runId } })).state).toBe("DONE"), { timeout: 30_000, interval: 100 });
+  // The job's own placement queued behind it before the entry is let go: one that reaches the row only after the hold
+  // ends can take it before the woken duplicate does (Postgres doesn't queue a newcomer behind a row's waiters).
+  await untilWaitingOnLock(2);
   release();
   await holding;
   // The duplicate claimed it, once it had ended, and placed both; the job's own placement found it claimed.
