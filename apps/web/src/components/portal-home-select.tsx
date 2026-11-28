@@ -1,13 +1,13 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { usePreview } from "@/components/customize-shell";
 import { SettingRow } from "@/components/settings-card";
+import { errorMessage, useTRPCClient } from "@/components/trpc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { PortalHomePage } from "@/server/operations/portal";
-import { setPortalHome } from "@/server/portal-settings";
 
 const HOMES: Record<PortalHomePage, string> = {
   feedback: "Feedback",
@@ -20,22 +20,27 @@ const HOMES: Record<PortalHomePage, string> = {
 export function PortalHomeSelect({ projectSlug, home }: { projectSlug: string; home: PortalHomePage }) {
   const [pending, startTransition] = useTransition();
   const preview = usePreview();
+  const trpc = useTRPCClient();
+  // What's saved, shown as soon as the save is through (the page's own value comes with its next refresh).
+  const [saved, setSaved] = useState(home);
   return (
     <SettingRow label={<span id="portal-home-label">Home page</span>} inline>
       <Select
         items={HOMES}
-        value={home}
+        value={saved}
         // Read-only while it saves, not disabled: the focus stays on it.
         readOnly={pending}
         onValueChange={(value) =>
           startTransition(async () => {
-            const result = await setPortalHome(projectSlug, String(value));
-            if (result.error) {
-              toast.error(result.error);
-            } else {
-              toast.success(`Your portal opens with ${HOMES[value as PortalHomePage].toLowerCase()} now`);
-              preview.reload();
+            try {
+              await trpc.portal.update.mutate({ project: projectSlug, home: value as PortalHomePage });
+            } catch (error) {
+              toast.error(errorMessage(error));
+              return;
             }
+            setSaved(value as PortalHomePage);
+            toast.success(`Your portal opens with ${HOMES[value as PortalHomePage].toLowerCase()} now`);
+            preview.reload();
           })
         }
       >
