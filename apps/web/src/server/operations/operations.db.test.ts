@@ -197,6 +197,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "duplicates.dismiss": (f) => ({ id: f.suggestionId }),
   "duplicates.list": () => ({}),
   "emailPreferences.update": () => ({ followedPosts: false, author: { id: "matrix-reader" } }),
+  // Internal (tRPC only): through the caller, below. Every filter set.
+  "feedback.list": () => ({ status: "OPEN", board: "feature-requests", group: "beta", q: "matrix", sort: "trending", page: 2 }),
   // Internal (tRPC only): through the caller, below.
   "feedback.menu": () => ({}),
   // Connecting GitHub (the /api/github routes): a state that isn't ours finishes nothing ("expired").

@@ -38,3 +38,11 @@ test("the Roadmap with a board in its address no board has (too long for any) sh
   const props = { params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({ board: "x".repeat(300) }) } as never;
   await expect(RoadmapPage(props)).resolves.toBeTruthy();
 });
+
+test("Feedback's list with an address past what it reads (a page past the last, a board and group too long for any) shows the list, not an error", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  actAs(owner);
+  const props = { params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({ page: "1001", board: "x".repeat(300), group: "y".repeat(300) }) } as never;
+  await expect(FeedbackPage(props)).resolves.toBeTruthy();
+});

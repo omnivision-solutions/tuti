@@ -3,7 +3,7 @@
 import type { PostStatus, PostVisibility } from "@tuti/db";
 import { ChevronDownIcon, ChevronUpIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { createContext, type ReactNode, use, useEffect, useRef, useState, useTransition } from "react";
+import { createContext, type ReactNode, type TransitionStartFunction, use, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { STICKY_PANE_HEADER } from "@/components/pane";
@@ -25,7 +25,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { eachPost } from "@/lib/each-post";
 import { cn } from "@/lib/utils";
 import { mergeExposure } from "@/lib/visibility-labels";
-import { changePostStatus, mergePost, movePost } from "@/server/manage-posts";
+import { errorMessage, useInOrder, useTRPCClient } from "@/components/trpc";
 
 /**
  * A post as the selection keeps it: enough to name it and pick which one stays in a merge (`sample`: sample content),
@@ -38,7 +38,7 @@ const Selection = createContext<{
   toggle: (post: Picked, on: boolean) => void;
   clear: () => void;
   pending: boolean;
-  startTransition: (run: () => Promise<void>) => void;
+  startTransition: TransitionStartFunction;
 } | null>(null);
 
 const useSelection = () => {
@@ -195,6 +195,15 @@ const STATUSES = Object.keys(STATUS_LABELS) as PostStatus[];
 export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: string; boards: { slug: string; name: string }[]; /** The list's pane header. */ children: ReactNode }) {
   const { picked, clear, pending, startTransition } = useSelection();
   const router = useRouter();
+  const client = useTRPCClient();
+  const inOrder = useInOrder();
+  // One post's save through the router, in the page's order (useInOrder, with a post's own menu): nothing, or what it
+  // was refused with, or that it couldn't be reached.
+  const saved = (call: () => Promise<unknown>) =>
+    inOrder(call).then(
+      () => ({}),
+      (error: unknown) => ({ error: errorMessage(error, "Couldn't reach Tuti. Try again.") }),
+    );
   // Set status asking first (it emails people), and about which status (kept while the question closes).
   const [askOpen, setAskOpen] = useState(false);
   const [asking, setAsking] = useState<PostStatus>("COMPLETED");
@@ -274,11 +283,17 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
         toast.error(`${posts.length - failed.length} of ${posts.length} done. ${failed.join(" ")}`);
       }
       clear();
-      router.refresh();
+      // In this action's transition (after an await, React's own updates aren't, unless started again): the bar stays
+      // busy till the list shows what was done.
+      startTransition(() => router.refresh());
     });
 
   const setStatus = (status: PostStatus) =>
-    each(picked, (post) => changePostStatus(projectSlug, post.id, status), `${count}: ${STATUS_LABELS[status]}`);
+    each(
+      picked,
+      (post) => saved(() => client.posts.update.mutate({ project: projectSlug, number: post.number, status: status.toLowerCase() as Lowercase<PostStatus> })),
+      `${count}: ${STATUS_LABELS[status]}`,
+    );
   const kept = picked.find((p) => p.id === keep) ?? [...picked].sort((a, b) => b.voteCount - a.voteCount)[0]!;
 
   // In a narrow list column (a phone, a post open beside it), shorter words (the same names for screen readers): the
@@ -321,7 +336,7 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-auto min-w-40">
             {boards.map((board) => (
-              <DropdownMenuItem key={board.slug} onClick={() => each(picked, (post) => movePost(projectSlug, post.id, board.slug), `${count} moved to ${board.name}`)}>
+              <DropdownMenuItem key={board.slug} onClick={() => each(picked, (post) => saved(() => client.posts.update.mutate({ project: projectSlug, number: post.number, board: board.slug })), `${count} moved to ${board.name}`)}>
                 {board.name}
               </DropdownMenuItem>
             ))}
@@ -411,7 +426,7 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
                 setMerging(false);
                 each(
                   picked.filter((post) => post.id !== kept.id),
-                  (post) => mergePost(projectSlug, post.id, kept.id),
+                  (post) => saved(() => client.posts.merge.mutate({ project: projectSlug, number: post.number, into: kept.number })),
                   `Merged into #${kept.number}`,
                 );
               }}

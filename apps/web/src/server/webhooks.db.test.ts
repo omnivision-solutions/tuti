@@ -6,9 +6,8 @@ import { handlers } from "@tuti/jobs";
 import { startWebhookReceiver, type WebhookReceiver } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { actAs, addComment, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addComment, callerNow, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { changePostStatus } from "./manage-posts";
 import { createPost } from "./posts";
 import { createWebhook, deleteWebhook, sendTestWebhook } from "./webhooks";
 
@@ -77,8 +76,10 @@ describe("deliveries", () => {
     const dark = await post();
     expect(received).toEqual([]); // nobody wants post.created
 
-    await changePostStatus(project.slug, dark.id, "PLANNED");
-    await changePostStatus(project.slug, dark.id, "PLANNED"); // no change, no event
+    // As a status menu sends it (posts.update through the router).
+    const plan = async () => (await callerNow()).posts.update({ project: project.slug, number: dark.number, status: "planned" });
+    await plan();
+    await plan(); // no change, no event
     const form = new FormData();
     form.set("postId", dark.id);
     form.set("body", "On it");

@@ -2334,7 +2334,9 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await team.setViewportSize({ width: 1280, height: 720 });
   await expect.poll(fill).toBe(primary);
   await bar.getByRole("button", { name: "Set status" }).click();
+  const planned = trpcRequest(team, "posts.update");
   await team.getByRole("menuitem", { name: "Planned" }).click();
+  await planned;
   await expect(team.getByText("2 posts: Planned")).toBeVisible();
   await expect(bar).toHaveCount(0);
   for (const title of ["Calendar sync", "Export to PDF"]) {
@@ -2362,7 +2364,9 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
 
   // Moved to another board.
   await bar.getByRole("button", { name: "Move to board" }).click();
+  const moved = trpcRequest(team, "posts.update");
   await team.getByRole("menuitem", { name: "Bug reports" }).click();
+  await moved;
   await expect(team.getByText("1 post moved to Bug reports")).toBeVisible();
   await expect(row("Calendar sync")).toContainText("Bug reports");
 
@@ -2372,7 +2376,9 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await bar.getByRole("button", { name: "Merge…" }).click();
   const merge = team.getByRole("alertdialog", { name: "Merge 2 posts into one?" });
   await expect(merge.getByRole("radio", { name: /Night theme/ })).toBeChecked();
+  const merged = trpcRequest(team, "posts.merge");
   await merge.getByRole("button", { name: "Merge into #2" }).click();
+  await merged;
   await expect(team.getByText("Merged into #2")).toBeVisible();
   await expect(team.getByRole("link", { name: "Dark mode", exact: true })).toHaveCount(0);
   await expect(team.getByRole("link", { name: "Night theme", exact: true })).toBeVisible();
@@ -2528,8 +2534,8 @@ test("Feedback's row boxes are off while a picked rows' action runs, and back on
   // The action's requests held until the boxes are checked.
   let release!: () => void;
   let held = new Promise<void>((resolve) => (release = resolve));
-  await team.route(`**/app/${slug}/feedback**`, async (route) => {
-    if (route.request().method() === "POST") {
+  await team.route("**/*", async (route) => {
+    if (isSave(route.request())) {
       await held;
     }
     await route.continue();
@@ -2565,7 +2571,7 @@ test("Feedback's row boxes are off while a picked rows' action runs, and back on
   await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Clear" }).click();
   await expect(team.getByRole("toolbar", { name: "Selected posts" })).toHaveCount(0);
   await expect(board).toBeFocused();
-  await team.unroute(`**/app/${slug}/feedback**`);
+  await team.unroute("**/*");
   // Focus never in the bar (Safari doesn't focus a clicked box): unticking the last one leaves the focus, and the
   // page scrolled down the list, where they were.
   await team.setViewportSize({ width: 390, height: 500 });
