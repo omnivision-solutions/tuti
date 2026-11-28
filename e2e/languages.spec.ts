@@ -1328,7 +1328,7 @@ test("the widget's panel in German framed by a page: a portal reader's named gre
   // A reader signed in on the portal votes, and the team plans the idea.
   const reader = await signUp(browser, portalUrl(slug), "Rita Reader");
   await reader.goto(`/feedback/feature-requests/dark-mode-${post.number}`);
-  const voted = reader.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
+  const voted = reader.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/trpc/votes.set");
   await reader.getByRole("button", { name: /^Upvote/ }).click();
   expect((await voted).ok()).toBe(true);
   await api(`/posts/${post.number}`, { status: "planned" }, "PATCH");

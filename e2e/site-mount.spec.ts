@@ -414,7 +414,8 @@ test("the widget's panel under a path of the team's site keeps the path in its t
   // Their idea's news on Home opens it on the portal there. Home shows the portal's reader once the page around the
   // panel says it signs nobody in, as the portal's own launcher does: here, a page of the site framing the panel.
   await visitor.goto("/help/feedback/feature-requests/dark-mode-1");
-  const voted = visitor.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
+  // Saved through the site's own path: <base>/api/trpc, which the site forwards with the rest.
+  const voted = visitor.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/help/api/trpc/votes.set");
   await visitor.getByRole("button", { name: /^Upvote/ }).click();
   expect((await voted).ok()).toBe(true);
   await api("/posts/1", { status: "planned" }, "PATCH");
