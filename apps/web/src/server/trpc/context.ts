@@ -181,5 +181,5 @@ export async function stillContext(who: Extract<Who, { kind: "session" }>, proje
   const membership = prisma.teamMember
     .findUnique({ where: { projectId_userId: { projectId: project.id, userId: who.userId } }, select: { role: true } })
     .then((member) => member && { projectId: project.id, role: member.role });
-  return { who, sameSite: true, memberships: new Map([[project.slug, membership]]) };
+  return { who, reader: {}, sameSite: true, memberships: new Map([[project.slug, membership]]) };
 }

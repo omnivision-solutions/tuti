@@ -134,6 +134,22 @@ test("the widget's person acts as themselves, never as the team: a teammate by t
   expect((await trpc("portal.access", {}, teammate)).status).toBe(200);
 });
 
+test("who's calling when a request says more than one: the widget's token, then the cookie session, then the visitor token", async () => {
+  const number = await post();
+  const reader = await signUp("Rae Reader");
+  await onPortal(reader, project);
+  const person = await signUp("Wes Widget");
+  const fromPortal = { cookie: reader.cookie, "sec-fetch-site": "same-origin" };
+  const votersNow = async () => (await prisma.vote.findMany({ where: { post: { projectId: project.id, number } }, select: { userId: true } })).map((vote) => vote.userId).sort();
+
+  // The portal's session and the widget's token: the widget's person votes, not the portal's.
+  expect((await trpc("votes.set", { number, voted: true }, { ...fromPortal, authorization: `Widget ${widgetToken(project.id, person.id)}` }, true)).status).toBe(200);
+  expect(await votersNow()).toEqual([owner.id, person.id].sort());
+  // The portal's session and a visitor's token: the portal's signed-in person votes (a visitor couldn't).
+  expect((await trpc("votes.set", { number, voted: true }, { ...fromPortal, authorization: `Visitor ${newVisitor(project.id).token}` }, true)).status).toBe(200);
+  expect(await votersNow()).toEqual([owner.id, person.id, reader.id].sort());
+});
+
 test("a proxy's Authorization on the portal's requests is never the widget's person: the cookie session still is", async () => {
   const number = await post();
   const reader = await signUp("Rae Reader");
