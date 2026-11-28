@@ -4,7 +4,7 @@ import type { PostStatus } from "@tuti/db";
 import { cn } from "cn";
 import { ChevronDownIcon, EllipsisIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { type TransitionStartFunction, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { PostStatusBadge, STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
@@ -31,17 +31,19 @@ export type Completing = { title: string; emails: Partial<Record<PostStatus, num
 
 /**
  * Saves a post's status: posts.update, the one operation the roadmap, Feedback's list and a post's page change it with,
- * in the page's order (useInOrder: tRPC calls don't wait for each other, as server actions did), then the page again.
+ * in the page's order (useInOrder: tRPC calls don't wait for each other, as server actions did), then the page again
+ * (in `startTransition`, the caller's, when it has one).
  * Nothing, or what it was refused with.
  */
-export function useSavePostStatus(projectSlug: string) {
+export function useSavePostStatus(projectSlug: string, startTransition: TransitionStartFunction = (refresh) => refresh()) {
   const client = useTRPCClient();
   const inOrder = useInOrder();
   const router = useRouter();
   return (number: number, status: PostStatus): Promise<{ error?: string }> =>
     inOrder(() => client.posts.update.mutate({ project: projectSlug, number, status: status.toLowerCase() as Lowercase<PostStatus> })).then(
       () => {
-        router.refresh();
+        // In the caller's transition: its control stays pending till the page shows the new status, as with the action.
+        startTransition(() => router.refresh());
         return {};
       },
       (error: unknown) => ({ error: errorMessage(error) }),
@@ -55,7 +57,7 @@ export function useSavePostStatus(projectSlug: string) {
 function useStatusChange(projectSlug: string, number: number, status: PostStatus, completing?: Completing, onChanged?: (status: PostStatus) => void) {
   const [pending, startTransition] = useTransition();
   const [asking, setAsking] = useState<{ status: PostStatus; prompt: string } | null>(null);
-  const save = useSavePostStatus(projectSlug);
+  const save = useSavePostStatus(projectSlug, startTransition);
   const change = (value: PostStatus) =>
     startTransition(async () => {
       const result = await save(number, value);

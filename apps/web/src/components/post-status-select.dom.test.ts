@@ -61,3 +61,26 @@ test("a refused or failed change answers its error for the toast, and leaves the
   expect(refresh).not.toHaveBeenCalled();
   await act(async () => root.unmount());
 });
+
+test("saved, the page's refresh runs in the caller's transition, so its control stays pending till the new status shows", async () => {
+  const transition = vi.fn((refresh: () => void) => refresh());
+  let save!: ReturnType<typeof useSavePostStatus>;
+  function Menu() {
+    const saving = useSavePostStatus("acme", transition);
+    useEffect(() => {
+      save = saving;
+    });
+    return null;
+  }
+  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  await act(async () => root.render(h(Menu)));
+  let saved!: Promise<unknown>;
+  await act(async () => {
+    saved = save(3, "PLANNED");
+  });
+  await act(async () => answers.shift()!());
+  expect(await saved).toEqual({});
+  expect(transition).toHaveBeenCalledTimes(1);
+  expect(refresh).toHaveBeenCalledTimes(1);
+  await act(async () => root.unmount());
+});

@@ -76,8 +76,8 @@ const COLUMN_NOTES: Partial<Record<PostStatus, string>> = {
  */
 export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectSlug: string; columns: { status: PostStatus; posts: Card[] }[]; completedDays: number }) {
   const router = useRouter();
-  const save = useSavePostStatus(projectSlug);
   const [pending, startTransition] = useTransition();
+  const save = useSavePostStatus(projectSlug, startTransition);
   const [dragging, setDragging] = useState<Card | null>(null);
   const [over, setOver] = useState<PostStatus | null>(null);
   // The move asked about.
