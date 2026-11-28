@@ -14,7 +14,7 @@ import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { errorMessage, useTRPCClient } from "@/components/trpc";
+import { errorMessage, useInOrder, useTRPCClient } from "@/components/trpc";
 import { keepingFields } from "@/lib/forms";
 import { parseFrom } from "@/lib/email-from";
 import {
@@ -35,16 +35,20 @@ import type { FormState } from "@/server/form-state";
 import type { InputOf } from "@/server/operations/define";
 import type { SpamRuleRow, SpamSettings as Settings, updateSpamSettings } from "@/server/operations/spam";
 
+/** The screen's saves, one queue for all of them (useInOrder). */
+type InOrder = ReturnType<typeof useInOrder>;
+
 /**
  * Saves a change to the spam filter (spam.update) and refreshes the page, whose rules and list are what's saved; a
- * refusal as `{ error }`, the server's words.
+ * refusal as `{ error }`, the server's words. In the screen's one queue: some changes undo others (taking an address
+ * off the allowed list removes a rule blocking it), so they land in the order made.
  */
-function useSpamUpdate(projectSlug: string) {
+function useSpamUpdate(projectSlug: string, inOrder: InOrder) {
   const trpc = useTRPCClient();
   const router = useRouter();
   return async (input: Omit<InputOf<typeof updateSpamSettings>, "project">): Promise<FormState> => {
     try {
-      await trpc.spam.update.mutate({ project: projectSlug, ...input });
+      await inOrder(() => trpc.spam.update.mutate({ project: projectSlug, ...input }));
     } catch (error) {
       return { error: errorMessage(error) };
     }
@@ -93,10 +97,11 @@ export function SpamSettings({
 }) {
   // Decided once per visit: removing the last entry leaves the card, with its empty line and the keyboard's focus in it.
   const [showAllowed] = useState(settings.allowed.length > 0);
-  const update = useSpamUpdate(projectSlug);
+  const inOrder = useInOrder();
+  const update = useSpamUpdate(projectSlug, inOrder);
   return (
     <>
-      <BlockRules projectSlug={projectSlug} rules={settings.rules} maxValue={maxValue} />
+      <BlockRules projectSlug={projectSlug} rules={settings.rules} maxValue={maxValue} inOrder={inOrder} />
       {/* Not offered for new entries; any already there stay listed, as they still let senders through, so they can be removed. */}
       {showAllowed && (
         <EntryList
@@ -114,19 +119,19 @@ export function SpamSettings({
         />
       )}
       {/* Only where the server has a model for the filter (spamSettings): elsewhere nothing would read it. */}
-      {settings.guidance !== undefined && <Guidance projectSlug={projectSlug} guidance={settings.guidance} max={maxGuidance} />}
+      {settings.guidance !== undefined && <Guidance projectSlug={projectSlug} guidance={settings.guidance} max={maxGuidance} inOrder={inOrder} />}
       <TryMessage projectSlug={projectSlug} supportAddress={supportAddress} />
     </>
   );
 }
 
 /** The block rules: a field, a matcher and a value with Add (Sender domain and "is" to start), then each rule with Remove. */
-function BlockRules({ projectSlug, rules, maxValue }: { projectSlug: string; rules: SpamRuleRow[]; maxValue: number }) {
+function BlockRules({ projectSlug, rules, maxValue, inOrder }: { projectSlug: string; rules: SpamRuleRow[]; maxValue: number; inOrder: InOrder }) {
   const form = useRef<HTMLFormElement>(null);
   const [field, setField] = useState<SpamRuleField>("sender_domain");
   const [matcher, setMatcher] = useState<SpamRuleMatcher>("is");
   const [appliesTo, setAppliesTo] = useState<SpamRuleAudience>("everyone");
-  const update = useSpamUpdate(projectSlug);
+  const update = useSpamUpdate(projectSlug, inOrder);
   const [state, action, pending] = useActionState<FormState, FormData>(async (_prev, formData) => {
     const rule = { field, matcher, appliesTo, value: spamRuleValue(field, String(formData.get("value") ?? "")) };
     // Said here: the server takes one that's there already as done, and "Added" would be wrong.
@@ -375,8 +380,8 @@ function Entry({ entry, shown, removed, remove }: { entry: string; shown: ReactN
  * The AI spam check (checks 6 and 7): the team's guidance in its own words, saved with the page's "Save changes". Off
  * while it's empty: then the AI isn't asked.
  */
-function Guidance({ projectSlug, guidance, max }: { projectSlug: string; guidance: string; max: number }) {
-  const update = useSpamUpdate(projectSlug);
+function Guidance({ projectSlug, guidance, max, inOrder }: { projectSlug: string; guidance: string; max: number; inOrder: InOrder }) {
+  const update = useSpamUpdate(projectSlug, inOrder);
   const { state, pending, form } = useCustomizeForm({
     save: async (_prev, formData) => {
       const result = await update({ guidance: String(formData.get("guidance") ?? "") });
