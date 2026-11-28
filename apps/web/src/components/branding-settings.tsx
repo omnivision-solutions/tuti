@@ -21,6 +21,7 @@ import { linksFrom } from "@/lib/forms";
 import { LICENSE_UNREACHABLE, licenseCheckOutcome } from "@/lib/license-check";
 import { isPortalFont, PORTAL_FONTS, type PortalFont } from "@/lib/portal-fonts";
 import { COLOR_SCHEMES, type ColorScheme, LOGO_TEXT_MAX } from "@/lib/portal-look";
+import { useTRPCClient } from "@/components/trpc";
 import { uploadImage } from "@/lib/upload-image";
 import { cn } from "@/lib/utils";
 import { checkBrandingLicense, saveBranding } from "@/server/branding";
@@ -428,6 +429,7 @@ export function useImageUpload({
   onBusy: (delta: number) => void;
 }) {
   const [image, setImage] = useState(initial);
+  const trpc = useTRPCClient();
   const [status, setStatus] = useState<{ uploading: true } | { error: string } | null>(null);
   const field = useRef<HTMLInputElement>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -444,7 +446,7 @@ export function useImageUpload({
     setStatus({ uploading: true });
     onBusy(1);
     // A server action that fails (the network drops, a deploy lands) rejects: the upload still ends, with an error.
-    const result = await uploadImage(projectSlug, file)
+    const result = await uploadImage(trpc, projectSlug, file)
       .catch(() => ({ error: "The upload failed. Try again." }))
       .finally(() => onBusy(-1));
     if ("error" in result) {

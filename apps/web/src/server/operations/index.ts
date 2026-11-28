@@ -99,6 +99,7 @@ import { getBoardTranslations, getCollectionTranslations, getTabTranslations, up
 import { getChangelogTranslation, saveChangelogTranslation } from "./changelog-translations";
 import { getTranslation, keepTranslationUpToDate, publishTranslation, saveTranslation, updateTranslationSections } from "./translations";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
+import { createUpload, finishUpload, getUploadStatus } from "./uploads";
 import { getUsage } from "./usage";
 import { getAiModels, updateAiModels } from "./ai-models";
 import { getCodeChangesTuning, updateCodeChangesTuning } from "./code-changes-tuning";
@@ -330,6 +331,9 @@ export const all = [
   getScreenshots,
   takeChangelogScreenshots,
   takeArticleScreenshots,
+  createUpload,
+  finishUpload,
+  getUploadStatus,
 ] as const;
 
 /** Every operation, each a tRPC procedure (server/trpc/router.ts). */

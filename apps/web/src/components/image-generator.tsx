@@ -23,9 +23,9 @@ import { FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { MAX_IMAGE_PROMPT, MAX_IMAGE_REFERENCES, MIN_GENERATED_SIDE } from "@/lib/image-limits";
+import { useTRPCClient } from "@/components/trpc";
 import { uploadImage } from "@/lib/upload-image";
 import { generateImage } from "@/server/images";
-import { uploadStatus } from "@/server/media";
 
 
 /** A finished upload: its id and a link to show it. */
@@ -125,6 +125,7 @@ export function ImageGenerator({
   kept?: KeptTries;
   finalFocus?: Parameters<typeof DialogContent>[0]["finalFocus"];
 }) {
+  const trpc = useTRPCClient();
   const id = useId();
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -195,7 +196,7 @@ export function ImageGenerator({
     }
     setUploading(true);
     setUploadError(null);
-    const result = await uploadImage(projectSlug, file).catch(() => ({ error: "The upload failed. Try again." }));
+    const result = await uploadImage(trpc, projectSlug, file).catch(() => ({ error: "The upload failed. Try again." }));
     setUploading(false);
     if ("error" in result) {
       setUploadError(result.error);
@@ -235,11 +236,11 @@ export function ImageGenerator({
   const fresh = (image: Try, then: (status: { src: string; urls: MediaUrls; download: string }) => void) =>
     startUsing(async () => {
       setUseError(null);
-      const status = await uploadStatus(image.id).catch(() => null);
+      const status = await trpc.uploads.status.query({ project: projectSlug, mediaId: image.id }).catch(() => null);
       if (!openRef.current) {
         return;
       }
-      if (status && "src" in status) {
+      if (status?.status === "READY") {
         then(status);
       } else {
         setUseError("Couldn't reach Tuti. Try again.");

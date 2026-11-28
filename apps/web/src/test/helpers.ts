@@ -79,6 +79,35 @@ export function actAs(user: TestUser | null) {
 }
 
 /**
+ * The uploads.* procedures (server/operations/uploads.ts) as the request's own session calls them (actAs, onPortal), with
+ * a refusal as `{ error }`, its message: what the app shows. finish and status name `slug`'s project, as the app does.
+ */
+export async function uploadsAs(slug: () => string) {
+  const [{ createCaller }, { sessionContext }, { getSession }, { TRPCError }] = await Promise.all([
+    import("@/server/trpc/server"),
+    import("@/server/trpc/context"),
+    import("@/server/session"),
+    import("@trpc/server"),
+  ]);
+  const caller = async () => createCaller(sessionContext(await getSession()));
+  const said = async <T,>(call: () => Promise<T>): Promise<T | { error: string }> => {
+    try {
+      return await call();
+    } catch (error) {
+      if (error instanceof TRPCError) {
+        return { error: error.message };
+      }
+      throw error;
+    }
+  };
+  return {
+    createUpload: (project: string, file: { type: string; size: number; name?: string }) => said(async () => (await caller()).uploads.create({ project, ...file })),
+    finishUpload: (mediaId: string) => said(async () => (await caller()).uploads.finish({ project: slug(), mediaId })),
+    uploadStatus: (mediaId: string) => said(async () => (await caller()).uploads.status({ project: slug(), mediaId })),
+  };
+}
+
+/**
  * A tRPC caller (server/trpc), in process as pages, REST and MCP call the router: as a user by their cookie (on the app,
  * or the portal's host onPortal set), as nobody (null), or as a project API key by its id (with its creator's current
  * role). Each call names its project, as the app's do: `caller.aiFirst.get({ project: slug })`.

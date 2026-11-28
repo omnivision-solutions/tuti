@@ -969,7 +969,7 @@ test("the next release waits to be written; its entry gets a featured image read
   expect(band.y + band.height).toBeLessThanOrEqual((await team.getByRole("textbox", { name: "What changed" }).boundingBox())!.y);
   await checkpoint(team, "team-changelog-featured-empty");
   // An upload whose server calls fail (the network drops) ends with an error, and Save still works.
-  await team.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await team.route("**/*", (route) => (route.request().headers()["next-action"] || route.request().url().includes("/api/trpc/uploads.") ? route.abort() : route.fallback()));
   await file.setInputFiles({ name: "cover.png", mimeType: "image/png", buffer: first });
   await expect(featured.getByText("The upload failed. Try again.")).toBeVisible();
   await team.unroute("**/*");
@@ -1001,7 +1001,9 @@ test("the next release waits to be written; its entry gets a featured image read
   const uploadHeld = new Promise<void>((resolve) => (releaseUpload = resolve));
   const actions: string[] = [];
   await team.route("**/*", async (route) => {
-    const action = route.request().headers()["next-action"];
+    // A server action, or an upload's call through tRPC (uploads.create first).
+    const url = new URL(route.request().url());
+    const action = route.request().headers()["next-action"] ?? (url.pathname.includes("/api/trpc/uploads.") ? url.pathname : undefined);
     if (!action) {
       return route.fallback();
     }
@@ -1033,7 +1035,7 @@ test("the next release waits to be written; its entry gets a featured image read
   await expect(replaceButton).toBeEnabled();
   await expect(replaceButton).toBeFocused();
   await team.unroute("**/*");
-  // One upload: its first call (createUpload) made once.
+  // One upload: its first call (uploads.create) made once.
   expect(actions.filter((action) => action === actions[0])).toHaveLength(1);
   await team.getByLabel("Title").fill("Dark mode is here");
   const completes = team.getByRole("region", { name: "Posts" });
@@ -1638,7 +1640,7 @@ test("an entry with no cover gets one composed: picked from its designs as it's 
   await expect(featured.getByRole("button", { name: "Replace featured image" })).toBeVisible();
   const mine = await featured.getByRole("img").getAttribute("src");
   // Tuti not reached: it says so, the dialog stays to try again, and the form keeps its own image.
-  await team.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await team.route("**/*", (route) => (route.request().headers()["next-action"] || route.request().url().includes("/api/trpc/uploads.") ? route.abort() : route.fallback()));
   await featured.getByRole("button", { name: "Make a cover" }).click();
   await making.getByRole("button", { name: "Use this cover" }).click();
   await expect(team.getByText("Couldn't reach Tuti. Try again.")).toBeVisible();

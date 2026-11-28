@@ -6,10 +6,10 @@ import { configFile, type S3Fake, startS3Fake } from "@tuti/testkit";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, uploadsAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
-import { createUpload, finishUpload, setAvatar, uploadStatus } from "./media";
+import { setAvatar } from "./media";
 import { postVoters } from "./post-lists";
 import { createPost } from "./posts";
 
@@ -17,6 +17,7 @@ let s3: S3Fake;
 let owner: TestUser;
 let ada: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
+const { createUpload, finishUpload, uploadStatus } = await uploadsAs(() => project.slug);
 
 beforeAll(async () => {
   s3 = await startS3Fake();
@@ -192,7 +193,7 @@ describe("limits", () => {
     const other = await createProject(owner);
     await prisma.session.updateMany({ where: { userId: ada.id }, data: { boundTo: other.id } });
     request.host = `${other.slug}.localhost:3100`;
-    expect(await createUpload(project.slug, { type: "image/png", size: 1000 })).toEqual({ error: "Project not found" });
+    expect(await createUpload(project.slug, { type: "image/png", size: 1000 })).toEqual({ error: "No such project, or it isn't yours" });
     expect(await createUpload(other.slug, { type: "image/png", size: 1000 })).toMatchObject({ mediaId: expect.any(String) });
     request.host = "";
   });
@@ -229,6 +230,18 @@ describe("finishing", () => {
     actAs(ada);
     expect(await finishUpload(created.mediaId)).toEqual({});
     expect(await finishUpload(created.mediaId)).toEqual({ error: "Upload not found" }); // only once
+  });
+
+  test("an upload is finished, and its status read, only in the project it was made in", async () => {
+    const file = await photo(100, 100);
+    const created = (await createUpload(project.slug, { type: "image/jpeg", size: file.length })) as { mediaId: string; uploadUrl: string };
+    await fetch(created.uploadUrl, { method: "PUT", body: new Uint8Array(file) });
+    // Another project ada may act in, named with the upload's id.
+    const other = await createProject(owner);
+    const elsewhere = await uploadsAs(() => other.slug);
+    expect(await elsewhere.finishUpload(created.mediaId)).toEqual({ error: "Upload not found" });
+    expect(await elsewhere.uploadStatus(created.mediaId)).toEqual({ error: "Upload not found" });
+    expect(await finishUpload(created.mediaId)).toEqual({});
   });
 });
 

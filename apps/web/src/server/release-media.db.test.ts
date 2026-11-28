@@ -4,7 +4,6 @@ import { configFile, type S3Fake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { attachMedia } from "@/server/content";
-import { createUpload } from "@/server/media";
 import { createChangelogEntry, publishChangelogEntry, updateChangelogEntry, updateChangelogStyle } from "@/server/operations/changelog";
 import { createChangelogComment } from "@/server/operations/changelog-comments";
 import { createComment, createPost } from "@/server/operations/create";
@@ -12,13 +11,14 @@ import { getChangelogTranslation, saveChangelogTranslation } from "@/server/oper
 import { createArticle, deleteArticle, updateArticle } from "@/server/operations/docs";
 import { updateLanguages } from "@/server/operations/languages";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, uploadsAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 /** The `release-media` job: uploads no content uses any more are released, then deleted by `cleanup-media`. */
 
 let s3: S3Fake;
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
+const { createUpload } = await uploadsAs(() => project.slug);
 
 beforeAll(async () => {
   s3 = await startS3Fake();

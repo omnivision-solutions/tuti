@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { originalKey } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { billingFile, type BrowserUseFake, configFile, type DnsFake, startBrowserUseFake, type GithubFake, type ModelFake, type S3Fake, type SiteFake, startDnsFake, startGithubFake, startModelFake, startS3Fake, startSiteFake, startStripeFake, type StripeFake } from "@tuti/testkit";
 import { type ApiDoc, readSpec, settle } from "@tuti/shared/api-reference";
@@ -34,6 +35,9 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "project.get": () => ({}),
   "project.update": () => ({ name: "Renamed by the matrix" }),
   "settings.access": () => ({}),
+  "uploads.create": () => ({ type: "image/png", size: 1000 }),
+  "uploads.finish": (f) => ({ mediaId: f.uploadId }),
+  "uploads.status": (f) => ({ mediaId: f.uploadId }),
   "propertyFormats.update": () => ({ formats: { mrr: { label: "MRR", format: "money" } } }),
   "team.list": () => ({}),
   "votes.set": () => ({ number: 1, voted: true }),
@@ -558,6 +562,9 @@ async function createFixture(own: "domain" | "site" = "domain") {
     create: { projectId: project.id, appUrl: "https://app.example.com" },
     update: { appUrl: "https://app.example.com", signIn: "NONE", username: "", password: null, window: "DESKTOP" },
   });
+  // The owner's upload, waiting to be finished (uploads.finish, uploads.status).
+  const upload = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 4 } });
+  s3.objects.set(originalKey(upload.id), { body: Buffer.from("fake"), contentType: "image/png" });
   const screenshotRun = await prisma.screenshotRun.create({
     data: { projectId: project.id, startedById: owner.id, state: "DONE", screenshots: { create: { projectId: project.id, position: 0, show: marker, failed: "Not reached" } } },
   });
@@ -568,6 +575,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     changelogVersion: contentHash(JSON.stringify([null, translationSource({ title: "Matrix entry", body: "", content: null }).hash])),
     translationVersion: contentHash(JSON.stringify([translation.title, translation.content, translation.draft, translationSource(matrixArticle).hash])),
     screenshotRunId: screenshotRun.id,
+    uploadId: upload.id,
     linkId: link.id,
     commentId: comment.id,
     entryCommentId: entryComment.id,
@@ -707,6 +715,10 @@ test("every operation is in this matrix", () => {
  */
 test.each(allOperations.filter((operation) => operation.internal).map((operation) => ({ name: operation.name, operation })))("$name (internal)", async ({ operation }) => {
   const fixture = await createFixture("domain");
+  // Uploads, for the uploads.* procedures.
+  for (const [key, value] of Object.entries(s3.env)) {
+    vi.stubEnv(key, operation.name.startsWith("uploads.") ? value : "");
+  }
   const [group, name] = operation.name.split(".") as [string, string];
   const caller = (await callerAs(owner)) as unknown as Record<string, Record<string, (input: unknown) => Promise<unknown>>>;
   const untouched = operation.method === "GET" ? await everyTable() : null;
