@@ -264,6 +264,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "redirects.list": () => ({}),
   "reports.get": () => ({}),
   "roadmap.get": () => ({}),
+  // Internal (tRPC only): through the caller, below.
+  "roadmap.team": () => ({ board: "feature-requests" }),
   // Like the rest of Settings: admins only in the app. The agent is Browser Use's fake; the secret never comes back.
   "screenshotSettings.get": () => ({}),
   "screenshotSettings.scan": () => ({}),

@@ -10,6 +10,7 @@ import { CopyButton } from "@/components/copy-button";
 import { EmptyState } from "@/components/empty-state";
 import { FeedbackKeys, ListScrollReset } from "@/components/feedback-keys";
 import { FeedbackPane } from "@/components/feedback-pane";
+import { InOrderProvider } from "@/components/trpc";
 import { PaneSearch } from "@/components/pane-search";
 import { FeedbackBulk, FeedbackSelection, FiltersFold, PickedRow, SelectPost, VoteBox } from "@/components/feedback-selection";
 import { ListFilters } from "@/components/list-filters";
@@ -155,6 +156,8 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
   const title = (board && project.boards.find((b) => b.slug === board)?.name) ?? (tab === "all" ? "All posts" : tabs.find((t) => t.key === tab)!.title);
 
   return (
+    // One queue for the page's status changes (useInOrder): a post's row menu and the pane's Status land in the order made.
+    <InOrderProvider>
     <PaneLayout>
       {menu}
       <FeedbackKeys order={listed.map((post) => post.number)} open={open} base={withPost(null)} />
@@ -340,7 +343,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                           status={
                             <PostStatusMenu
                               projectSlug={slug}
-                              postId={post.id}
+                              number={post.number}
                               status={post.status}
                               completing={{ title: post.title, emails: emailing(post) }}
                               badge={mixedUngrouped}
@@ -384,5 +387,6 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
         </Pane>
       )}
     </PaneLayout>
+    </InOrderProvider>
   );
 }

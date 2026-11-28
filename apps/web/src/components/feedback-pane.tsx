@@ -101,7 +101,7 @@ export async function FeedbackPane({
             <Property label="Status">
               <PostStatusSelect
                 projectSlug={projectSlug}
-                postId={post.id}
+                number={post.number}
                 status={post.status}
                 completing={{ title: post.title, emails: emails.get(post.id) ?? {} }}
                 className="w-full"

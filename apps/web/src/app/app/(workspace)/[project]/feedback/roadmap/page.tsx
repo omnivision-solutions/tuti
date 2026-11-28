@@ -1,49 +1,29 @@
 import type { Metadata } from "next";
-import { prisma } from "@tuti/db";
-import { seenAs } from "@tuti/jobs";
-import { notFound } from "next/navigation";
 
 import { ListFilters } from "@/components/list-filters";
 import { feedbackMenu } from "@/components/feedback-menu";
 import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { RoadmapBoard } from "@/components/roadmap-board";
-import { asking } from "@/lib/format";
-import { storedPropertyFormats } from "@/lib/property-formats";
-import { getMembership } from "@/server/membership";
-import { emailedOnMove } from "@/server/operations/code-changes";
-import { ROADMAP, roadmapColumns } from "@/server/operations/read";
-import { TEAM_VIEWER } from "@/server/post-visibility";
-import { voterTotals } from "@/server/post-lists";
+import { InOrderProvider } from "@/components/trpc";
+import { serverCaller } from "@/server/trpc/server";
 
 export const metadata: Metadata = { title: "Roadmap" };
-
-/** How far back Completed goes on the team's roadmap. */
-const COMPLETED_DAYS = 90;
 
 /** The team's roadmap: Planned, In progress and what was completed lately, cards dragged between them; a board at a time. */
 export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/feedback/roadmap">) {
   const { project: slug } = await props.params;
   const searchParams = await props.searchParams;
-  const membership = await getMembership(slug);
-  if (!membership) {
-    notFound();
-  }
-  const { project } = membership;
-  const boards = await prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { slug: true, name: true } });
-  const board = boards.find((b) => b.slug === searchParams.board)?.slug;
-  const columns = await roadmapColumns(project.id, TEAM_VIEWER, { board, completedDays: COMPLETED_DAYS });
-  const ids = columns.flat().map((post) => post.id);
-  // Who's asking, how many moving each one to each status emails (asked before such a move), and the team's plan for it.
-  const [totals, moves, plans, menu] = await Promise.all([
-    voterTotals(project.id, project.askingProperty, ids),
-    emailedOnMove(project.id, columns.flat()),
-    prisma.post.findMany({ where: { id: { in: ids } }, select: { id: true, eta: true, body: true, owner: { select: { name: true, image: true } } } }),
-    // Feedback's menu, its queries alongside the roadmap's.
-    feedbackMenu({ project }),
+  // A board's slug, else all of them (one too long for any board too: the address may say anything).
+  const asked = typeof searchParams.board === "string" && searchParams.board.length <= 200 ? searchParams.board : undefined;
+  // The team's (others get a 404), with Feedback's menu alongside.
+  const [{ boards, board, completedDays, columns }, menu] = await Promise.all([
+    (await serverCaller()).roadmap.team({ project: slug, board: asked }),
+    feedbackMenu({ project: { slug } }),
   ]);
-  const plan = new Map(plans.map(({ id, ...rest }) => [id, rest]));
 
   return (
+    // One queue for the page's moves (useInOrder): a card dragged, then moved again from its menu, lands in that order.
+    <InOrderProvider>
     <PaneLayout>
       {menu}
       <Pane aria-label="Roadmap">
@@ -65,32 +45,10 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
         }
       />
       <PaneBody className="flex flex-col gap-4 p-2 @min-[48rem]/app:p-3">
-      <RoadmapBoard
-        projectSlug={slug}
-        completedDays={COMPLETED_DAYS}
-        columns={ROADMAP.map(({ status }, i) => ({
-          status,
-          posts: columns[i]!.map((post) => ({
-            id: post.id,
-            number: post.number,
-            title: post.title,
-            status: post.status,
-            votes: post.voteCount,
-            board: post.board.name,
-            // Who sees it: Team only on a board turned off (seenAs).
-            visibility: seenAs(post),
-            asking: totals.has(post.id) ? asking(totals.get(post.id)!, project.askingProperty!, storedPropertyFormats(project.propertyFormats)) : null,
-            emails: moves.get(post.id) ?? {},
-            // "Dec 2026", in UTC as months are kept.
-            eta: plan.get(post.id)?.eta?.toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" }) ?? null,
-            owner: plan.get(post.id)?.owner ?? null,
-            // Two lines of it on the card: no more than that goes into the page.
-            excerpt: plan.get(post.id)?.body.trim().slice(0, 300) || null,
-          })),
-        }))}
-      />
+      <RoadmapBoard projectSlug={slug} completedDays={completedDays} columns={columns} />
       </PaneBody>
       </Pane>
     </PaneLayout>
+    </InOrderProvider>
   );
 }

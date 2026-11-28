@@ -5,7 +5,7 @@ import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { apiFor, createProject, expectOneRowOfTabs, newPerson, postFeedback, signUp, skipSetup } from "./helpers";
+import { apiFor, createProject, expectOneRowOfTabs, isSave, newPerson, postFeedback, signUp, skipSetup, trpcRequest } from "./helpers";
 import { latestEmailTo } from "./mail";
 
 test("a team collects feedback, merges a duplicate and plans it", async ({ browser }, testInfo) => {
@@ -267,13 +267,15 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   let release!: () => void;
   const held = new Promise<void>((resolve) => (release = resolve));
   await team.route("**/*", async (route) => {
-    if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
+    if (isSave(route.request())) {
       await held;
     }
     await route.fallback();
   });
   const confirm = team.getByRole("alertdialog").getByRole("button", { name: "Mark in progress" });
+  const changed = trpcRequest(team, "posts.update");
   await confirm.click();
+  await changed;
   await expect(confirm).toHaveAttribute("aria-disabled", "true");
   await expect(confirm).toBeFocused();
   release();
@@ -1328,7 +1330,9 @@ test("the team's roadmap: a card dragged to another column changes its status; a
   await team.setViewportSize({ width: 1280, height: 720 });
 
   // Dragged to In progress: its status changes.
+  const dragged = trpcRequest(team, "posts.update");
   await card("Calendar sync").dragTo(column("In progress"));
+  await dragged;
   await expect(team.getByText("Calendar sync: In progress")).toBeVisible();
   await expect(column("In progress").getByRole("listitem")).toHaveCount(1);
   // Moved with the mouse, the focus stays where it was (only the keyboard's moves take it along, below).
@@ -1375,13 +1379,15 @@ test("the team's roadmap: a card dragged to another column changes its status; a
   let releaseCompleting!: () => void;
   const completingHeld = new Promise<void>((resolve) => (releaseCompleting = resolve));
   await team.route("**/*", async (route) => {
-    if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
+    if (isSave(route.request())) {
       await completingHeld;
     }
     await route.fallback();
   });
   const markCompleted = team.getByRole("alertdialog").getByRole("button", { name: "Mark completed" });
+  const completing = trpcRequest(team, "posts.update");
   await markCompleted.click();
+  await completing;
   await expect(markCompleted).toHaveAttribute("aria-disabled", "true");
   await expect(markCompleted).toBeFocused();
   releaseCompleting();
@@ -1402,7 +1408,7 @@ test("the team's roadmap: a card dragged to another column changes its status; a
   let releaseMove!: () => void;
   const moveHeld = new Promise<void>((resolve) => (releaseMove = resolve));
   await team.route("**/*", async (route) => {
-    if (!route.request().headers()["next-action"]) {
+    if (!isSave(route.request())) {
       return route.fallback();
     }
     const response = await route.fetch();
@@ -1434,7 +1440,7 @@ test("the team's roadmap: a card dragged to another column changes its status; a
     let release!: () => void;
     const held = new Promise<void>((resolve) => (release = resolve));
     await team.route("**/*", async (route) => {
-      if (!route.request().headers()["next-action"]) {
+      if (!isSave(route.request())) {
         return route.fallback();
       }
       const response = await route.fetch();
