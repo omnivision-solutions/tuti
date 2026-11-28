@@ -418,6 +418,12 @@ test("asked again on a portal (Resend email), the verification email is in its p
   expect(await resendAt(origin, "de")).toBe("Bestätige deine E-Mail-Adresse für Tuti");
   // A language it doesn't serve (any word a browser sends): its default's.
   expect(await resendAt(origin, "fr")).toBe("Verify your email for Tuti");
+  // One they chose on a portal comes first, while it serves it.
+  await prisma.user.update({ where: { id: ada.id }, data: { language: "de" } });
+  expect(await resendAt(origin, "en")).toBe("Bestätige deine E-Mail-Adresse für Tuti");
+  await prisma.user.update({ where: { id: ada.id }, data: { language: "ja" } });
+  expect(await resendAt(origin, "en")).toBe("Verify your email for Tuti");
+  await prisma.user.update({ where: { id: ada.id }, data: { language: null } });
   await prisma.project.update({ where: { id: project.id }, data: { language: "de" } });
   await prisma.projectLanguage.deleteMany({ where: { projectId: project.id } });
   expect(await resendAt(origin, "fr")).toBe("Bestätige deine E-Mail-Adresse für Tuti");
