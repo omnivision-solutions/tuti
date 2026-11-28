@@ -45,6 +45,10 @@ const TABS = [
 ] as const;
 
 const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
+/** A board's or group's key from the address, unless it's longer than any can be. */
+const within = (key: string | undefined) => (key && key.length <= 200 ? key : undefined);
+/** The most pages Load more reaches (feedback.list's). */
+const MAX_PAGE = 1000;
 
 export default async function FeedbackPage(props: PageProps<"/app/[project]/feedback">) {
   const { project: slug } = await props.params;
@@ -62,11 +66,13 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
       project: slug,
       status: filters.status,
       duplicates: duplicatesOnly || undefined,
-      board: filters.board,
-      group: first(searchParams.group),
+      // The address may say anything: a board or group too long for any is none (all of them), and a page past the last
+      // the list loads, the last.
+      board: within(filters.board),
+      group: within(first(searchParams.group)),
       q,
       sort: filters.sort,
-      page: filters.page,
+      page: Math.min(filters.page, MAX_PAGE),
     }),
     caller.project.get({ project: slug }),
   ]);
