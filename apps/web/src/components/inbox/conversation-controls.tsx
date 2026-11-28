@@ -10,7 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { actOn } from "@/components/inbox/list-keys";
+import { actOn, refreshAfterAction } from "@/components/inbox/list-keys";
 import { cn } from "@/lib/utils";
 import { CONVERSATION_STATUS_STYLES } from "@/lib/conversation-statuses";
 import { initial } from "@/lib/format";
@@ -33,7 +33,7 @@ function useSave(projectSlug: string, number: number) {
         change === "summarize"
           ? await trpc.conversations.summarize.mutate({ project: projectSlug, number })
           : await trpc.conversations.update.mutate({ project: projectSlug, number, ...change });
-      router.refresh();
+      refreshAfterAction(router);
       return { notice: "notice" in saved ? (saved.notice ?? undefined) : undefined };
     } catch (error) {
       return { error: errorMessage(error) };
