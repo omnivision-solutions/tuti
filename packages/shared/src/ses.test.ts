@@ -63,6 +63,27 @@ test("an answer cut off partway fails the call, not reads as an empty answer", a
   }
 });
 
+test("a call SES fails (5xx) or throttles (429) is tried again, four tries in all", async () => {
+  const fake = await startSesFake();
+  try {
+    for (const [name, value] of Object.entries(fake.env)) {
+      vi.stubEnv(name, value);
+    }
+    const answers = [500, 429];
+    fake.respond = () => answers.shift();
+    await ses()!.createTenant("tuti-support-project-1");
+    expect(fake.calls).toEqual(Array(3).fill("POST /v2/email/tenants"));
+    expect(fake.tenants.has("tuti-support-project-1")).toBe(true);
+
+    fake.calls.length = 0;
+    fake.respond = () => 503;
+    await expect(ses()!.createTenant("tuti-support-project-2")).rejects.toThrow("failed with 503");
+    expect(fake.calls).toHaveLength(4);
+  } finally {
+    await fake.close();
+  }
+});
+
 /** A full garbage collection, without starting Node with --expose-gc. */
 function collectGarbage() {
   setFlagsFromString("--expose-gc");
