@@ -120,7 +120,7 @@ export function SpamSettings({
       )}
       {/* Only where the server has a model for the filter (spamSettings): elsewhere nothing would read it. */}
       {settings.guidance !== undefined && <Guidance projectSlug={projectSlug} guidance={settings.guidance} max={maxGuidance} inOrder={inOrder} />}
-      <TryMessage projectSlug={projectSlug} supportAddress={supportAddress} />
+      <TryMessage projectSlug={projectSlug} supportAddress={supportAddress} inOrder={inOrder} />
     </>
   );
 }
@@ -427,18 +427,21 @@ function Guidance({ projectSlug, guidance, max, inOrder }: { projectSlug: string
  * The box to try a message: what the filter would do with this email, and why. From takes "Name <address>" or an
  * address; To starts as the project's support address. Nothing is saved.
  */
-function TryMessage({ projectSlug, supportAddress }: { projectSlug: string; supportAddress: string }) {
+function TryMessage({ projectSlug, supportAddress, inOrder }: { projectSlug: string; supportAddress: string; inOrder: InOrder }) {
   const trpc = useTRPCClient();
   const [state, action, pending] = useActionState<SpamTry, FormData>(async (_prev, formData) => {
     const to = String(formData.get("to") ?? "").trim();
     try {
-      const { spam, aiCheck, why } = await trpc.spam.try.mutate({
-        project: projectSlug,
-        ...parseFrom(String(formData.get("from") ?? "")),
-        to: to ? [to] : [],
-        subject: String(formData.get("subject") ?? ""),
-        text: String(formData.get("text") ?? ""),
-      });
+      // In the screen's queue: tried against the rules once the changes made before it are saved.
+      const { spam, aiCheck, why } = await inOrder(() =>
+        trpc.spam.try.mutate({
+          project: projectSlug,
+          ...parseFrom(String(formData.get("from") ?? "")),
+          to: to ? [to] : [],
+          subject: String(formData.get("subject") ?? ""),
+          text: String(formData.get("text") ?? ""),
+        }),
+      );
       return { spam, aiCheck, why };
     } catch (error) {
       return { error: errorMessage(error) };
