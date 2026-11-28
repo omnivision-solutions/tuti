@@ -4,11 +4,13 @@ import { beforeEach, expect, test } from "vitest";
 
 import { GET as trpcGet, POST as trpcPost } from "@/app/api/trpc/[trpc]/route";
 import { proxy } from "@/proxy";
-import { PREVIEW_READER_COOKIE } from "@/server/auth/portal-readers";
+import { PREVIEW_READER_COOKIE, WIDGET_READER_COOKIE } from "@/server/auth/portal-readers";
 import { previewToken } from "@/server/auth/preview-session";
 import { newVisitor } from "@/server/auth/visitor-session";
 import { widgetToken } from "@/server/auth/widget-session";
+import { serverCaller } from "@/server/trpc/server";
 import { callerAs, createProject, onPortal, signUp, type TestUser } from "@/test/helpers";
+import { request } from "@/test/next-headers";
 
 import { forgetCustomDomain } from "../custom-domains";
 
@@ -41,7 +43,7 @@ async function trpc(name: string, input: object, headers: Record<string, string>
         }),
       )
     : await trpcGet(new Request(`http://${host()}/api/trpc/${name}?input=${json}`, { headers: { host: host(), ...headers } }));
-  return { status: response.status, body: (await response.json()) as { error?: { data?: { code?: string } } } };
+  return { status: response.status, body: (await response.json()) as unknown };
 }
 
 const post = async () => (await (await callerAs(owner)).posts.create({ project: project.slug, board: "feature-requests", title: "Dark mode" })).number;
@@ -127,4 +129,40 @@ test("a proxy's Authorization on the portal's requests is never the widget's per
     expect((await trpc("votes.set", { number, voted: true }, { cookie: reader.cookie, authorization, "sec-fetch-site": "same-origin" }, true)).status).toBe(200);
   }
   expect(await prisma.vote.count({ where: { userId: reader.id } })).toBe(1);
+});
+
+test("the widget's person reads a private portal they're a reader of, by its token or its reader cookie; others don't", async () => {
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+  const reader = await signUp("Rae Reader");
+  await prisma.portalReader.create({ data: { projectId: project.id, email: reader.email } });
+  await prisma.user.update({ where: { id: reader.id }, data: { emailVerified: true } });
+  const stranger = await signUp("Sam Stranger");
+  const token = (user: TestUser) => encodeURIComponent(widgetToken(project.id, user.id));
+  expect((await trpc("portal.access", {}, { authorization: `Widget ${widgetToken(project.id, reader.id)}` })).status).toBe(200);
+  expect((await trpc("portal.access", {}, { cookie: `${WIDGET_READER_COOKIE}=${token(reader)}` })).status).toBe(200);
+  expect((await trpc("portal.access", {}, { authorization: `Widget ${widgetToken(project.id, stranger.id)}` })).status).toBe(403);
+  expect((await trpc("portal.access", {}, { cookie: `${WIDGET_READER_COOKIE}=${token(stranger)}` })).status).toBe(403);
+  // The team, by the widget, as without it (read with no portal session: their membership counts).
+  expect((await trpc("portal.access", {}, { authorization: `Widget ${widgetToken(project.id, owner.id)}` })).status).toBe(200);
+});
+
+test("a mutation from another site carrying only a reader's cookie is refused as a session's is", async () => {
+  const number = await post();
+  for (const cookie of [`${PREVIEW_READER_COOKIE}=${encodeURIComponent(previewToken(project.id, owner.id))}`, `${WIDGET_READER_COOKIE}=${encodeURIComponent(widgetToken(project.id, owner.id))}`]) {
+    const refused = await trpc("votes.set", { number, voted: true }, { cookie, origin: "https://evil.example" }, true);
+    // The same-site check's refusal (without it: "Sign in to do this", a 401).
+    expect({ status: refused.status, said: JSON.stringify(refused.body).includes("didn't come from this site's own page") }).toEqual({ status: 403, said: true });
+  }
+});
+
+test("a page reads as the request's reader: Customize's preview reads a private portal, as proxy.ts lets its page through", async () => {
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+  request.host = host();
+  request.cookie = `${PREVIEW_READER_COOKIE}=${encodeURIComponent(previewToken(project.id, owner.id))}`;
+  try {
+    await expect((await serverCaller()).portal.access({ project: project.slug })).resolves.toEqual({});
+  } finally {
+    request.cookie = "";
+    request.host = "";
+  }
 });

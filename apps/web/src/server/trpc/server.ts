@@ -1,11 +1,12 @@
 import { TRPCError } from "@trpc/server";
 import { getHTTPStatusCodeFromError } from "@trpc/server/http";
+import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
 
 import { type Operation, OperationError } from "../operations/define";
 import { getSession } from "../session";
-import { sessionContext, type TrpcContext } from "./context";
+import { readerCookies, sessionContext, type TrpcContext } from "./context";
 import { createCallerFactory } from "./init";
 import { appRouter } from "./router";
 
@@ -44,11 +45,12 @@ export async function callOperation(
 
 /**
  * What a server-rendered page reads through: the router in process, as the request's cookie session (read once per
- * request, however many procedures the page calls). Not signed in: the sign-in page (`signIn`, the page's own); not
- * allowed or not found: a 404. No same-site check here: a page opened from a bookmark or an email's link loads.
+ * request, however many procedures the page calls), with the reader's cookies. Not signed in: the sign-in page (`signIn`,
+ * the page's own); not allowed or not found: a 404. No same-site check here: a page opened from a bookmark or an email's link loads.
  */
 export const serverCaller = cache(async (signIn = "/app/auth/sign-in") => {
-  const caller = createCaller(sessionContext(await getSession()));
+  // With the reader's cookies (Customize's preview, the widget's reader cookie): what the page may read, as proxy.ts let it.
+  const caller = createCaller(sessionContext(await getSession(), readerCookies(await headers())));
   // Not `then`: awaiting the caller asks for it, and the caller isn't a promise.
   return new Proxy(caller, { get: (target, group) => (group === "then" ? undefined : wrap(Reflect.get(target, group) as object, signIn)) }) as typeof caller;
 });
