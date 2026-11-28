@@ -663,7 +663,6 @@ const matrix: Matrix = {
   },
   "portal-settings": {
     setPortalAccess: { allowed: "ADMIN", call: (slug) => portalSettings.setPortalAccess(slug, "private") },
-    setPortalHome: { allowed: "ADMIN", call: (slug) => portalSettings.setPortalHome(slug, "docs") },
     addPortalReaders: { allowed: "ADMIN", call: (slug) => portalSettings.addPortalReaders(slug, {}, form({ emails: "e2e-matrix-reader@example.com" })) },
     removePortalReader: { allowed: "ADMIN", call: (slug) => portalSettings.removePortalReader(slug, "e2e-reader@example.com") },
     saveRedirect: { allowed: "ADMIN", call: (slug) => portalSettings.saveRedirect(slug, {}, form({ from: "/hc/en-us/articles/1", to: "/docs" })) },
@@ -1506,6 +1505,8 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   "spam.try": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.spam.try({ project: slug, name: "Kim", sender: "e2e-matrix-kim@example.com", subject: "Hi", text: "Hello" }) },
   "support.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.support.get({ project: slug }) },
   "team.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.team.list({ project: slug }) },
+  "portal.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.portal.get({ project: slug }) },
+  "portal.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.portal.update({ project: slug, home: "docs" }) },
   "project.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.project.get({ project: slug }) },
   "project.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.project.update({ project: slug, name: "Renamed by the matrix" }) },
   // Anyone who may post in the project may upload; finishing and status are the uploader's own. A person's, never a key's.

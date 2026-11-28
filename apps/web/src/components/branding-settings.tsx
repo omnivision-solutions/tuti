@@ -326,14 +326,20 @@ export function NavigationSettings({
   footerLinks: { label: string; url: string }[];
   sidebarLinks: { label: string; url: string }[];
 }) {
-  const { state, form } = useBrandingForm(projectSlug, "Navigation saved", (data) => ({
-    headerLinks: shownLinks(data, "headerLink"),
-    footerLinks: shownLinks(data, "footerLink"),
-    sidebarLinks: shownLinks(data, "sidebarLink"),
-  }));
+  const { state, form } = useBrandingForm(
+    projectSlug,
+    "Navigation saved",
+    (data) => ({
+      headerLinks: shownLinks(data, "headerLink"),
+      footerLinks: shownLinks(data, "footerLink"),
+      sidebarLinks: shownLinks(data, "sidebarLink"),
+    }),
+    false,
+    // Rows with neither a label nor an address are skipped (linksFrom), as the server's form did.
+    (data) => ({ headerLinks: linksFrom(data, "headerLink"), footerLinks: linksFrom(data, "footerLink"), sidebarLinks: linksFrom(data, "sidebarLink") }),
+  );
   return (
     <form {...form} className="flex flex-col gap-4">
-      <input type="hidden" name="part" value="links" />
       <SettingsCard title="Links">
         <LinksRow name="headerLink" label="Header" item="Header link" legend="Header links" links={headerLinks} />
         <LinksRow name="sidebarLink" label="Docs sidebar" item="Sidebar link" legend="Docs sidebar links" links={sidebarLinks} />

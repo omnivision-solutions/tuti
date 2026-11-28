@@ -2080,8 +2080,9 @@ test("a docs-first team makes the docs the portal's home page", async ({ browser
   // While it saves (its answer held here) the select is read-only and keeps the focus.
   let releaseSave!: () => void;
   const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
+  // Saved through tRPC (portal.update), not a server action.
   await team.route("**/*", async (route) => {
-    if (!route.request().headers()["next-action"]) {
+    if (!new URL(route.request().url()).pathname.endsWith("/api/trpc/portal.update")) {
       return route.fallback();
     }
     const response = await route.fetch();

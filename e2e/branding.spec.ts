@@ -192,7 +192,10 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await expect(owner.getByRole("dialog", { name: "Go to or do" })).toBeHidden();
   await expect(leave).toHaveCount(0);
   await expect(links.getByLabel("Header link 1 label")).toHaveValue("Docs");
+  // Saved through tRPC (branding.update), not a server action.
+  const saved = owner.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/api/trpc/branding.update"));
   await owner.getByRole("button", { name: "Save changes" }).click();
+  await saved;
   await expect(owner.getByText("Navigation saved")).toBeVisible();
   await expect(preview.getByRole("navigation", { name: "Footer" }).getByRole("link", { name: "Privacy" })).toBeVisible();
   await owner.reload();
