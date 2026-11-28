@@ -43,7 +43,11 @@ test("an owner sets up screenshots of their app, signing in with a password kept
   await expect(owner.getByRole("switch", { name: "Use a residential proxy" })).not.toBeChecked();
   await owner.getByLabel("About your app").fill("After signing in, pick the Acme workspace. Close the welcome tour.");
   // The browser opens only the app's own domain unless told of others (a sign-in elsewhere, a CDN).
-  await owner.getByLabel("Other domains").fill("acme.auth0.com\ncdn.example.net");
+  // Each a chip, once a space, comma or Enter ends it; one typed without is saved too.
+  const domains = owner.getByLabel("Other domains");
+  await domains.fill("acme.auth0.com,");
+  await expect(owner.getByRole("button", { name: "Remove acme.auth0.com" })).toBeVisible();
+  await domains.fill("cdn.example.net");
   await save.click();
   await expect(owner.getByText("Screenshot settings saved")).toBeVisible();
 
@@ -52,7 +56,7 @@ test("an owner sets up screenshots of their app, signing in with a password kept
   await expect(save).toBeDisabled();
   await owner.getByLabel("App address").fill("https://other.example.net");
   await save.click();
-  await expect(owner.getByText("Enter the password again: the app's address moved to another site")).toBeVisible();
+  await expect(owner.getByText("Enter the password again: the app's address changed")).toBeVisible();
   await owner.getByLabel("App address").fill("https://app.example.com");
   // Saved, the password is never shown again, nor in the page.
   await owner.reload();
@@ -60,7 +64,8 @@ test("an owner sets up screenshots of their app, signing in with a password kept
   await expect(owner.getByText("Saved. Enter a new one to replace it.")).toBeVisible();
   expect(await owner.content()).not.toContain(password);
   await expect(owner.getByLabel("Username")).toHaveValue("e2e-demo@example.com");
-  await expect(owner.getByLabel("Other domains")).toHaveValue("acme.auth0.com\ncdn.example.net");
+  await expect(owner.getByRole("button", { name: "Remove acme.auth0.com" })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Remove cdn.example.net" })).toBeVisible();
 
   // The Test: the agent signs in and shows the screen it lands on.
   await testButton.click();
@@ -91,7 +96,7 @@ test("an owner sets up screenshots of their app, signing in with a password kept
   await checkpoint(owner, "team-settings-screenshots-sign-in-failed");
 });
 
-test("an app that signs in through Firebase: the settings suggest its hosts, and Add puts them in Other domains once the password is entered again", async ({ browser }, testInfo) => {
+test("an app that signs in through Firebase: its hosts are found and allowed by themselves, removed without the password, and a domain typed asks for it", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   // The team's app, on this machine: its script calls Firebase Auth.
   const app = createServer((request, response) => {
@@ -112,15 +117,13 @@ test("an app that signs in through Firebase: the settings suggest its hosts, and
     await owner.goto(`/app/${slug}/settings/screenshots`);
     const save = owner.getByRole("button", { name: "Save changes" });
 
-    // Saved with a password, and notes the agent can't sign in with (Browser Use's fake).
     await owner.getByLabel("App address").fill(`http://localhost:${(app.address() as AddressInfo).port}`);
     await owner.getByRole("radiogroup", { name: "Sign in" }).getByText("Password", { exact: true }).click();
     await owner.getByLabel("Username").fill("e2e-demo@example.com");
     const passwordField = owner.getByLabel("Password", { exact: true }).and(owner.locator('input[type="password"]'));
     await passwordField.fill(password);
-    await owner.getByLabel("About your app").fill(FAKE_CANT_SIGN_IN);
-    // The page's next ask, held while the checking line is looked at (inline jobs have the answer by then).
-    const isPoll = (url: URL) => url.pathname.endsWith("/settings/screenshots/suggestions") && url.searchParams.get("start") === "false";
+    // The page's next ask, held while the checking chip is looked at (inline jobs have the answer by then).
+    const isPoll = (url: URL) => url.pathname.endsWith("/settings/screenshots/sign-in-domains") && url.searchParams.get("start") === "false";
     let poll: Route | undefined;
     await owner.route(isPoll, (route) => {
       poll = route;
@@ -128,103 +131,155 @@ test("an app that signs in through Firebase: the settings suggest its hosts, and
     await save.click();
     await expect(owner.getByText("Screenshot settings saved")).toBeVisible();
 
-    // The app's sign-in service, found in its script: read in the background while the page says so, then suggested.
-    const checking = owner.getByText("Checking how your app signs in…", { exact: true });
+    // The app's sign-in service, found in its script: read in the background while the field says so, then its hosts
+    // in the field, marked Auto, with nothing to add or save.
+    const checking = owner.getByText("Checking sign-in", { exact: true });
     await expect(checking).toBeVisible();
-    await expect(owner.locator('[data-suggestions][aria-busy="true"]')).toBeAttached();
+    await expect(owner.locator('[data-domains][aria-busy="true"]')).toBeAttached();
     await checking.scrollIntoViewIfNeeded();
     await checkpoint(owner, "team-settings-screenshots-checking");
     await expect.poll(() => poll).toBeDefined();
     await poll!.continue();
     await owner.unroute(isPoll);
-    const suggestion = owner.getByText("Firebase sign-in needs identitytoolkit.googleapis.com and securetoken.googleapis.com", { exact: true });
-    await expect(suggestion).toBeVisible();
+    const identity = owner.getByRole("button", { name: "Remove identitytoolkit.googleapis.com" });
+    const token = owner.getByRole("button", { name: "Remove securetoken.googleapis.com" });
+    await expect(identity).toBeVisible();
+    await expect(token).toBeVisible();
     await expect(checking).toBeHidden();
-    // A Test that can't sign in points to it.
-    await owner.getByRole("button", { name: "Test", exact: true }).click();
-    const failed = owner.getByRole("alert").filter({ hasText: `The agent couldn't sign in: ${FAKE_SIGN_IN_REFUSED}` });
-    await expect(failed).toContainText("Try the suggested domains.");
-    await suggestion.scrollIntoViewIfNeeded();
-    await checkpoint(owner, "team-settings-screenshots-suggestion");
+    await expect(save).toBeDisabled();
+    // Why, on the label.
+    await owner.getByRole("button", { name: "Auto: why identitytoolkit.googleapis.com was added" }).hover();
+    await expect(owner.getByText("Added for Firebase sign-in", { exact: true })).toBeVisible();
+    await checkpoint(owner, "team-settings-screenshots-found");
+    await owner.mouse.move(0, 0);
 
-    // Another address on the same site: while it's read, the last one's suggestion (and the Test's pointer to it) is gone.
+    // Another address on the same site, where nothing is found: the last one's are gone. (Any change of address asks
+    // for the password again.)
     const appAddress = owner.getByLabel("App address");
     const base = await appAddress.inputValue();
-    // Every read held (a save may ask twice: the settings and the save each change), then all of them fail.
-    const held: Route[] = [];
-    let failing = false;
-    await owner.route("**/settings/screenshots/suggestions*", (route) => (failing ? route.abort() : void held.push(route)));
     await appAddress.fill(new URL("plain", base).href);
-    await save.click();
-    await expect(owner.getByText("Screenshot settings saved").last()).toBeVisible();
-    await expect(owner.locator('[data-suggestions][aria-busy="true"]')).toBeAttached();
-    await expect(suggestion).toBeHidden();
-    await expect(failed).not.toContainText("Try the suggested domains.");
-    // A read that fails shows none either.
-    await expect.poll(() => held.length).toBeGreaterThan(0);
-    failing = true;
-    await Promise.all(held.map((route) => route.abort()));
-    await expect(owner.locator('[data-suggestions][aria-busy="false"]')).toBeAttached();
-    await expect(suggestion).toBeHidden();
-    // Back to the app's own address: suggested again.
-    await owner.unroute("**/settings/screenshots/suggestions*");
-    // Typed again if the saved settings, arriving late, reset the field under it.
-    await expect(async () => {
-      await appAddress.fill(base);
-      await expect(save).toBeEnabled({ timeout: 1_000 });
-    }).toPass();
-    await save.click();
-    await expect(suggestion).toBeVisible();
-    // A save that changes only a secret (a new sign-in link may open another host) reads them again too.
-    const readAgain = owner.waitForRequest("**/settings/screenshots/suggestions");
-    await expect(async () => {
-      await passwordField.fill(`${password}-new`);
-      await expect(save).toBeEnabled({ timeout: 1_000 });
-    }).toPass();
-    await save.click();
-    await readAgain;
-    await expect(suggestion).toBeVisible();
-
-    // Add lists its hosts; saving them asks for the password again.
-    await owner.getByRole("button", { name: "Add", exact: true }).click();
-    await expect(suggestion).toBeHidden();
-    const otherDomains = owner.getByLabel("Other domains");
-    await expect(otherDomains).toHaveValue("identitytoolkit.googleapis.com\nsecuretoken.googleapis.com");
-    await save.click();
-    await expect(owner.getByText("Enter the password again to add another domain: it can be typed there")).toBeVisible();
-    // Refused, so nothing to read again: what was just added isn't suggested back.
-    await expect(owner.locator('[data-suggestions][aria-busy="false"]')).toBeAttached();
-    await expect(suggestion).toBeHidden();
     await passwordField.fill(password);
     await save.click();
-    // Saved: the password is cleared (several "saved" toasts may be up by now).
-    await expect(passwordField).toHaveValue("");
+    await expect(owner.locator('[data-domains][aria-busy="false"]')).toBeAttached();
+    await expect(identity).toBeHidden();
+    // Back: found again.
+    await expect(async () => {
+      await appAddress.fill(base);
+      await passwordField.fill(password);
+      await expect(save).toBeEnabled({ timeout: 1_000 });
+    }).toPass();
+    await save.click();
+    await expect(identity).toBeVisible();
 
-    // Allowed now: not suggested again.
+    // One removed, saved without the password; focus stays in the field, and screen readers are told.
+    const said = owner.locator("[data-domains-said]");
+    await expect(said).toHaveText("Added for Firebase sign-in: identitytoolkit.googleapis.com, securetoken.googleapis.com.");
+    await token.click();
+    await expect(token).toBeHidden();
+    await expect(owner.getByLabel("Other domains")).toBeFocused();
+    await expect(said).toHaveText("Removed securetoken.googleapis.com.");
+    await save.click();
+    await expect(owner.getByText("Screenshot settings saved").last()).toBeVisible();
+    await expect(save).toBeDisabled();
+
+    // A domain typed while a password is saved asks for it, in a box under the field.
+    await owner.getByLabel("Other domains").fill("cdn.example.net,");
+    const again = owner.getByLabel("Enter the password again to add a domain.");
+    await expect(again).toBeVisible();
+    await again.fill(password);
+    await save.click();
+    await expect(again).toBeHidden();
+    await expect(save).toBeDisabled();
+
     await owner.reload();
-    await expect(otherDomains).toHaveValue("identitytoolkit.googleapis.com\nsecuretoken.googleapis.com");
-    // Once the suggestions have been read again.
-    await expect(owner.locator('[data-suggestions][aria-busy="false"]')).toBeAttached();
-    await expect(owner.getByText("Firebase sign-in needs", { exact: false })).toBeHidden();
+    await expect(owner.getByRole("button", { name: "Remove cdn.example.net" })).toBeVisible();
+    await expect(identity).toBeVisible();
+    await expect(owner.locator('[data-domains][aria-busy="false"]')).toBeAttached();
+    await expect(token).toBeHidden();
+    // Typed again, it's found again (no password asked).
+    await owner.getByLabel("Other domains").fill("securetoken.googleapis.com ");
+    await expect(token).toBeVisible();
+    await expect(owner.getByLabel("Enter the password again to add a domain.")).toBeHidden();
+    await save.click();
+    await expect(save).toBeDisabled();
+    // A domain typed but not ended is a change by itself: Save takes it (and asks for the password).
+    await owner.getByLabel("Other domains").fill("api.example.net");
+    await expect(save).toBeEnabled();
+    await save.click();
+    await expect(owner.getByText("Enter the password again to add another domain: it can be typed there")).toBeVisible();
+    await again.fill(password);
+    await save.click();
+    await expect(again).toBeHidden();
+    await owner.reload();
+    await expect(owner.getByRole("button", { name: "Remove api.example.net" })).toBeVisible();
+
+    // A found host also listed by hand (before it was found): removing it removes it, not back as Auto.
+    await expect(owner.locator('[data-domains][aria-busy="false"]')).toBeAttached();
+    await owner.getByLabel("Other domains").fill("identitytoolkit.googleapis.com ");
+    await expect(owner.getByRole("button", { name: "Auto: why identitytoolkit.googleapis.com was added" })).toBeHidden();
+    await identity.click();
+    await expect(identity).toBeHidden();
+    await save.click();
+    await expect(save).toBeDisabled();
+
+    // What's removed is per address: away and back, both are found again.
+    // Typed and saved again if the last save's settings, arriving late, put the old address back under it.
+    for (const address of [new URL("plain", base).href, base]) {
+      await expect(async () => {
+        await appAddress.fill(address);
+        await passwordField.fill(password);
+        await save.click({ timeout: 1_000 });
+        await expect(passwordField).toHaveValue("", { timeout: 3_000 });
+        await expect(save).toBeDisabled({ timeout: 3_000 });
+        await expect(appAddress).toHaveValue(address, { timeout: 1_000 });
+      }).toPass();
+    }
+    await expect(identity).toBeVisible();
+    await expect(token).toBeVisible();
+    // Nothing left to save, and an edit undone is none.
+    await expect(save).toBeDisabled();
+    await owner.getByLabel("About your app").fill("x");
+    await owner.getByLabel("About your app").fill("");
+    await expect(save).toBeDisabled();
+    // Another save keeps them: the removals before the address changed aren't sent back.
+    await owner.getByLabel("About your app").fill("Close the welcome tour.");
+    await save.click();
+    await expect(save).toBeDisabled();
+    await owner.reload();
+    await expect(identity).toBeVisible();
+    await expect(token).toBeVisible();
+
+    // A save with another address that's refused (no password) leaves what's removed alone for the next one.
+    await token.click();
+    await appAddress.fill(new URL("plain", base).href);
+    await save.click();
+    await expect(owner.getByText("Enter the password again: the app's address changed")).toBeVisible();
+    await appAddress.fill(base);
+    await save.click();
+    await expect(save).toBeDisabled();
+    await owner.reload();
+    await expect(identity).toBeVisible();
+    await expect(owner.locator('[data-domains][aria-busy="false"]')).toBeAttached();
+    await expect(token).toBeHidden();
   } finally {
     await new Promise((resolve) => app.close(resolve));
   }
 });
 
-test("while the app is read again, the page keeps asking for as long as a read can take, and doesn't bring back a suggestion just added", async ({ browser }) => {
+test("while the app is read again, the page keeps asking for as long as a read can take", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Rhea Recheck");
   await createProject(owner, "Acme", slug);
   // An answer read again (over a week old, say), on a busy worker: the server's answers, faked, so nothing is read.
-  const firebase = { provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] };
-  const auth0 = { provider: "Auth0", hosts: ["acme.auth0.com"] };
+  const firebase = { host: "identitytoolkit.googleapis.com", provider: "Firebase" };
+  const auth0 = { host: "acme.auth0.com", provider: "Auth0" };
   let done = false;
   let fail = false;
   // The page's looks again (start=false), counted.
   let asks = 0;
-  await owner.route("**/settings/screenshots/suggestions*", (route) => {
+  await owner.route("**/settings/screenshots/sign-in-domains*", (route) => {
     asks += new URL(route.request().url()).searchParams.get("start") === "false" ? 1 : 0;
-    return fail ? route.fulfill({ status: 502 }) : route.fulfill({ json: done ? { suggestions: [firebase, auth0], checking: false } : { suggestions: [firebase], checking: true } });
+    return fail ? route.fulfill({ status: 502 }) : route.fulfill({ json: done ? { domains: [firebase, auth0], checking: false } : { domains: [firebase], checking: true } });
   });
   // The clock moved a little at a time until the page asks again (it sets its next ask only once an answer is in).
   const nextAsk = async () => {
@@ -240,18 +295,16 @@ test("while the app is read again, the page keeps asking for as long as a read c
   await expect(owner.getByText("Screenshot settings saved")).toBeVisible();
   await owner.clock.install();
   await owner.reload();
-  const checking = owner.getByText("Checking how your app signs in…", { exact: true });
+  const checking = owner.getByText("Checking sign-in", { exact: true });
   await expect(checking).toBeVisible();
-  const suggestion = owner.getByText("Firebase sign-in needs identitytoolkit.googleapis.com and securetoken.googleapis.com", { exact: true });
-  await owner.getByRole("button", { name: "Add", exact: true }).click();
-  await expect(suggestion).toBeHidden();
+  // What's kept shows while it's read again.
+  await expect(owner.getByRole("button", { name: "Remove identitytoolkit.googleapis.com" })).toBeVisible();
 
-  // Each next ask, 2 seconds after the last answer: still checking, it doesn't bring it back while its hosts are in the
-  // field; and the page keeps asking well past half a minute (a read may wait its turn on a busy worker).
+  // Each next ask, 2 seconds after the last answer: still checking, well past half a minute (a read may wait its turn
+  // on a busy worker).
   while (asks < 20) {
     await nextAsk();
     await expect(checking).toBeVisible();
-    await expect(suggestion).toBeHidden();
   }
   // A look again that fails (the server restarting for a deploy, say) changes nothing, and the page asks again.
   fail = true;
@@ -263,7 +316,6 @@ test("while the app is read again, the page keeps asking for as long as a read c
   // Its answer then shows.
   done = true;
   await nextAsk();
-  await expect(owner.getByText("Auth0 sign-in needs acme.auth0.com", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Remove acme.auth0.com" })).toBeVisible();
   await expect(checking).toBeHidden();
-  await expect(suggestion).toBeHidden();
 });

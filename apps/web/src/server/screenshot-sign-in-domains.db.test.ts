@@ -8,11 +8,11 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 
 import { call } from "@/server/operations/run";
 import { FETCHES_PER_MEMBER_PER_MINUTE } from "@/server/operations/fetch-limits";
-import { suggestScreenshotDomains } from "@/server/operations/screenshots";
+import { getScreenshotSignInDomains } from "@/server/operations/screenshots";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
 /**
- * Settings → Screenshots' suggestions (screenshotSettings.suggestions): the sign-in services an app's page and scripts
+ * Settings → Screenshots' sign-in domains (screenshotSettings.signInDomains): the sign-in services an app's page and scripts
  * call, read from a fake app on this machine (tests' Tuti is on localhost, where only that is fetched). The read is the
  * screenshot-sign-in-scan job's (inline here: done before the look that started it answers "checking").
  */
@@ -42,6 +42,30 @@ beforeAll(async () => {
     requests.push(request.url!);
     if (request.url === "/") {
       response.writeHead(302, { location: "/app" }).end();
+    } else if (request.url === "/elsewhere") {
+      // To another site (this machine by another name), whose own script names a tenant.
+      response.writeHead(302, { location: `http://localhost:${(server.address() as AddressInfo).port}/tenant` }).end();
+    } else if (request.url === "/elsewhere-back") {
+      response.writeHead(302, { location: `http://localhost:${(server.address() as AddressInfo).port}/back` }).end();
+    } else if (request.url === "/back") {
+      // Another site's page naming a script on the app's own site.
+      response.writeHead(200, { "content-type": "text/html" }).end(`<html><script src="${base}/assets/evil.js"></script></html>`);
+    } else if (request.url === "/assets/evil.js") {
+      response.writeHead(200, { "content-type": "text/javascript" }).end('const a="evil.auth0.com";');
+    } else if (request.url === "/hop") {
+      // A script of the app's own site that redirects to another site's.
+      response.writeHead(200, { "content-type": "text/html" }).end('<html><script src="/assets/hop.js"></script></html>');
+    } else if (request.url === "/assets/hop.js") {
+      response.writeHead(302, { location: `http://localhost:${(server.address() as AddressInfo).port}/assets/tenant.js` }).end();
+    } else if (request.url === "/tenant") {
+      response.writeHead(200, { "content-type": "text/html" }).end('<html><script src="/assets/tenant.js"></script></html>');
+    } else if (request.url === "/assets/tenant.js") {
+      response.writeHead(200, { "content-type": "text/javascript" }).end('const a="evil.auth0.com",b="identitytoolkit.googleapis.com";');
+    } else if (request.url?.startsWith("/search")) {
+      // A page that echoes its address in its text, and has its config in an inline script.
+      response
+        .writeHead(200, { "content-type": "text/html" })
+        .end(`<html><p>Results for ${decodeURIComponent(request.url)}</p><script>self.__data={domain:"acme.auth0.com",api:"identitytoolkit.googleapis.com"}</script></html>`);
     } else if (request.url === "/app") {
       response.writeHead(200, { "content-type": "text/html" }).end('<html><script type="module" src="/assets/main.js"></script><script src="https://cdn.elsewhere.example/x.js"></script></html>');
     } else if (request.url === "/assets/main.js" && scriptFailures > 0) {
@@ -105,8 +129,14 @@ beforeEach(async () => {
   project = await createProject(owner);
 });
 
-/** A look at the suggestions; `start: false` (the screen's polls) only reads. */
-const look = (input: { start?: boolean } = {}) => call(suggestScreenshotDomains, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, input);
+/** The hosts found, by service, as the scanner keeps them. */
+const byService = (domains: { host: string; provider: string; skipped: boolean }[]) =>
+  [...new Set(domains.map(({ provider }) => provider))].map((provider) => ({ provider, hosts: domains.filter((one) => one.provider === provider).map(({ host }) => host) }));
+/** A look at the sign-in domains (by service); `start: false` (the screen's polls) only reads. */
+const look = async (input: { start?: boolean } = {}) => {
+  const { domains, checking } = await call(getScreenshotSignInDomains, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, input);
+  return { suggestions: byService(domains), checking };
+};
 /** The suggestions once the read is done: a first look starts it (and says it's checking), the next reads its answer. */
 const suggestions = async () => {
   const first = await look();
@@ -115,7 +145,7 @@ const suggestions = async () => {
 const saved = () => prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } });
 const settle = (data: { appUrl: string; otherDomains?: string[] }) => prisma.screenshotSettings.upsert({ where: { projectId: project.id }, create: { projectId: project.id, ...data }, update: data });
 
-test("finds the app's sign-in service in its own scripts, once per address, and leaves out hosts already allowed", async () => {
+test("finds the app's sign-in service in its own scripts, once per address", async () => {
   expect(await suggestions()).toEqual([]);
   await settle({ appUrl: `${base}/` });
   const firebase = { provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] };
@@ -126,15 +156,14 @@ test("finds the app's sign-in service in its own scripts, once per address, and 
   // Kept: not read again for the same address.
   expect(await suggestions()).toEqual([firebase]);
   expect(requests).toHaveLength(3);
-  // A host listed isn't suggested.
-  await settle({ appUrl: `${base}/`, otherDomains: ["securetoken.googleapis.com"] });
-  expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com"] }]);
 
-  // Another address is read again; one that can't be read suggests nothing, and isn't kept.
+  // Another address is read again; one that can't be read finds nothing, kept only as found partly (read again next look).
   await settle({ appUrl: `${base}/missing`, otherDomains: [] });
   expect(await suggestions()).toEqual([]);
   expect(requests.at(-1)).toBe("/missing");
-  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBe(scannedFor(`${base}/`));
+  expect(await saved()).toMatchObject({ signInServicesFor: partlyScannedFor(`${base}/missing`), signInServicesAt: null, signInServices: [] });
+  await suggestions();
+  expect(requests.filter((path) => path === "/missing")).toHaveLength(2);
 });
 
 test("a script that didn't load isn't kept as nothing found: the next look reads it again", async () => {
@@ -145,7 +174,7 @@ test("a script that didn't load isn't kept as nothing found: the next look reads
   expect(requests).toEqual(["/", "/app", "/assets/main.js", "/", "/app", "/assets/main.js"]);
 });
 
-test("never suggests what Other domains refuses (a shared suffix), nor a host the browser opens already (under the app's, the sign-in link's)", async () => {
+test("never a shared suffix, nor a Clerk host on another site than the app's", async () => {
   const appUrl = "https://app.example.com";
   await settle({ appUrl });
   await prisma.screenshotSettings.update({
@@ -167,9 +196,9 @@ test("off localhost, only public addresses over https: an app at a private addre
     await settle({ appUrl });
     expect(await suggestions()).toEqual([]);
   }
-  // Never even connected to: refused when looked up (a name) or before (an address).
+  // Never even connected to: refused when looked up (a name) or before (an address); nothing found.
   expect(connections).toBe(0);
-  expect((await prisma.screenshotSettings.findUniqueOrThrow({ where: { projectId: project.id } })).signInServicesFor).toBeNull();
+  expect(await saved()).toMatchObject({ signInServicesFor: partlyScannedFor(`https://[::1]:${port}/`), signInServices: [] });
 });
 
 test("Tuti on localhost without SCREENSHOTS_ALLOW_LOCALHOST (a self-hosted server) doesn't read a local app either", async () => {
@@ -230,6 +259,33 @@ test("an answer saved by the earlier scanner, under the bare address, is found a
   expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
 });
 
+test("a tenant's host is never taken from the page itself (its text and inline data can be its users'), only a service's own", async () => {
+  await settle({ appUrl: `${base}/search?q=evil.auth0.com` });
+  expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
+});
+
+test("a read that fails keeps what an earlier partial read found for the same address", async () => {
+  const appUrl = `${base}/missing`;
+  await settle({ appUrl });
+  const firebase = [{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }];
+  await prisma.screenshotSettings.update({ where: { projectId: project.id }, data: { signInServices: firebase, signInServicesFor: partlyScannedFor(appUrl) } });
+  await scanSignInServices({ projectId: project.id, appUrl });
+  expect(await saved()).toMatchObject({ signInServices: firebase, signInServicesFor: partlyScannedFor(appUrl) });
+});
+
+test("an address that redirects to another site: that site's scripts aren't the app's", async () => {
+  await settle({ appUrl: `${base}/elsewhere` });
+  expect(await suggestions()).toEqual([]);
+  expect(requests).not.toContain("/assets/tenant.js");
+  // Another site's page naming a script on the app's site: none of its scripts are read.
+  await settle({ appUrl: `${base}/elsewhere-back` });
+  expect(await suggestions()).toEqual([]);
+  expect(requests).not.toContain("/assets/evil.js");
+  // A script of its own that redirects to another site's: only a service's own hosts from it, never a tenant's.
+  await settle({ appUrl: `${base}/hop` });
+  expect(await suggestions()).toEqual([{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }]);
+});
+
 test("settings without an app address suggest nothing", async () => {
   await settle({ appUrl: "" });
   expect(await suggestions()).toEqual([]);
@@ -246,11 +302,13 @@ test("a sign-in link that no longer opens (another server secret) still gets sug
 });
 
 test("reads of the app count against the fetch limits: past them, 429 and nothing fetched", async () => {
-  await settle({ appUrl: `${base}/missing` });
+  // Each address once (one read before, even of nothing, is shown rather than refused).
   for (let i = 0; i < FETCHES_PER_MEMBER_PER_MINUTE; i++) {
+    await settle({ appUrl: `${base}/missing?${i}` });
     expect(await suggestions()).toEqual([]);
   }
   const fetched = requests.length;
+  await settle({ appUrl: `${base}/missing?last` });
   await expect(suggestions()).rejects.toMatchObject({ status: 429 });
   expect(requests).toHaveLength(fetched);
 });
