@@ -14,12 +14,12 @@ import { magicLink } from "better-auth/plugins/magic-link";
 import { portalAddress, requestTarget, sessionBinding, sessionWorksOn, siteMount } from "@/server/custom-domains";
 
 import { APP_ORIGIN, appSignIn, noAccountFromApp } from "./app-sign-in";
-import { CLIENT_IP_HEADER, withClientIp } from "./client-ip";
-import { allowedHostPatterns, appUrl, portalTemplate } from "./hosts";
+import { CLIENT_IP_HEADER, withClientIp } from "@/lib/client-ip";
+import { allowedHostPatterns, appUrl, portalTemplate } from "@/lib/hosts";
 import { hashSecret, portalHandoff } from "./portal-handoff";
 import { supportSignIn } from "./support-sign-in";
-import { PASSWORD_RESET_MINUTES, SIGN_IN_LINK_MINUTES, type SignInLinkMetadata } from "./sign-in-link";
-import { socialSignInConfig } from "./social-sign-in";
+import { PASSWORD_RESET_MINUTES, SIGN_IN_LINK_MINUTES, type SignInLinkMetadata } from "@/lib/sign-in-link";
+import { socialSignInConfig } from "@/lib/social-sign-in";
 import { jwtSso } from "./sso";
 
 /** Remembers which portal a sign-in link's token is for, and emails the portal's own link (see lib/sign-in-link.ts). */
@@ -106,13 +106,13 @@ export async function signedWayBack(portal: string, redirect: string, userId: st
 
 /**
  * A verification link is opened later, maybe much later: its way back (callbackURL) mustn't carry a "Continue as"
- * handoff's state, used once and kept 10 minutes (lib/portal-handoff.ts). A sign-up from a portal has one (its `next` is
+ * handoff's state, used once and kept 10 minutes (server/auth/portal-handoff.ts). A sign-up from a portal has one (its `next` is
  * the app's /continue); in its place go when it was made and the app's MAC for this account (isOwnWayBack), with which
  * /continue starts a new handoff. Only for the email a sign-up, or a sign-in before verifying, sends its own account
  * (`signingUp`): sending it again takes any address and callbackURL from anyone, so there it would sign a way back for
  * someone else's account. Elsewhere it goes to the app, as does a link with none (Better Auth's "/", on Tuti's cloud its
  * marketing site), and one that isn't a page's address, as the mobile app's link scheme is (trusted on the app's host for
- * its own sign-in, lib/app-sign-in.ts): anyone can have this email sent to any address, and it signs in whoever opens it,
+ * its own sign-in, server/auth/app-sign-in.ts): anyone can have this email sent to any address, and it signs in whoever opens it,
  * so it never hands a session to an app.
  */
 async function withoutHandoffState(link: string, userId: string, signingUp: boolean): Promise<string> {
@@ -195,7 +195,7 @@ export const auth = betterAuth({
     protocol: "auto",
   },
   // A portal on its own domain (help.acme.com) while it's verified: its forms post from there. On the app's host, the
-  // mobile app's link scheme (lib/app-sign-in.ts): that scheme exactly, never a pattern, and on no portal.
+  // mobile app's link scheme (server/auth/app-sign-in.ts): that scheme exactly, never a pattern, and on no portal.
   trustedOrigins: async (request) => {
     const host = request?.headers.get("host") ?? null;
     const target = await requestTarget(host);
@@ -292,7 +292,7 @@ export const auth = betterAuth({
     },
     // However an address comes to be verified (its link, a sign-in link, an account from Google or GitHub), an import's
     // placeholders for it hand over, in the projects they're on (a password reset is a direct update: it calls it too).
-    // No account comes of a sign-in the mobile app started: it has no sign-up (lib/app-sign-in.ts).
+    // No account comes of a sign-in the mobile app started: it has no sign-up (server/auth/app-sign-in.ts).
     user: { create: { before: noAccountFromApp }, update: { after: async (user) => void (user.emailVerified && (await handOverPlaceholdersLogged(user.id))) } },
     account: {
       create: { before: async (account) => ({ data: { ...account, accessToken: null, refreshToken: null, idToken: null } }) },
@@ -352,7 +352,7 @@ export const auth = betterAuth({
     magicLink({ expiresIn: SIGN_IN_LINK_MINUTES * 60, storeToken: "hashed", sendMagicLink: sendSignInLink }),
     // Continue with Google / GitHub on the app's sign-in and sign-up (lib/social-sign-in.ts).
     genericOAuth({ config: socialSignInConfig(appUrl().origin) }),
-    // The mobile app (lib/app-sign-in.ts): a Google or GitHub sign-in it starts ends in the device's browser with a
+    // The mobile app (server/auth/app-sign-in.ts): a Google or GitHub sign-in it starts ends in the device's browser with a
     // redirect to tuti://…, which carries a code the app exchanges for the session; its password sign-in is the web's.
     appSignIn(),
     nextCookies(),

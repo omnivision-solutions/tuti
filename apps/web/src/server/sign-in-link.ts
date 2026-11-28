@@ -7,7 +7,7 @@ import { APIError } from "better-auth/api";
 import { headers } from "next/headers";
 import { z } from "zod";
 
-import { auth } from "@/lib/auth";
+import { auth } from "@/server/auth/auth";
 import { requestTarget } from "@/server/custom-domains";
 import { safeRedirectPath } from "@/lib/redirects";
 import type { SignInLinkMetadata } from "@/lib/sign-in-link";

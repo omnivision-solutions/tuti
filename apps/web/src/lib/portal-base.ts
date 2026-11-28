@@ -23,7 +23,7 @@ export const previewUrl = ({ portal }: { portal: string }, path: string) => `${p
  */
 export const CUSTOMIZE = { param: "customize", value: "1", header: "x-tuti-customize" } as const;
 
-/** Where Customize's preview puts the token that reads the portal as the team member looking (lib/preview-session.ts). */
+/** Where Customize's preview puts the token that reads the portal as the team member looking (server/auth/preview-session.ts). */
 export const PREVIEW_TOKEN_PARAM = "preview-token";
 /** How long a preview token, and the cookie the portal keeps it in, lasts. */
 export const PREVIEW_TTL_SECONDS = 60 * 60;

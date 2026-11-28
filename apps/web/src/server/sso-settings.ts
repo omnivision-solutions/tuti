@@ -3,7 +3,7 @@
 import { prisma } from "@tuti/db";
 import { refresh } from "next/cache";
 
-import { generateSsoSecret } from "@/lib/sso";
+import { generateSsoSecret } from "@/server/auth/sso";
 
 import { getAdminProject } from "./membership";
 

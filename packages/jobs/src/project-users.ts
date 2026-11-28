@@ -90,7 +90,7 @@ export async function syncUsersIn(tx: Prisma.TransactionClient, projectId: strin
       }
       // A new address, and still no name given: one made up from the old address is made up from the new one
       // (never taken for a name they gave, as the widget's greeting would: widget-home.ts portalReaderHome).
-      // In any case (an SSO token's address keeps its own: lib/sso.ts). A name their app gave that is just
+      // In any case (an SSO token's address keeps its own: server/auth/sso.ts). A name their app gave that is just
       // the old address's first part can't be told from one made up, and follows too, as the greeting reads it.
       if (user.name === undefined && email !== undefined && email !== row.email) {
         // lower() = lower(), not Prisma's insensitive equals: that's ILIKE, where an address's "_" or "%" matches anything.

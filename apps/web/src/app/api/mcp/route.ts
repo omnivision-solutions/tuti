@@ -5,6 +5,7 @@ import { log } from "@tuti/shared";
 
 import { type ApiKey, authenticate, refusal } from "@/server/api-auth";
 import { OperationError, operations, toolName } from "@/server/operations";
+import { legacyRun } from "@/server/operations/define";
 import { agentOutputSchema, errorsLine, inputSchema } from "@/server/operations/openapi";
 
 /**
@@ -59,7 +60,7 @@ function mcpServer(actor: ApiKey) {
       return failure(issue ? `${issue.path.join(".") || "input"}: ${issue.message}` : "Invalid input");
     }
     try {
-      const text = JSON.stringify(await operation.run({ actor, projectId: actor.projectId }, input.data), null, 2);
+      const text = JSON.stringify(await legacyRun(operation, { actor, projectId: actor.projectId }, input.data), null, 2);
       // As JSON, like the text: what `outputSchema` describes (a date is its ISO string).
       return { content: [{ type: "text", text }], structuredContent: JSON.parse(text) as Record<string, unknown> };
     } catch (error) {

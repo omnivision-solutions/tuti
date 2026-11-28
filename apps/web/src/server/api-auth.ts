@@ -2,7 +2,7 @@ import { prisma, type TeamRole } from "@tuti/db";
 import { SECURE_COOKIE_PREFIX, stripSecureCookiePrefix } from "better-auth/cookies";
 
 import { API_RATE_LIMIT, hashApiKey } from "@/lib/api-keys";
-import { auth } from "@/lib/auth";
+import { auth } from "@/server/auth/auth";
 
 import type { ApiKeyActor, Operation } from "./operations";
 import { sessionFrom } from "./session";

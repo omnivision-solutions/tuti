@@ -14,14 +14,14 @@ const google = await vi.hoisted(async () => {
 
 import { GET as listConversations } from "@/app/api/v1/[...path]/route";
 import { GET as listProjects } from "@/app/api/v1/projects/route";
-import { auth } from "@/lib/auth";
+import { auth } from "@/server/auth/auth";
 import { appUrl } from "@/lib/hosts";
 import { actAs, createProject, signUp, type TestUser, withoutEmail } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
 /**
- * Signing in from the mobile app (lib/app-sign-in.ts): Google and GitHub end in the device's browser with a redirect to
+ * Signing in from the mobile app (server/auth/app-sign-in.ts): Google and GitHub end in the device's browser with a redirect to
  * the app's link scheme that carries a code and nothing of the session; the app that started the sign-in exchanges the
  * code, with the verifier of the challenge it started with, for a session that works on the API. A password is the web's
  * own sign-in, answered with the session. Only that scheme, on the app's host; no account is made from the app; and the
@@ -441,7 +441,7 @@ test("an unverified address is refused on a server that sends email, and signed 
   await prisma.user.update({ where: { id: una.id }, data: { emailVerified: true } });
   expect((await withPassword(una.email)).status).toBe(200);
 
-  // A server without email (as lib/auth.ts sets it up there): signed in, unverified, on the web and from the app.
+  // A server without email (as server/auth/auth.ts sets it up there): signed in, unverified, on the web and from the app.
   await prisma.user.update({ where: { id: una.id }, data: { emailVerified: false } });
   const options = (await auth.$context).options.emailAndPassword!;
   options.requireEmailVerification = false;

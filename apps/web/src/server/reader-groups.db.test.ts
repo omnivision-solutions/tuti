@@ -9,7 +9,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vit
 import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
-import { generateSsoSecret, verifySsoToken } from "@/lib/sso";
+import { generateSsoSecret, verifySsoToken } from "@/server/auth/sso";
 import { upsertProjectUser } from "@/server/project-users";
 import { actAs, createProject, inGroupNamed, onPortal, signUp, type TestUser } from "@/test/helpers";
 

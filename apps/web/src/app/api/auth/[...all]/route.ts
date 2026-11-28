@@ -1,6 +1,6 @@
 import { toNextJsHandler } from "better-auth/next-js";
 
-import { auth } from "@/lib/auth";
+import { auth } from "@/server/auth/auth";
 import { withClientIp } from "@/lib/client-ip";
 import { baseFrom } from "@/lib/portal-base";
 

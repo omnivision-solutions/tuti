@@ -3,7 +3,7 @@ import { checkPushReceipts, enqueue, handlers, RECEIPT_AFTER_MS } from "@tuti/jo
 import { deviceNotRegistered, type ExpoPushFake, startExpoPushFake } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { auth } from "@/lib/auth";
+import { auth } from "@/server/auth/auth";
 import { appUrl } from "@/lib/hosts";
 import { createConversation, replyToConversation } from "@/server/operations/conversations";
 import { registerDevice } from "@/server/operations/devices";

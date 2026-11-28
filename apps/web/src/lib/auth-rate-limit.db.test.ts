@@ -2,11 +2,11 @@ import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { POST as authRoute } from "@/app/api/auth/[...all]/route";
-import { auth } from "@/lib/auth";
+import { auth } from "@/server/auth/auth";
 import { appUrl } from "@/lib/hosts";
 import { signUp } from "@/test/helpers";
 
-// Before lib/auth.ts reads it.
+// Before server/auth/auth.ts reads it.
 vi.hoisted(() => {
   process.env.TRUSTED_IP_HEADER = "cf-connecting-ip";
 });

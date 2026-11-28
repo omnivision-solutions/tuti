@@ -34,7 +34,7 @@ import {
   deleteChangelogComment as deleteCommentOperation,
   updateChangelogComment as updateCommentOperation,
 } from "./operations/changelog-comments";
-import { OperationError } from "./operations/define";
+import { OperationError, type OutputOf } from "./operations/define";
 import { asAdmin, asAnyone, asTeam, call } from "./operations/run";
 import { searchPosts } from "./post-lists";
 import { getSession } from "./session";
@@ -186,7 +186,7 @@ export async function deleteChangelogEntry(projectSlug: string, number: number):
   return result;
 }
 
-export type MissingChanges = Awaited<ReturnType<(typeof listMissingChanges)["run"]>> & { cost: Awaited<ReturnType<typeof addedAnalysisCost>> };
+export type MissingChanges = OutputOf<typeof listMissingChanges> & { cost: Awaited<ReturnType<typeof addedAnalysisCost>> };
 
 /** What "Add changes…" lists: the merged pull requests no entry has (see changelog.missingChanges), and what adding them costs. */
 export async function findMissingChanges(projectSlug: string): Promise<{ error?: string; missing?: MissingChanges }> {

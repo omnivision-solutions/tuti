@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 
-import { hashSecret } from "@/lib/portal-handoff";
+import { hashSecret } from "@/server/auth/portal-handoff";
 
 /**
  * A sign-in link that can still be used on this portal, with the address it was
@@ -46,7 +46,7 @@ export async function pendingPasswordReset(token: string) {
   }
   const [link, verification] = await Promise.all([
     prisma.signInLink.findUnique({ where: { tokenHash: hashSecret(token) }, select: { project: { select: { id: true, slug: true } }, language: true } }),
-    // How Better Auth stores it with verification.storeIdentifier "hashed" (lib/auth.ts).
+    // How Better Auth stores it with verification.storeIdentifier "hashed" (server/auth/auth.ts).
     prisma.verification.findFirst({
       where: { identifier: createHash("sha256").update(`reset-password:${token}`).digest("base64url"), expiresAt: { gt: new Date() } },
       select: { value: true },

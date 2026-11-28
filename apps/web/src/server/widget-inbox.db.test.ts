@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { SIGN_IN_LINKS_PER_PORTAL_PER_HOUR } from "@/lib/sign-in-link";
-import { widgetToken } from "@/lib/widget-session";
+import { widgetToken } from "@/server/auth/widget-session";
 import { actAs, createProject, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
 

@@ -20,7 +20,7 @@ export async function requestTarget(host: string | null): Promise<RequestTarget>
 }
 
 /**
- * What a session started on a request's host is bound to (see lib/auth.ts): the project whose portal it is,
+ * What a session started on a request's host is bound to (see server/auth/auth.ts): the project whose portal it is,
  * or "app" (Tuti's own portal under its path is the app host's); null, working nowhere, for a portal that
  * doesn't exist, an unknown host or none.
  */

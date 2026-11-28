@@ -4,14 +4,14 @@ import { prisma } from "@tuti/db";
 import { redirect } from "next/navigation";
 
 import { portalAddress } from "@/server/custom-domains";
-import { HANDOFF_TTL_SECONDS, hashSecret, isSecret, randomSecret } from "@/lib/portal-handoff";
+import { HANDOFF_TTL_SECONDS, hashSecret, isSecret, randomSecret } from "@/server/auth/portal-handoff";
 import { safeRedirectPath } from "@/lib/redirects";
 
 import { getAccountSession } from "./session";
 
 /**
  * "Continue as <name>" on the app host: issues a one-time code for the signed-in
- * account and sends the browser back to the portal that asked (see lib/portal-handoff.ts).
+ * account and sends the browser back to the portal that asked (see server/auth/portal-handoff.ts).
  */
 export async function continueToPortal(projectSlug: string, state: string, redirectPath: string) {
   const session = await getAccountSession();

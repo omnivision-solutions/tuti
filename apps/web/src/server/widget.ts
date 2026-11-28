@@ -9,8 +9,8 @@ import { WIDGET_PARTS } from "@/lib/portal-look";
 import { ACTIVE_STATUSES, parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
 import type { Reaction } from "@/lib/reactions";
 import type { WidgetIcon } from "@/lib/widget-icons";
-import { widgetToken, widgetTokenUser, widgetUser } from "@/lib/widget-session";
-import { verifySsoToken } from "@/lib/sso";
+import { widgetToken, widgetTokenUser, widgetUser } from "@/server/auth/widget-session";
+import { verifySsoToken } from "@/server/auth/sso";
 
 import type { FormState } from "./form-state";
 import { canActIn } from "./membership";
@@ -28,7 +28,7 @@ import { updateWidgetSettings } from "./operations/widget";
 import { type IdeaNews, ideaNews } from "./widget-home";
 
 /**
- * The widget's actions: on customers' sites (see lib/widget-session.ts for its
+ * The widget's actions: on customers' sites (see server/auth/widget-session.ts for its
  * tokens), and the team's launcher settings.
  */
 

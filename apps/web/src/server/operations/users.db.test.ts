@@ -5,10 +5,10 @@ import { SignJWT } from "jose";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { z } from "zod";
 
-import { generateSsoSecret, verifySsoToken } from "@/lib/sso";
+import { generateSsoSecret, verifySsoToken } from "@/server/auth/sso";
 import { createProject, signUp, type TestUser, untilWaitingOnLock } from "@/test/helpers";
 
-import { widgetToken, widgetTokenUser } from "@/lib/widget-session";
+import { widgetToken, widgetTokenUser } from "@/server/auth/widget-session";
 
 import { canActIn } from "../membership";
 import { findSimilarPosts } from "../similar-posts";

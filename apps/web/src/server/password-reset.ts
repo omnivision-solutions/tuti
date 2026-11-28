@@ -8,7 +8,7 @@ import { APIError } from "better-auth/api";
 import { headers } from "next/headers";
 import { z } from "zod";
 
-import { auth, signedWayBack } from "@/lib/auth";
+import { auth, signedWayBack } from "@/server/auth/auth";
 import { requestTarget } from "@/server/custom-domains";
 import { portalLanguage } from "@/server/portal-base";
 import { portalLanguages } from "@/server/portal-language";
@@ -17,7 +17,7 @@ import { countEmailedLink } from "./email-link-limits";
 import { FAILED_PASSWORD_RESET_PATH, pendingPasswordReset } from "./sign-in-link-lookup";
 
 /*
- * "Forgot your password?" with Better Auth's reset flow (lib/auth.ts). It can be asked for a
+ * "Forgot your password?" with Better Auth's reset flow (server/auth/auth.ts). It can be asked for a
  * portal, on the portal or on the app on the way back to one (the sign_in_link row has its
  * project, for the email's sender and the way back), but every link opens on the app's host and
  * the password is set there only: the account is the same everywhere, and a portal's team may
@@ -70,7 +70,7 @@ export async function emailPasswordReset(form: FormData): Promise<{ error?: stri
   }
   if (limited.id) {
     try {
-      // Sends nothing for an unknown address. The row's id tells sendPasswordReset (lib/auth.ts) the host.
+      // Sends nothing for an unknown address. The row's id tells sendPasswordReset (server/auth/auth.ts) the host.
       await auth.api.requestPasswordReset({ body: { email, redirectTo: limited.id } });
     } catch (error) {
       // Only an address with an account gets this far, so the answer stays the same.
@@ -82,7 +82,7 @@ export async function emailPasswordReset(form: FormData): Promise<{ error?: stri
 
 /**
  * "Set new password" on the page a reset link opens (the app's /reset-password): uses the
- * token up, signs the account out everywhere and marks its email verified (lib/auth.ts),
+ * token up, signs the account out everywhere and marks its email verified (server/auth/auth.ts),
  * then goes to the app's sign-in with the new password; for a portal's, on to the "Continue to
  * <project>" card (its address, and a click). A dead link, or a request to any host but the
  * app's, goes back to the app's "Forgot your password?".

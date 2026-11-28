@@ -47,7 +47,7 @@ export function AccountForms({ name, email, photo, noPassword }: { name: string;
   );
 }
 
-/** The app's Account only: a portal's session can't change the account (lib/auth.ts), so the portal's shows the name. */
+/** The app's Account only: a portal's session can't change the account (server/auth/auth.ts), so the portal's shows the name. */
 function ProfileForm({
   name,
   email,

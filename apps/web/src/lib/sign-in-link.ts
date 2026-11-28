@@ -1,7 +1,7 @@
 /**
  * "Email me a sign-in link" on a portal (magic links). Better Auth's magic-link
  * plugin makes the token (stored hashed, used once) and signs the person in;
- * Tuti adds the limits, sends its own email (lib/auth.ts), and binds each link
+ * Tuti adds the limits, sends its own email (server/auth/auth.ts), and binds each link
  * to the portal that sent it (sign_in_link). Neither of the plugin's endpoints
  * is served over HTTP: links are asked for through `emailSignInLink`
  * (server/sign-in-link.ts) and opened at the portal's /sign-in/link.

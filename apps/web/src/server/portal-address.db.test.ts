@@ -4,7 +4,7 @@ import { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
-import { randomSecret } from "@/lib/portal-handoff";
+import { randomSecret } from "@/server/auth/portal-handoff";
 import { proxy } from "@/proxy";
 import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";

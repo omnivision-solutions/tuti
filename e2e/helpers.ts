@@ -66,7 +66,7 @@ export async function signInWithPassword(page: Page, email: string, password = "
 
 /**
  * Fills and submits the sign-up form on the current page (the email may be prefilled), then opens the emailed link that
- * verifies the address and signs in (lib/auth.ts). From a portal, that link comes back through a new handoff: its
+ * verifies the address and signs in (server/auth/auth.ts). From a portal, that link comes back through a new handoff: its
  * "Continue as" goes on to the app's "Continue as" button (backToPortal), as before verifying.
  */
 export async function fillSignUp(page: Page, name: string, email?: string) {

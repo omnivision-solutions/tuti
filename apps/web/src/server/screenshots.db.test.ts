@@ -10,6 +10,7 @@ import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { call } from "@/server/operations/run";
 import { getScreenshots, getScreenshotSettings, takeScreenshots, testScreenshotSettings, updateScreenshotSettings } from "@/server/operations/screenshots";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
+import type { InputOf } from "@/server/operations/define";
 
 /** Screenshots (docs/plan.md): the settings, and runs of the agent (Browser Use's fake) through the operations, jobs inline. */
 
@@ -53,7 +54,7 @@ beforeEach(async () => {
 });
 
 const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
-const setUp = (input: Parameters<typeof updateScreenshotSettings.run>[1] = {}) =>
+const setUp = (input: InputOf<typeof updateScreenshotSettings> = {}) =>
   call(updateScreenshotSettings, as(), { appUrl: "https://app.example.com/home", signIn: "password", username: "e2e-demo@example.com", password: PASSWORD, ...input });
 /** A run's next try at its leftovers at Browser Use is due now (the backoff passed). */
 const timePasses = (id: string) => prisma.screenshotRun.update({ where: { id }, data: { cleanupAfter: new Date(Date.now() - 1000) } });
@@ -906,7 +907,7 @@ test("a changed sign-in deletes the profile at once: a new password, then a new 
 });
 
 test("a new username (same password) or a new sign-in link deletes the profile too", async () => {
-  const changed = async (input: Parameters<typeof updateScreenshotSettings.run>[1]) => {
+  const changed = async (input: InputOf<typeof updateScreenshotSettings>) => {
     await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
     const before = profileOf()!;
     await call(updateScreenshotSettings, as(), input);

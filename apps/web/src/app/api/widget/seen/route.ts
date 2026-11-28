@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 
 import { SLUG_PATTERN } from "@/lib/project-slugs";
-import { verifySsoToken } from "@/lib/sso";
+import { verifySsoToken } from "@/server/auth/sso";
 import { changelogSeenAt, latestAnnouncedAt, markChangelogSeen } from "@/server/operations/changelog-seen";
 import { OperationError } from "@/server/operations/define";
 import { call } from "@/server/operations/run";

@@ -148,7 +148,7 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
           ]}
         />
         <div className="flex min-w-0 flex-col gap-8 sm:gap-10">
-          {/* The account's name, changed on the app: a portal's session can't change the account (lib/auth.ts). An account
+          {/* The account's name, changed on the app: a portal's session can't change the account (server/auth/auth.ts). An account
               a project's single sign-on made can't sign in there; its name comes from that sign-in. Sign out at the row's end. */}
           {section(
             "profile",

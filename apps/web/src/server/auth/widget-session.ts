@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 
-import { signValue, verifyValue } from "./signed";
+import { signValue, verifyValue } from "@/lib/signed";
 
 /**
  * Widget tokens: who's signed in inside the widget on a customer's site. Cookies

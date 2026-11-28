@@ -1015,7 +1015,7 @@ export async function startConversation(
     email: string | null;
     /** With `email`: the name it came from (an email's From). */
     name?: string | null;
-    /** A signed-out visitor's, in the widget (lib/visitor-session.ts). */
+    /** A signed-out visitor's, in the widget (server/auth/visitor-session.ts). */
     visitorHash?: string | null;
     subject?: string;
     body: string;

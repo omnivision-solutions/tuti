@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { appUrl, portalUrl } from "@/lib/hosts";
-import { HANDOFF_STATE_COOKIE, HANDOFF_STATE_TTL_SECONDS, randomSecret } from "@/lib/portal-handoff";
+import { HANDOFF_STATE_COOKIE, HANDOFF_STATE_TTL_SECONDS, randomSecret } from "@/server/auth/portal-handoff";
 import { safeRedirectPath } from "@/lib/redirects";
 
-// <project>.tuti.so/continue?redirect=…[&sign-up=1] starts "Continue as <name>" (see lib/portal-handoff.ts).
+// <project>.tuti.so/continue?redirect=…[&sign-up=1] starts "Continue as <name>" (see server/auth/portal-handoff.ts).
 export async function GET(request: Request, { params }: RouteContext<"/portal/[project]/continue">) {
   const { project } = await params;
   const state = randomSecret();

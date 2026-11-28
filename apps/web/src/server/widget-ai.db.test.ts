@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 const later = vi.hoisted(() => [] as (() => unknown)[]);
 vi.mock("next/server", async (original) => ({ ...(await original<typeof import("next/server")>()), after: (task: () => unknown) => void later.push(task) }));
 
-import { widgetToken } from "@/lib/widget-session";
+import { widgetToken } from "@/server/auth/widget-session";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
 import { runAiTurn } from "./ai-turn";

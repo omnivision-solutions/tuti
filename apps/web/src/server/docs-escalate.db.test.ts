@@ -6,8 +6,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import ReportingUnansweredPage from "@/app/app/(workspace)/[project]/reporting/unanswered/page";
-import { hashSecret } from "@/lib/portal-handoff";
-import { widgetToken } from "@/lib/widget-session";
+import { hashSecret } from "@/server/auth/portal-handoff";
+import { widgetToken } from "@/server/auth/widget-session";
 import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR, SIGN_IN_LINKS_PER_CLIENT_PER_HOUR, SIGN_IN_LINKS_PER_PORTAL_PER_HOUR } from "@/lib/sign-in-link";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";

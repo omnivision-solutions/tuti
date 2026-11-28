@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
-import { auth } from "@/lib/auth";
+import { auth } from "@/server/auth/auth";
 import { appUrl } from "@/lib/hosts";
 import { createApiKey } from "@/server/api-keys";
 import { KEEPALIVE_MS, listening } from "@/server/live";

@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { reportRange } from "@/lib/report-range";
-import { widgetToken } from "@/lib/widget-session";
+import { widgetToken } from "@/server/auth/widget-session";
 import { actAs, addMember, createProject, signUp } from "@/test/helpers";
 
 import { OperationError } from "./operations/define";

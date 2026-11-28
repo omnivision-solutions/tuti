@@ -4,8 +4,8 @@ import { prisma } from "@tuti/db";
 import { SignJWT } from "jose";
 import { beforeEach, expect, test, vi } from "vitest";
 
-import { generateSsoSecret } from "@/lib/sso";
-import { widgetToken } from "@/lib/widget-session";
+import { generateSsoSecret } from "@/server/auth/sso";
+import { widgetToken } from "@/server/auth/widget-session";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { findSimilarPosts } from "./similar-posts";

@@ -15,6 +15,7 @@ import { setEmailPreference } from "./email-preferences";
 import { updateEmailPreferences } from "./operations/email-preferences";
 import { call } from "./operations/run";
 import { chooseLanguage } from "./reader-language";
+import type { InputOf } from "@/server/operations/define";
 
 /** Changelog translations (docs/plan.md L16): the same machinery as articles' (L6), and the announcement's wait. */
 
@@ -44,7 +45,7 @@ afterEach(() => {
 
 const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
 const log = { info: () => {}, warn: () => {} };
-const languages = async (input: Parameters<typeof updateLanguages.run>[1]) => {
+const languages = async (input: InputOf<typeof updateLanguages>) => {
   const result = await call(updateLanguages, as(), input);
   await languageTranslationsDone();
   return result;

@@ -3,7 +3,7 @@ import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
 
 import { buttonVariants } from "@/components/ui/button";
-import { SSO_ERROR_CODES, type SsoErrorCode } from "@/lib/sso";
+import { SSO_ERROR_CODES, type SsoErrorCode } from "@/server/auth/sso";
 import { portalLinks } from "@/server/portal-base";
 import { MESSAGE_TEXT, MESSAGE_TITLE, PortalMessage } from "@/components/portal-message";
 import { cn } from "@/lib/utils";

@@ -2,6 +2,7 @@ import { log } from "@tuti/shared";
 
 import { apiError as error, authenticate, authenticateTeammate, refusal, sendsSession } from "@/server/api-auth";
 import { matchOperation, OperationError } from "@/server/operations";
+import { legacyRun } from "@/server/operations/define";
 
 /**
  * The REST API: /api/v1/… → an operation (server/operations). Callers send a
@@ -49,7 +50,7 @@ async function handle(request: Request, { params }: RouteContext<"/api/v1/[...pa
 
   try {
     const actor = caller.kind === "user" ? { kind: caller.kind, userId: caller.userId, sessionId: caller.sessionId } : caller;
-    return Response.json(await operation.run({ actor, projectId: caller.projectId }, input.data));
+    return Response.json(await legacyRun(operation, { actor, projectId: caller.projectId }, input.data));
   } catch (e) {
     if (e instanceof OperationError) {
       return error(e.status, e.code, e.message);

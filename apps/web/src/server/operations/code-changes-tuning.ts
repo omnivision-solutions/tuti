@@ -14,7 +14,7 @@ import {
 } from "@tuti/shared";
 import { z } from "zod";
 
-import { defineOperation, OperationError, requireOwner } from "./define";
+import { defineOperation, OperationError } from "./define";
 import { requirePlan } from "./plan";
 
 /**
@@ -151,8 +151,9 @@ export const updateCodeChangesTuning = defineOperation({
   input: z.object(tuningInput),
   output: tuningOut,
   example: { "propose.edit.maybe": 0.4, "decide.rounds": 8, "decide.reasoning": null },
-  run: async ({ actor, projectId }, input) => {
-    const userId = await requireOwner(actor, projectId);
+  run: async ({ ownerId, projectId }, input) => {
+    // Set by the owner check before the run (authorize).
+    const userId = ownerId!;
     await requirePlan(projectId, "aiTuning");
     const server = serverCodeChangesSettings();
     const given = Object.entries(input).filter((entry): entry is [TuningKey, TuningValue | null] => entry[1] !== undefined);

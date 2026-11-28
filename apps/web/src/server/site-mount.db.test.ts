@@ -8,10 +8,10 @@ import { SignJWT } from "jose";
 
 import { GET as authGet, POST as authRoute } from "@/app/api/auth/[...all]/route";
 import { GET as ssoRoute } from "@/app/portal/[project]/(site)/sso/route";
-import { auth } from "@/lib/auth";
+import { auth } from "@/server/auth/auth";
 import { appUrl } from "@/lib/hosts";
 import { BASE_HEADER } from "@/lib/portal-base";
-import { generateSsoSecret } from "@/lib/sso";
+import { generateSsoSecret } from "@/server/auth/sso";
 import { proxy } from "@/proxy";
 import { createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";

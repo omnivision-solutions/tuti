@@ -7,7 +7,7 @@ import { query } from "./db";
 import { APP_URL, portalUrl, serverEnv } from "./env";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
 
-/** Customize's preview token for the project's owner (lib/preview-session.ts), signed as the server signs it. */
+/** Customize's preview token for the project's owner (server/auth/preview-session.ts), signed as the server signs it. */
 async function previewToken(slug: string) {
   const [{ projectId, userId }] = await query(`SELECT p.id AS "projectId", m."userId" FROM project p JOIN team_member m ON m."projectId" = p.id WHERE p.slug = $1`, [slug]);
   const payload = [projectId, userId, "e2e", String(Math.floor(Date.now() / 1000) + 3600)].join(".");

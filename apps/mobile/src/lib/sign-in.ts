@@ -6,7 +6,7 @@ import { hostOf } from "./server";
 import { challengeOf, newState, newVerifier } from "./pkce";
 
 /**
- * Signing in (apps/web/src/lib/app-sign-in.ts has the server's side): Google or GitHub in the system's browser sheet,
+ * Signing in (apps/web/src/server/auth/app-sign-in.ts has the server's side): Google or GitHub in the system's browser sheet,
  * or the account's email and password in one call.
  *
  * Google and GitHub start with a new state and PKCE verifier, kept in secure storage (on Android the phone may close

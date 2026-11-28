@@ -20,7 +20,7 @@ import {
 import { reactToChangelogEntry as reactAction } from "@/server/changelog";
 import { entryTold, publishedEntries } from "@/server/changelog-queries";
 import { createPost } from "@/server/operations/create";
-import { OperationError } from "@/server/operations/define";
+import { type InputOf, OperationError } from "@/server/operations/define";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -303,7 +303,7 @@ function imageServer() {
 
 describe("an entry's text as Markdown", () => {
   const text = "Intro.\n\n## Dark mode\n\nOld text.\n\n### Details\n\nFollows your system.\n\n## Search\n\nFaster.";
-  const edit = (input: Parameters<typeof updateChangelogEntry.run>[1]) => call(updateChangelogEntry, as(owner), input);
+  const edit = (input: InputOf<typeof updateChangelogEntry>) => call(updateChangelogEntry, as(owner), input);
   const editSection = (input: { number: number; markdown: string; section?: number | string; append?: boolean; expectedUpdatedAt?: string }) => call(editChangelogSection, as(owner), input);
 
   test("reads back as it's written, with when it last changed; a list goes without the Markdown", async () => {

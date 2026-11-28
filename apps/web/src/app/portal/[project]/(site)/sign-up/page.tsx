@@ -17,7 +17,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 /**
  * "Create an account" on a portal: as its sign-in, an emailed link (it makes the account, named as typed here), and
- * "Use a password instead" for the app's sign-up (passwords are typed only there, lib/auth.ts), through /continue and back.
+ * "Use a password instead" for the app's sign-up (passwords are typed only there, server/auth/auth.ts), through /continue and back.
  */
 export default async function PortalSignUpPage(props: PageProps<"/portal/[project]/sign-up">) {
   const [{ project }, { next }] = await Promise.all([props.params, props.searchParams]);

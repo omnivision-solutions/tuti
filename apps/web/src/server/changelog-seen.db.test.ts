@@ -6,7 +6,7 @@ import { SignJWT } from "jose";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { GET, OPTIONS, POST } from "@/app/api/widget/seen/route";
-import { generateSsoSecret } from "@/lib/sso";
+import { generateSsoSecret } from "@/server/auth/sso";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
 import { markChangelogSeen } from "./changelog-seen";

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import type { FormState } from "./form-state";
 import { getGlossary, updateGlossary } from "./operations/glossary";
 import { asAdmin, call } from "./operations/run";
+import type { InputOf } from "@/server/operations/define";
 
 /** Settings → Languages → Glossary (see the glossary.* operations). */
 
@@ -26,7 +27,7 @@ export type GlossarySaved = FormState & {
 export async function saveGlossary(projectSlug: string, terms: GlossaryTermInput[], hash?: string, dryRun = false): Promise<GlossarySaved> {
   const saved = { retranslating: 0, behind: 0, hash: "" };
   const result = await asAdmin(projectSlug, DENIED, async (context) => {
-    Object.assign(saved, await call(updateGlossary, context, { terms: terms as Parameters<typeof updateGlossary.run>[1]["terms"], hash, dryRun }));
+    Object.assign(saved, await call(updateGlossary, context, { terms: terms as InputOf<typeof updateGlossary>["terms"], hash, dryRun }));
   });
   if (result.error && hash) {
     // Refused: if the glossary moved on since `hash`, its newest version too.

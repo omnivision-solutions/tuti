@@ -23,7 +23,7 @@ import type { SocialProvider, SocialSignInError } from "@/lib/social-sign-in";
  * `next` (a same-site path, e.g. an invite link) overrides where to go afterwards and
  * is carried over when switching between sign-in and sign-up. `linkProject` (a portal
  * that can send email) makes signing in or up "Email me a sign-in (sign-up) link": the password is typed on the app's
- * host only (lib/auth.ts), so there "Use a password instead" goes to the app's sign-in (sign-up) through the portal's
+ * host only (server/auth/auth.ts), so there "Use a password instead" goes to the app's sign-in (sign-up) through the portal's
  * /continue, and back. `forgotPassword` (a host that can
  * send email) adds "Forgot your password?". `signUp={false}` (a private portal) leaves out "Create an account";
  * `signUpOnApp` (a portal with SSO, whose own sign-up sends people to its app's sign-in) makes it the app's sign-up, and back.
@@ -95,7 +95,7 @@ export function AuthForm({
   const isSignUp = mode === "sign-up";
   // Signing in or up on a portal: the emailed link, the password on the app.
   const usePassword = !linkProject;
-  // A portal's way to the app's sign-in (or sign-up), coming back after (lib/portal-handoff.ts). A plain link's: /continue is a
+  // A portal's way to the app's sign-in (or sign-up), coming back after (server/auth/portal-handoff.ts). A plain link's: /continue is a
   // route that sets a cookie and leaves for the app host.
   const onApp = (newAccount?: boolean) =>
     at(`/continue?${new URLSearchParams({ ...(next && { redirect: next }), ...(newAccount && { "sign-up": "1" }) })}`);
@@ -154,7 +154,7 @@ export function AuthForm({
             return;
           }
           // Sent again; or, with another password on the account, nothing more: its owner was emailed a reset on signing
-          // up (lib/auth.ts), and the answer is the same.
+          // up (server/auth/auth.ts), and the answer is the same.
           const sent = error.code === "EMAIL_NOT_VERIFIED" || error.code === "INVALID_EMAIL_OR_PASSWORD";
           setLinkError(sent ? undefined : (error.message ?? t("emailFailed")));
           setResent(sent);
@@ -250,11 +250,11 @@ export function AuthForm({
     setLinkError(undefined);
     const { data, error } = isSignUp
       ? await authClient.signUp.email({ email, password, name: String(form.get("name")), callbackURL: at(next ?? redirectTo) })
-      : // Where the link it sends before verifying goes (signed in, this form goes there itself: lib/auth.ts's hooks.after).
+      : // Where the link it sends before verifying goes (signed in, this form goes there itself: server/auth/auth.ts's hooks.after).
         await authClient.signIn.email({ email, password, callbackURL: at(next ?? redirectTo) });
     setPending(false);
 
-    // Not signed in until the address is verified (lib/auth.ts): signing up, or signing in before, sends its link.
+    // Not signed in until the address is verified (server/auth/auth.ts): signing up, or signing in before, sends its link.
     if ((isSignUp && data && !data.token) || error?.code === "EMAIL_NOT_VERIFIED") {
       setEmail(email);
       setName(isSignUp ? String(form.get("name")) : undefined);

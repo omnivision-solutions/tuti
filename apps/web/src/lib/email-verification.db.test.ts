@@ -8,10 +8,10 @@ import { actAs, createProject, redirectTarget, signUp as signUpUser } from "@/te
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
-import { auth, VERIFICATION_SECONDS } from "./auth";
+import { auth, VERIFICATION_SECONDS } from "@/server/auth/auth";
 import { getSession } from "@/server/session";
 
-import { randomSecret } from "./portal-handoff";
+import { randomSecret } from "@/server/auth/portal-handoff";
 import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR } from "./sign-in-link";
 
 const APP_URL = process.env.APP_URL!;
