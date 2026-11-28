@@ -124,8 +124,9 @@ export function VoteButton({
           const result: { error?: string } = vote
             ? await vote(next)
             : await client.votes.set.mutate({ project, number, voted: next }).then(
-                // Saved: the page again (its count, who voted), in this transition, so the vote shown stays till it comes.
-                () => (router.refresh(), {}),
+                // Saved: the page again (its count, who voted). After an await a transition has to be started again, so the
+                // refresh is one too: the vote shown stays till the page's new count comes, without flickering back.
+                () => (startTransition(() => router.refresh()), {}),
                 (error: unknown) => ({ error: errorMessage(error) }),
               );
           if (result.error) {

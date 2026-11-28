@@ -147,9 +147,10 @@ export function CommentActions({ ability, commentId, author, likes, liked }: { a
             startTransition(async () => {
               const next = !optimistic.liked;
               setOptimistic((s) => ({ liked: next, likes: s.likes + (next ? 1 : -1) }));
-              // Saved: the page again (its counts), in this transition, so the like shown stays till it comes.
+              // Saved: the page again (its counts). After an await a transition has to be started again, so the refresh is
+              // one too: the like shown stays till the page's new count comes, without flickering back.
               await client.comments.like.mutate({ project: ability.project, number: ability.number, id: commentId, liked: next }).then(
-                () => router.refresh(),
+                () => startTransition(() => router.refresh()),
                 (error: unknown) => toast.error(errorMessage(error)),
               );
             })
