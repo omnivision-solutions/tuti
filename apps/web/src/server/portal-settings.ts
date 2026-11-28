@@ -6,35 +6,8 @@ import type { FormState } from "./form-state";
 import { removeDomain, setDomain, verifyDomain } from "./operations/domain";
 import { createRedirect, deleteRedirect } from "./operations/redirects";
 import { removeSite, setSite, verifySite } from "./operations/site";
-import { addPortalReaders as addPortalReadersOperation, removePortalReader as removePortalReaderOperation, updatePortal } from "./operations/portal";
 import { OperationError } from "./operations/define";
 import { asAdmin, call } from "./operations/run";
-
-const DENIED = "Only project owners and admins can change who sees the portal";
-
-/** Settings → Access (see portal.update). */
-export async function setPortalAccess(projectSlug: string, access: string): Promise<{ error?: string }> {
-  return asAdmin(projectSlug, DENIED, (context) =>
-    call(updatePortal, context, { access: access as "public" | "private" }),
-  );
-}
-
-/** Customize → Navigation → Home page (see portal.update). */
-/** Settings → Access → Readers: the form's addresses and domains, separated by commas, spaces or lines (see portalReaders.add). */
-export async function addPortalReaders(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState & { added?: string[]; emailed?: number }> {
-  const emails = String(formData.get("emails") ?? "")
-    .split(/[\s,;]+/)
-    .filter(Boolean);
-  let result: { added: string[]; emailed: number } | undefined;
-  const state = await asAdmin(projectSlug, DENIED, async (context) => {
-    result = await call(addPortalReadersOperation, context, { emails });
-  });
-  return { ...state, added: result?.added, emailed: result?.emailed };
-}
-
-export async function removePortalReader(projectSlug: string, email: string): Promise<{ error?: string }> {
-  return asAdmin(projectSlug, DENIED, (context) => call(removePortalReaderOperation, context, { email: String(email) }));
-}
 
 const DOMAIN_DENIED = "Only project owners and admins can change the portal's domain";
 

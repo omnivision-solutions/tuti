@@ -231,6 +231,7 @@ import {
 } from "./plan";
 import {
   addPortalReaders,
+  getAccessSettings,
   getPortal,
   listPortalReaders,
   removePortalReader,
@@ -530,6 +531,7 @@ export const all = [
   listPortalReaders,
   addPortalReaders,
   removePortalReader,
+  getAccessSettings,
   getDomain,
   setDomain,
   verifyDomain,

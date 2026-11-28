@@ -2,6 +2,7 @@
 
 import { MoreHorizontalIcon, PlusIcon } from "lucide-react";
 import { useActionState, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { ItemList, ItemRow } from "@/components/item-list";
@@ -23,7 +24,7 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui
 import { Textarea } from "@/components/ui/textarea";
 import { timeAgo } from "@/lib/format";
 import { keepingFields } from "@/lib/forms";
-import { addPortalReaders, removePortalReader } from "@/server/portal-settings";
+import { errorMessage, useTRPCClient } from "@/components/trpc";
 
 type Reader = { email: string; addedAt: string; addedBy: string | null };
 
@@ -77,9 +78,18 @@ export function PortalReaders({ projectSlug, readers }: { projectSlug: string; r
 }
 
 function AddReadersForm({ projectSlug, onBusy, onAdded }: { projectSlug: string; onBusy: (adding: boolean) => void; onAdded: () => void }) {
-  const [state, action, pending] = useActionState(async (prev: { error?: string }, formData: FormData) => {
+  const trpc = useTRPCClient();
+  const router = useRouter();
+  const [state, action, pending] = useActionState(async (_prev: { error?: string }, formData: FormData) => {
     onBusy(true);
-    const result = await addPortalReaders(projectSlug, prev, formData).finally(() => onBusy(false));
+    // The addresses and domains, separated by commas, spaces or lines.
+    const emails = String(formData.get("emails") ?? "")
+      .split(/[\s,;]+/)
+      .filter(Boolean);
+    const result: { error?: string; added?: string[]; emailed?: number } = await trpc.portalReaders.add
+      .mutate({ project: projectSlug, emails })
+      .catch((error: unknown) => ({ error: errorMessage(error) }))
+      .finally(() => onBusy(false));
     if (!result.error) {
       const added = result.added ?? [];
       const people = added.filter((entry) => !entry.startsWith("@")).length;
@@ -95,8 +105,10 @@ function AddReadersForm({ projectSlug, onBusy, onAdded }: { projectSlug: string;
               : what,
       );
       onAdded();
+      // The list is the page's.
+      router.refresh();
     }
-    return result;
+    return result.error ? { error: result.error } : {};
   }, {});
 
   return (
@@ -134,6 +146,8 @@ function AddReadersForm({ projectSlug, onBusy, onAdded }: { projectSlug: string;
 /** A reader's ⋯ menu: Remove, which asks first. */
 function ReaderActions({ projectSlug, email }: { projectSlug: string; email: string }) {
   const [pending, startTransition] = useTransition();
+  const trpc = useTRPCClient();
+  const router = useRouter();
   const [removing, setRemoving] = useState(false);
   return (
     <>
@@ -161,12 +175,15 @@ function ReaderActions({ projectSlug, email }: { projectSlug: string; email: str
               focusableWhenDisabled
               onClick={() =>
                 startTransition(async () => {
-                  const result = await removePortalReader(projectSlug, email);
-                  if (result.error) {
-                    toast.error(result.error);
-                  } else {
-                    toast.success(`${email} removed`);
+                  try {
+                    await trpc.portalReaders.remove.mutate({ project: projectSlug, email });
+                  } catch (error) {
+                    toast.error(errorMessage(error));
+                    return;
                   }
+                  toast.success(`${email} removed`);
+                  // The list is the page's.
+                  router.refresh();
                 })
               }
             >
