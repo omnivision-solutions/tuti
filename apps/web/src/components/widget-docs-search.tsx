@@ -14,6 +14,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { docsHref } from "@/lib/widget-docs";
 import { logDocsSearch, searchDocsAsTyped } from "@/server/docs-readers";
 import type { DocsSearchResult } from "@/server/docs-search";
+import { useTranslations } from "next-intl";
+import { useTeamLanguage } from "@/components/portal-look";
 
 /** How long typing pauses before the box searches (as on the portal). */
 const SEARCH_DELAY_MS = 150;
@@ -21,15 +23,22 @@ const SEARCH_DELAY_MS = 150;
 /** Search results in the widget's Docs tab, each opening the article with the search kept, so going back returns to them. */
 export function WidgetSearchResults({ query, results }: { query: string; results: DocsSearchResult[] }) {
   const at = usePortalHref();
+  const t = useTranslations("helpCenter");
+  // Each result's title and snippet: a translation's in its language (L10), else the team's words.
+  const team = useTeamLanguage();
   return (
-    <ul aria-label="Search results" className="flex flex-col gap-4">
+    <ul aria-label={t("searchResults")} className="flex flex-col gap-4">
       {results.map((result) => (
         <li key={result.slug} className="flex flex-col gap-0.5">
-          <Link href={at(docsHref({ q: query, article: result.slug }))} className="break-words text-primary hover:underline">
+          <Link href={at(docsHref({ q: query, article: result.slug }))} lang={result.lang ?? team} className="break-words text-primary hover:underline">
             {result.title}
             {result.locked && <LockedMark />}
           </Link>
-          {result.snippet && <p className="text-sm break-words text-muted-foreground">{result.snippet}</p>}
+          {result.snippet && (
+            <p lang={result.lang ?? team} className="text-sm break-words text-muted-foreground">
+              {result.snippet}
+            </p>
+          )}
         </li>
       ))}
     </ul>
@@ -39,13 +48,14 @@ export function WidgetSearchResults({ query, results }: { query: string; results
 /** What the Docs tab says when nothing matches the search. */
 export function WidgetNoResults({ query, onBrowse }: { query: string; onBrowse?: () => void }) {
   const at = usePortalHref();
+  const t = useTranslations("helpCenter");
   return (
     <EmptyState
-      title={`No articles match “${query}”`}
-      description="Try other words, or browse all articles."
+      title={t("noMatchFor", { q: query })}
+      description={t("tryOther")}
       action={
         <Link href={at(docsHref({}))} onClick={onBrowse} className={buttonVariants({ variant: "outline" })}>
-          All articles
+          {t("allArticles")}
         </Link>
       }
     />
@@ -62,6 +72,8 @@ export function WidgetNoResults({ query, onBrowse }: { query: string; onBrowse?:
  * `?q=` counts it there).
  */
 export function WidgetDocsSearch({ query, children }: { query: string; children: ReactNode }) {
+  const t = useTranslations("helpCenter");
+  const w = useTranslations("widget");
   const slug = usePortalSlug();
   const at = usePortalHref();
   const router = useRouter();
@@ -159,11 +171,11 @@ export function WidgetDocsSearch({ query, children }: { query: string; children:
               }
             }}
             maxLength={200}
-            placeholder="Search docs"
-            aria-label="Search the docs"
+            placeholder={t("searchDocs")}
+            aria-label={t("searchTheDocs")}
           />
           {/* Without the page's script, the only way to search. */}
-          {!enhanced && <Button type="submit">Search</Button>}
+          {!enhanced && <Button type="submit">{w("search")}</Button>}
         </form>
         {/* The assistant, in the panel (the page has one when AI answers are on). */}
         <AskAIButton />
