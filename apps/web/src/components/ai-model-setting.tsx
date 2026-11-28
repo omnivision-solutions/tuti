@@ -11,7 +11,7 @@ import { UpgradeDialog } from "@/components/upgrade-dialog";
 import type { AiModelSettingProps } from "@/lib/ai-model-setting";
 import { costLabel, costPerUse } from "@/lib/model-tiers";
 import type { UpgradePrompt } from "@/lib/upgrade-prompt";
-import { useTRPCClient } from "@/components/trpc";
+import { useInOrder, useTRPCClient } from "@/components/trpc";
 import { TRPCClientError } from "@trpc/client";
 import type { updateAiModels } from "@/server/operations/ai-models";
 import type { InputOf } from "@/server/operations/define";
@@ -46,6 +46,8 @@ export function AiModelSetting({
   const [prompt, setPrompt] = useState<UpgradePrompt | null>(null);
   const [upgrading, setUpgrading] = useState(false);
   const trpc = useTRPCClient();
+  // A model saved on leaving its box, then a level clicked: the level lands last, as chosen.
+  const inOrder = useInOrder();
   const router = useRouter();
   const id = useId();
 
@@ -57,7 +59,7 @@ export function AiModelSetting({
           setShown(level);
         }
         // A save that fails (refused, the network, the server) is told, so the same choice can be sent again.
-        const result = await trpc.aiModels.update.mutate({ project: projectSlug, ...input }).then(
+        const result = await inOrder(() => trpc.aiModels.update.mutate({ project: projectSlug, ...input })).then(
           () => ({ error: undefined }),
           (error: unknown) => ({ error: error instanceof TRPCClientError && error.shape ? error.message : "Couldn't save. Try again." }),
         );
