@@ -7,7 +7,7 @@ import { createApiKey } from "@/server/api-keys";
 import { actAs, callerAs, createProject, signUp } from "@/test/helpers";
 
 import { DELETE, GET as mcpGet, POST } from "../mcp/route";
-import { GET } from "./[...path]/route";
+import { GET, POST as rest } from "./[...path]/route";
 
 // `project.get` as an internal operation (the app needs it, the public API doesn't), with its path left on: what keeps
 // it out of REST and MCP is the flag alone.
@@ -31,8 +31,11 @@ vi.mock("@/server/operations/more", async (importOriginal) => {
   return { ...actual, getProject };
 });
 
+/** REST and MCP call the router (docs/plan.md, "One way in", T2). */
+
 let key: string;
 let keyId: string;
+let readKey: string;
 
 beforeEach(async () => {
   const owner = await signUp("Olive Owner");
@@ -40,6 +43,7 @@ beforeEach(async () => {
   actAs(owner);
   key = (await createApiKey(project.slug, "Tests", "WRITE")).key!;
   keyId = (await prisma.apiKey.findFirstOrThrow({ where: { projectId: project.id } })).id;
+  readKey = (await createApiKey(project.slug, "Read", "READ")).key!;
 });
 
 test("an internal operation is in the router, but neither REST nor MCP serves it", async () => {
@@ -64,4 +68,19 @@ test("an internal operation is in the router, but neither REST nor MCP serves it
   expect(tools.map((tool) => tool.name)).not.toContain("project_get");
   expect(tools.map((tool) => tool.name)).toContain("team_list");
   expect(await client.callTool({ name: "project_get", arguments: {} })).toMatchObject({ isError: true, content: [{ text: "Unknown tool project_get" }] });
+});
+
+test("who may comes before what they sent: a read-only key writing a bad post is refused, not told how to fix it", async () => {
+  const response = await rest(
+    new Request("http://tuti.localhost:3100/api/v1/posts", {
+      method: "POST",
+      headers: { authorization: `Bearer ${readKey}`, "content-type": "application/json" },
+      body: JSON.stringify({ board: "feature-requests", title: "x" }),
+    }),
+    { params: Promise.resolve({ path: ["posts"] }) },
+  );
+  expect({ status: response.status, body: await response.json() }).toEqual({
+    status: 403,
+    body: { error: { code: "forbidden", message: "This key can only read. Create a read + write key to change things." } },
+  });
 });

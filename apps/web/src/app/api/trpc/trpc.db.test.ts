@@ -139,6 +139,12 @@ test("an operation's own error keeps its status and message", async () => {
   expect(await trpc("aiFirst.get", { project: project.slug })).toMatchObject({ status: 401 });
 });
 
+test("who may comes before what they sent: a refused caller is refused, whatever the input", async () => {
+  const member = await addMember(project.id, "MEMBER");
+  const sent = { method: "POST" as const, headers: { cookie: member.cookie, "sec-fetch-site": "same-origin" } };
+  expect(await trpc("aiFirst.update", { project: project.slug, name: "x".repeat(51) }, sent)).toMatchObject({ status: 403 });
+});
+
 /** What a server component did: rendered, a 404, or a redirect to where. */
 async function rendered(page: Promise<unknown>) {
   try {
