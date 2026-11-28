@@ -66,13 +66,24 @@ export function ses(): Ses | null {
 
   /** Calls SESv2: its answer, or "exists" or "missing" when SES says it already has it or doesn't. */
   const call = async (method: string, path: string, body?: unknown): Promise<Record<string, unknown> | "exists" | "missing"> => {
-    const response = await client.fetch(`${base}/v2/email${path}`, {
-      method,
-      headers: { "content-type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      // One deadline for the call and its retries: a stalled request ends rather than holding a send (and its lock).
-      signal: AbortSignal.timeout(SES_TIMEOUT_MS),
-    });
+    // One deadline for the call and its retries: a stalled request ends rather than holding a send (and its lock).
+    const signal = AbortSignal.timeout(SES_TIMEOUT_MS);
+    let response: Response;
+    // The client's retries (5xx and 429), by hand: its `fetch` puts the deadline only inside the signed Request, which
+    // follows it through a weak reference, so a garbage collection while SES holds its answer lost the deadline.
+    for (let attempt = 0; ; attempt++) {
+      const request = await client.sign(`${base}/v2/email${path}`, {
+        method,
+        headers: { "content-type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      response = await fetch(request, { signal });
+      if (attempt >= client.retries || (response.status < 500 && response.status !== 429)) {
+        break;
+      }
+      await response.body?.cancel();
+      await new Promise((resolve) => setTimeout(resolve, 50 * 2 ** attempt));
+    }
     if (response.ok) {
       // Read in full first: a body cut off by the deadline fails the call rather than reading as empty.
       const text = await response.text();
