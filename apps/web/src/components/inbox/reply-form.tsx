@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { cn } from "cn";
 
 import { AttachButton, type Upload, UploadList, useUploads } from "@/components/attachment-uploads";
-import { actOn } from "@/components/inbox/list-keys";
+import { actOn, refreshAfterAction } from "@/components/inbox/list-keys";
 import { InsertArticleDialog, type InsertableArticle } from "@/components/inbox/insert-article";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -329,9 +329,10 @@ export function ReplyForm({
         toast.error("Not sent: it couldn't be translated");
       }
       if (!result.error) {
-        // The page with the reply in it, as the server action's refresh did. Another conversation opened meanwhile
-        // waits for this transition (React finishes them together), so it's still this page.
-        router.refresh();
+        // The page with the reply in it, as the server action's refresh did, numbered so a refresh asked for before it
+        // isn't taken for its answer (Send and close moves on at its own). Another conversation opened meanwhile waits for
+        // this transition (React finishes them together), so it's still this page.
+        refreshAfterAction(router);
         // Only what was sent: anything added meanwhile stays. (Still here: a row opened meanwhile waits for the reply.)
         setDrafts((current) => ({ ...current, [sending]: current[sending] === text ? "" : current[sending] }));
         files.sent(attached);
