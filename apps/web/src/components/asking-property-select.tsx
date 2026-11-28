@@ -1,12 +1,13 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useTransition } from "react";
 import { toast } from "sonner";
 
 import { SettingRow } from "@/components/settings-card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { propertyLabel, type PropertyFormats, suggestedAsking } from "@/lib/property-formats";
-import { setAskingProperty } from "@/server/groups";
+import { errorMessage, useTRPCClient } from "@/components/trpc";
 
 /** Properties by name, behind a prefix, so none can be taken for None. */
 const NONE = "none";
@@ -29,6 +30,8 @@ export function AskingPropertySelect({
   formats: PropertyFormats;
 }) {
   const [pending, startTransition] = useTransition();
+  const trpc = useTRPCClient();
+  const router = useRouter();
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   // Disabled while a pick saves, the box loses focus: it gets it back once saved, not the page.
@@ -46,12 +49,16 @@ export function AskingPropertySelect({
   const pick = (name: string | null) => {
     refocus.current = true;
     startTransition(async () => {
-      const result = await setAskingProperty(projectSlug, name);
-      if (result.error) {
-        toast.error(result.error);
-      } else {
-        toast.success(name === null ? "Feedback won't total a property" : `Feedback totals ${propertyLabel(formats, name)} over each post's voters`);
+      // Off while it saves (the select is disabled), so a second pick can't overlap this one.
+      try {
+        await trpc.project.update.mutate({ project: projectSlug, askingProperty: name });
+      } catch (error) {
+        toast.error(errorMessage(error));
+        return;
       }
+      toast.success(name === null ? "Feedback won't total a property" : `Feedback totals ${propertyLabel(formats, name)} over each post's voters`);
+      // The select shows what the page read.
+      router.refresh();
     });
   };
   return (

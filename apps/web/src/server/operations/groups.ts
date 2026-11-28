@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { type GroupCondition, groupConditions, groupMatch, type GroupRule, type Match, OPERATORS, storedRule } from "@tuti/shared/group-conditions";
 import { titleSlug } from "@/lib/post-urls";
+import { propertyFormat, storedPropertyFormats } from "@/lib/property-formats";
 import { readerGroup } from "@/lib/reader-groups";
 
 import { inGroupSql } from "@tuti/jobs";
@@ -131,6 +132,29 @@ export async function numberPropertyNames(projectId: string): Promise<string[]> 
     WHERE s."projectId" = ${projectId} AND jsonb_typeof(p.value) = 'number' ORDER BY name LIMIT ${NUMBER_PROPERTIES}`;
   return rows.map((row) => row.name);
 }
+
+/**
+ * Settings → Users → Who's asking, page-shaped (internal): the property Feedback totals over each post's voters (null:
+ * none), the users' number properties to pick from, and how the team shows each property.
+ */
+export const getAskingSettings = defineOperation({
+  name: "settings.asking",
+  title: "Get Who's asking",
+  summary: "Settings → Who's asking: the property totalled over each post's voters, the users' number properties, and their formats.",
+  method: "GET",
+  internal: true,
+  scope: "read",
+  access: "admin",
+  input: z.object({}),
+  output: z.object({ property: z.string().nullable(), properties: z.array(z.string()), formats: z.record(z.string(), propertyFormat) }),
+  run: async ({ projectId }) => {
+    const [project, properties] = await Promise.all([
+      prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { askingProperty: true, propertyFormats: true } }),
+      numberPropertyNames(projectId),
+    ]);
+    return { property: project.askingProperty, properties, formats: storedPropertyFormats(project.propertyFormats) };
+  },
+});
 
 /** The project's groups by name, each with who's in it now (or just group `key`). */
 export async function groupsWithReaders(projectId: string, key?: string): Promise<GroupView[]> {

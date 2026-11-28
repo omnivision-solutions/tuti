@@ -13,6 +13,8 @@ const { getHatchet, waited } = vi.hoisted(() => {
   const getHatchet = vi.fn(() => ({ task: vi.fn(), worker: vi.fn(async () => ({ start: vi.fn() })) }));
   return { getHatchet, waited };
 });
+// Hatchet is an outside service; the migrations wait is held open to see what the worker does meanwhile, and the jobs
+// (loaded for their handlers) aren't run.
 vi.mock("./migrations", () => ({
   waitForMigration: vi.fn(() => {
     waited.call();

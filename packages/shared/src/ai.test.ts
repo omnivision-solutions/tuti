@@ -12,6 +12,10 @@ beforeAll(async () => {
 afterAll(() => model.close());
 afterEach(() => {
   vi.unstubAllEnvs();
+  // Each test reads only its own requests, whatever ran before it (cleared first: done() may throw).
+  model.requests.length = 0;
+  model.decisions.length = 0;
+  model.images.length = 0;
   model.done();
 });
 
@@ -293,7 +297,6 @@ test("an image: the image model gets the prompt, the references and the image co
   vi.stubEnv("TUTI_CONFIG", configFile({ ai: { imageModel: "acme/painter" } }));
   await generateImage({ prompt: "A boat", references: [], aspectRatio: "1:1", imageSize: "2K", meter });
   expect(model.images[1]).toMatchObject({ model: "acme/painter", references: [], aspectRatio: "1:1", imageSize: "2K" });
-  model.images.length = 0;
 });
 
 test("images need OpenRouter: off without a key, and with another provider's", async () => {

@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 
+import { ConcurrencyLimitStrategy } from "@hatchet-dev/typescript-sdk";
 import { configFile } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -33,11 +34,15 @@ test("a code change's task: the analysis's time limit and a few minutes, a few a
   expect(taskOptions("codeChange")).toMatchObject({ executionTimeout: "25m", concurrency: [{ maxRuns: 1 }, { maxRuns: 2 }] });
 });
 
-test("other jobs keep Hatchet's time limits, and their own key's one run at a time", () => {
-  const other = taskOptions("postCreated", { name: "post-created", concurrencyKey: "input.postId" });
-  expect(other).not.toHaveProperty("executionTimeout");
-  expect(other).not.toHaveProperty("scheduleTimeout");
-  expect(other).toMatchObject({ name: "post-created", retries: 3, concurrency: { expression: "input.postId", maxRuns: 1 } });
+test("other jobs keep Hatchet's time limits, and their own key's runs wait their turn, one at a time", () => {
+  expect(taskOptions("postCreated")).toEqual({ name: "post-created", retries: 3 });
+  // Queued behind the run with the same key: Hatchet's own default strategy would cancel it.
+  expect(taskOptions("commentsEmailed")).toEqual({
+    name: "comments-emailed",
+    retries: 5,
+    backoff: { factor: 5, maxSeconds: 3600 },
+    concurrency: { expression: "input.postId", maxRuns: 1, limitStrategy: ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN },
+  });
 });
 
 test("an import's run may take twenty minutes (ten of pages, and a worst-case last page's read and saves), one at a time per import and ten on the whole server, the rest waiting up to an hour", () => {
