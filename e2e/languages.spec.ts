@@ -283,7 +283,12 @@ test("Feedback, a board and a post in German: their words, counts and times, and
   await reader.getByRole("button", { name: "Neuer Beitrag" }).click();
   await expect(reader.getByRole("dialog", { name: "Idee teilen" })).toBeVisible();
   await expect(reader.getByRole("textbox", { name: "Titel" })).toHaveAttribute("placeholder", "Kurzer, aussagekräftiger Titel");
+  // A similar idea while typing: its board's name in German, marked as German.
+  await reader.getByRole("textbox", { name: "Titel" }).fill("Dark mode");
+  await expect(reader.getByRole("dialog", { name: "Idee teilen" }).getByRole("listitem").filter({ hasText: "Dark mode" }).getByText("Funktionswünsche", { exact: true })).toHaveAttribute("lang", "de");
+  await reader.getByRole("textbox", { name: "Titel" }).fill("");
   await reader.keyboard.press("Escape");
+  await expect(reader.getByRole("dialog", { name: "Idee teilen" })).toBeHidden();
 
   // The post: its rail, a vote, and a comment posted with its time in German.
   await reader.getByRole("link", { name: "Dark mode" }).click();
