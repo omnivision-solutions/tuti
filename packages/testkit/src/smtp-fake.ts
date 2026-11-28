@@ -2,6 +2,7 @@ import type { AddressInfo } from "node:net";
 
 import { simpleParser } from "mailparser";
 import { SMTPServer } from "smtp-server";
+import { SMTPConnection } from "smtp-server/lib/smtp-connection.js";
 
 export type CapturedEmail = {
   from: string;
@@ -34,6 +35,18 @@ export type SmtpFake = {
   close(): Promise<void>;
 };
 
+// smtp-server waits a fixed 100 ms before greeting each connection, to catch clients that talk too soon. The app
+// opens a connection per email, so that wait was most of each email's time in tests: the fake greets at once.
+// Only the fake's own servers: any other SMTPServer in the process (the worker's receiver) keeps upstream's init.
+const fakeServers = new WeakSet<SMTPServer>();
+const upstreamInit = SMTPConnection.prototype.init;
+SMTPConnection.prototype.init = function (
+  this: SMTPConnection & { _server: SMTPServer; _setListeners(ready: () => void): void },
+) {
+  if (!fakeServers.has(this._server)) return upstreamInit.call(this);
+  this._setListeners(() => this.connectionReady());
+};
+
 /**
  * A local SMTP server that keeps what it receives, for tests (SMTP_HOST / SMTP_PORT).
  * `onEmail` sees each email as it arrives (e.g. to share it with other processes);
@@ -48,6 +61,7 @@ export async function startSmtpFake({
   const answers = new Map<string, string>();
   const server = new SMTPServer({
     authOptional: true,
+    disableReverseLookup: true,
     disabledCommands: ["STARTTLS"],
     onRcptTo(address, _session, callback) {
       if (refusing.get(address.address) === "recipient") {
@@ -92,6 +106,7 @@ export async function startSmtpFake({
       }
     },
   });
+  fakeServers.add(server);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.server.address() as AddressInfo;
 
