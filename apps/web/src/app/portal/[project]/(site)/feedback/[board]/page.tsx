@@ -34,6 +34,7 @@ import { portalTranslator } from "@/server/portal-language";
 import { portalPageMetadata } from "@/server/portal-metadata";
 import { mediaUrls } from "@/server/media-urls";
 import { boardPosts, boardStatusCounts, boardsWithCounts, recentlyShipped } from "@/server/post-lists";
+import { boardNames } from "@/server/portal-labels";
 import { VisibilityBadge } from "@/components/visibility-badge";
 
 /** A board's tabs, its orders (each named by its message): Trending (the most votes in the last 7 days, then the most votes) first. */
@@ -50,14 +51,16 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/feedb
   const { project, board: slug } = await props.params;
   const board = await prisma.board.findFirst({
     where: { slug, project: { slug: project } },
-    select: { projectId: true, name: true, description: true, postVisibility: true, off: true },
+    select: { projectId: true, name: true, description: true, translations: true, postVisibility: true, off: true },
   });
-  // Only a board this reader sees (the page is "not found" otherwise): its name stays the team's.
+  // Only a board this reader sees (the page is "not found" otherwise).
   if (!board || !seesBoard(await currentPostViewer(board.projectId), board)) {
     return {};
   }
   const { t } = await portalTranslator(board.projectId, "feedback");
-  return portalPageMetadata(project, { title: board.name, description: board.description || t("description"), path: boardPath({ slug }) });
+  // Its name and description in the page's language where they're translated (docs/plan.md L14).
+  const named = (await boardNames())(board);
+  return portalPageMetadata(project, { title: named.name, description: named.description || t("description"), path: boardPath({ slug }) });
 }
 
 export default async function BoardPage(props: PageProps<"/portal/[project]/feedback/[board]">) {
@@ -92,6 +95,8 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
     }
     notFound();
   }
+  // Its name and description in the page's language where they're translated, with their `lang` (docs/plan.md L14).
+  const named = (await boardNames())(board);
 
   // As voting checks it: someone signed in through another project's single sign-on can't vote here.
   const voter = session && (await canActIn(session.user.id, board.projectId)) ? session.user.id : null;
@@ -184,8 +189,8 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
       {...texts}
     >
       <PortalPageHeader
-        title={board.name}
-        description={board.description || t("description")}
+        title={<span lang={named.lang} className="hyphens-auto">{named.name}</span>}
+        description={named.description ? <span lang={named.lang}>{named.description}</span> : t("description")}
         // The search and `?status=` go with each sort; the sort and `?status=` with a search; the sort and search with a status.
         // Below `lg` two rows (the rail's boards are on wide screens only): the board switcher and the status menu, then the
         // sorts; the status menu is in the page twice (one shown), so Tab and screen readers follow the rows. With one board,
@@ -196,9 +201,10 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
               // Its own line, so a long board name is cut short rather than pushing the status menu to a row of its own.
               <div className="flex min-w-0 basis-full items-center gap-1.5 lg:hidden">
                 <BoardSwitcher
-                  name={board.name}
+                  name={named.name}
+                  nameLang={named.lang}
                   allHref={at("/feedback")}
-                  boards={boards.map((other) => ({ name: other.name, href: at(boardPath(other)), count: other._count.posts, current: other.id === board.id }))}
+                  boards={boards.map((other) => ({ name: other.name, lang: other.lang, href: at(boardPath(other)), count: other._count.posts, current: other.id === board.id }))}
                   className="min-w-0 shrink"
                 />
                 <div className="ml-auto shrink-0">
@@ -349,7 +355,9 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
               <p className="pt-2 text-center text-sm text-muted-foreground">
                 {t.rich("thatsAll", {
                   count: posts.length,
-                  board: board.name,
+                  board: named.name,
+                  // The board's name in its own language, inside the page's sentence (docs/plan.md L14).
+                  own: (chunks) => <span lang={named.lang}>{chunks}</span>,
                   link: (chunks) => <NewIdeaLink>{chunks}</NewIdeaLink>,
                 })}
               </p>
@@ -380,17 +388,20 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                       <Link
                         href={at(boardPath(other))}
                         aria-current={other.id === board.id ? "page" : undefined}
-                        // Read out as "Bugs, 3 open ideas", not "Bugs3".
-                        aria-label={t("openIdeas", { board: other.name, count: other._count.posts })}
                         className={cn(
                           "-mx-2.5 flex min-h-9 items-center gap-2 rounded-lg px-2.5 py-1.5 text-[0.9375rem] font-medium transition-colors",
                           other.id === board.id ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
                         )}
                       >
-                        <span className="min-w-0 flex-1 break-words">
+                        {/* Read as "Bugs, 3 open ideas" (in browse mode too), not "Bugs3": the board's name in its own language
+                            (docs/plan.md L14), its count in the page's. */}
+                        <span lang={other.lang} className="min-w-0 flex-1 break-words">
                           {other.name}
                         </span>
-                        <span className="text-[0.8125rem] tabular-nums">{other._count.posts.toLocaleString(language)}</span>
+                        <span className="sr-only">, {t("openIdeas", { count: other._count.posts })}</span>
+                        <span aria-hidden className="text-[0.8125rem] tabular-nums">
+                          {other._count.posts.toLocaleString(language)}
+                        </span>
                       </Link>
                     </li>
                   ))}

@@ -68,7 +68,7 @@ export { ANNOUNCEMENT_WAITS_MS, applyGlossaryChanges, behindOf, type GlossaryCha
 export { composerTranslation, DEFAULT_TEAM_LANGUAGE, languageCode, noticeText, noticeWait, replyTranslation, sameLanguage, translateMessage, translationFailed, translationPending, translationSettings } from "./conversation-translation";
 export { allowedHosts, dropChangedScreenshotProfile, LANDING_SHOT, SCREENSHOT_ERRORS, SCREENSHOT_SECRET, screenshotTask, settleStaleScreenshotRuns, type ShotResult, startScreenshots, takeScreenshots, WINDOWS, withoutLink } from "./screenshots";
 export { markersIn, MAX_SHOW, placeScreenshots, screenshotsAsked } from "./screenshot-lines";
-export { partlyScannedFor, scannedFor, scanSignInServices, type SignInService } from "./sign-in-hosts";
+export { foundDomains, partlyScannedFor, scannedFor, scanSignInServices, type SignInService } from "./sign-in-hosts";
 export { SCREENSHOT_DECISIONS } from "./stale-screenshots";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, thresholds } from "./code-change-decisions";

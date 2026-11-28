@@ -8,12 +8,14 @@ import { z } from "zod";
 import { widgetTokenUser } from "@/lib/widget-session";
 
 import { canActIn } from "./membership";
+import { boardNames } from "./portal-labels";
 import { currentPostViewer, readableProject } from "./portal-access";
 import { type PostViewer, postViewer, visiblePostsSql } from "./post-visibility";
 import { sessionIn } from "./session";
 
-export type SimilarPost = { id: string; number: number; title: string; voteCount: number; boardName: string; boardSlug: string; voted: boolean };
-type Candidate = Omit<SimilarPost, "voted"> & { body: string };
+/** `boardName` in the page's language where it's translated, in `boardLang` (docs/plan.md L14). */
+export type SimilarPost = { id: string; number: number; title: string; voteCount: number; boardName: string; boardLang?: string; boardSlug: string; voted: boolean };
+type Candidate = Omit<SimilarPost, "voted" | "boardLang"> & { body: string; boardDescription: string | null; boardTranslations: unknown };
 
 const querySchema = z.string().trim().min(3).max(120);
 const LIMIT = 5;
@@ -60,7 +62,11 @@ export async function findSimilarPosts(projectSlug: string, title: string, widge
   const judged = userId && (await canActIn(userId, project.id)) ? await duplicatesOnly(project.id, query.data, ranked) : ranked;
   const shown = judged.slice(0, LIMIT);
   const votes = userId && shown.length > 0 ? await prisma.vote.findMany({ where: { userId, postId: { in: shown.map((post) => post.id) } }, select: { postId: true } }) : [];
-  return shown.map(({ body: _, ...post }) => ({ ...post, voted: votes.some((vote) => vote.postId === post.id) }));
+  const named = await boardNames();
+  return shown.map(({ body: _, boardDescription, boardTranslations, ...post }) => {
+    const board = named({ name: post.boardName, description: boardDescription, translations: boardTranslations });
+    return { ...post, boardName: board.name, boardLang: board.lang, voted: votes.some((vote) => vote.postId === post.id) };
+  });
 }
 
 /** Checks by the decision model per project an hour, at most: the search is public, so anyone could run it up. */
@@ -109,7 +115,7 @@ async function duplicatesOnly(projectId: string, title: string, found: Candidate
 
 function trigramMatches(projectId: string, query: string, viewer: PostViewer) {
   return prisma.$queryRaw<Candidate[]>`
-    SELECT p.id, p.number, p.title, p.body, p."voteCount", b.name AS "boardName", b.slug AS "boardSlug"
+    SELECT p.id, p.number, p.title, p.body, p."voteCount", b.name AS "boardName", b.description AS "boardDescription", b.translations AS "boardTranslations", b.slug AS "boardSlug"
     FROM post p
     JOIN board b ON b.id = p."boardId"
     WHERE p."projectId" = ${projectId}
@@ -130,7 +136,7 @@ async function embeddingMatches(projectId: string, query: string, viewer: PostVi
     return [];
   }
   return prisma.$queryRaw<Candidate[]>`
-    SELECT p.id, p.number, p.title, p.body, p."voteCount", b.name AS "boardName", b.slug AS "boardSlug"
+    SELECT p.id, p.number, p.title, p.body, p."voteCount", b.name AS "boardName", b.description AS "boardDescription", b.translations AS "boardTranslations", b.slug AS "boardSlug"
     FROM post_embedding e
     JOIN post p ON p.id = e."postId"
     JOIN board b ON b.id = p."boardId"

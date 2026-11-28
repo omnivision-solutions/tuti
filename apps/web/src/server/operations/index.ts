@@ -105,7 +105,7 @@ import { getImport, startImport } from "./imports";
 import { listVerifications, verifyAll, verifyArticle } from "./verify";
 import { getWidgetSettings, updateWidgetSettings } from "./widget";
 import { generateImageOperation } from "./images";
-import { getScreenshots, getScreenshotSettings, suggestScreenshotDomains, takeArticleScreenshots, takeChangelogScreenshots, takeScreenshots, testScreenshotSettings, updateScreenshotSettings } from "./screenshots";
+import { getScreenshots, getScreenshotSettings, getScreenshotSignInDomains, takeArticleScreenshots, takeChangelogScreenshots, takeScreenshots, testScreenshotSettings, updateScreenshotSettings } from "./screenshots";
 import { createWorkflow, deleteWorkflow, getWorkflow, listWorkflows, moveWorkflow, updateWorkflow } from "./workflows";
 
 export { type Actor, type ApiKeyActor, type Operation, OperationError } from "./define";
@@ -314,7 +314,7 @@ const all = [
   getScreenshotSettings,
   updateScreenshotSettings,
   testScreenshotSettings,
-  suggestScreenshotDomains,
+  getScreenshotSignInDomains,
   takeScreenshots,
   getScreenshots,
   takeChangelogScreenshots,

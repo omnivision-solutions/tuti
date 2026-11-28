@@ -196,7 +196,9 @@ export function NewPostForm({
                 </span>
               )}
               <span className="min-w-0 flex-1 truncate">{post.title}</span>
-              <span className="shrink-0 text-xs text-muted-foreground">{post.boardName}</span>
+              <span lang={post.boardLang} className="shrink-0 text-xs text-muted-foreground">
+                {post.boardName}
+              </span>
             </Link>
           </li>
         ))}

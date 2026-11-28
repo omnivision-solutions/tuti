@@ -73,7 +73,8 @@ export function PortalMenu({
 }: {
   name: string;
   homeHref: string;
-  boards: { slug: string; name: string }[];
+  /** Each with the language its name is in (docs/plan.md L14): the page's where it's translated, else the team's. */
+  boards: { slug: string; name: string; lang?: string }[];
   /** The portal's parts too (Feedback, Roadmap, Changelog, Docs): on phones the header leaves them out for this menu. */
   parts?: boolean;
   /** The changelog has an announcement this reader hasn't seen (the header's dot, in the menu on phones). */
@@ -105,7 +106,7 @@ export function PortalMenu({
         return (
           <Link
             key={board.slug}
-            lang={team}
+            lang={board.lang ?? team}
             href={at(boardPath(board))}
             aria-current={active ? "page" : undefined}
             className={cn("rounded-md px-2 py-1.5", active ? "bg-accent font-medium" : "text-muted-foreground hover:text-foreground")}
