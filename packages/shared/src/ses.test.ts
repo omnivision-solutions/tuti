@@ -1,3 +1,6 @@
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
+
 import { afterEach, expect, test, vi } from "vitest";
 
 import { startSesFake } from "@tuti/testkit/ses";
@@ -60,6 +63,33 @@ test("an answer cut off partway fails the call, not reads as an empty answer", a
   }
 });
 
+test("a call SES fails (5xx) or throttles (429) is tried again, four tries in all", async () => {
+  const fake = await startSesFake();
+  try {
+    for (const [name, value] of Object.entries(fake.env)) {
+      vi.stubEnv(name, value);
+    }
+    const answers = [500, 429];
+    fake.respond = () => answers.shift();
+    await ses()!.createTenant("tuti-support-project-1");
+    expect(fake.calls).toEqual(Array(3).fill("POST /v2/email/tenants"));
+    expect(fake.tenants.has("tuti-support-project-1")).toBe(true);
+
+    fake.calls.length = 0;
+    fake.respond = () => 503;
+    await expect(ses()!.createTenant("tuti-support-project-2")).rejects.toThrow("failed with 503");
+    expect(fake.calls).toHaveLength(4);
+  } finally {
+    await fake.close();
+  }
+});
+
+/** A full garbage collection, without starting Node with --expose-gc. */
+function collectGarbage() {
+  setFlagsFromString("--expose-gc");
+  (runInNewContext("gc") as () => void)();
+}
+
 test("a call SES never answers ends at the deadline", async () => {
   const fake = await startSesFake();
   // The deadline, short for the test; SES holding its answer until the test is over.
@@ -71,7 +101,11 @@ test("a call SES never answers ends at the deadline", async () => {
     for (const [name, value] of Object.entries(fake.env)) {
       vi.stubEnv(name, value);
     }
-    fake.respond = () => held;
+    fake.respond = () => {
+      // Garbage collected meanwhile, as a busy server may be: the deadline must still end the call.
+      collectGarbage();
+      return held;
+    };
     await expect(ses()!.createTenant("tuti-support-project-1")).rejects.toThrow(/timeout/);
     expect(deadline).toHaveBeenCalled();
   } finally {
