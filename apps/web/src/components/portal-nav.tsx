@@ -38,10 +38,15 @@ type Board = { slug: string; name: string };
 
 /**
  * Whether Changelog says "New": the layout's answer (`newChangelog`), until this visit records the changelog seen
- * (ChangelogSeen), which doesn't refresh the page: the layout keeps its answer till the next load.
+ * (ChangelogSeen), which doesn't refresh the page. A new answer from the layout (a refresh) counts again.
  */
 export function useNewChangelog(newChangelog: boolean) {
   const [seen, setSeen] = useState(false);
+  const [answer, setAnswer] = useState(newChangelog);
+  if (answer !== newChangelog) {
+    setAnswer(newChangelog);
+    setSeen(false);
+  }
   useEffect(() => {
     const recorded = () => setSeen(true);
     window.addEventListener(CHANGELOG_SEEN, recorded);
