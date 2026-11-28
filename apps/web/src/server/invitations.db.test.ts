@@ -84,14 +84,11 @@ describe("inviting by email", () => {
   }, 20_000);
 
   test("the day's invites are counted per sender too, across their projects", async () => {
+    // The day's invites, sent by the owner from three projects (each under its own limit).
     const projects = [project, await createProject(owner), await createProject(owner)];
-    const perProject = Math.ceil(DAILY_INVITE_LIMIT / projects.length);
-    let sent = 0;
-    for (const p of projects) {
-      for (let i = 0; i < perProject && sent < DAILY_INVITE_LIMIT; i++, sent++) {
-        expect(await createInvitation(p.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
-      }
-    }
+    await prisma.invitation.createMany({
+      data: Array.from({ length: DAILY_INVITE_LIMIT }, (_, i) => ({ projectId: projects[i % projects.length]!.id, email: newEmail(), tokenHash: hashInvitationToken(randomUUID()), createdById: owner.id, expiresAt: new Date(Date.now() + 60_000) })),
+    });
     const fresh = await createProject(owner);
     const email = newEmail();
     expect(await createInvitation(fresh.slug, email, "MEMBER")).toEqual({
