@@ -17,7 +17,7 @@ import { proxy } from "@/proxy";
 import { getSession } from "@/server/session";
 import { sessionContext } from "@/server/trpc/context";
 import { createCaller } from "@/server/trpc/server";
-import { actAs, createProject, onPortal, redirectTarget, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addComment, createProject, onPortal, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
@@ -202,7 +202,7 @@ const readers: { name: string; account?: true; served: (slug: string) => Promise
         ),
   },
   { name: "subscribing (setPostSubscription)", account: true, served: async () => !(await posts.setPostSubscription(fixture.postId, true)).error },
-  { name: "commenting (addComment)", account: true, served: async () => !(await posts.addComment({}, form({ postId: fixture.postId, body: "Me too" }))).error },
+  { name: "commenting (comments.create)", account: true, served: async () => !(await addComment({}, form({ postId: fixture.postId, body: "Me too" }))).error },
   { name: "reacting to the changelog", account: true, served: async (slug) => !(await changelog.reactToChangelogEntry(slug, 1, "tada", true)).error },
   { name: "what's new seen", account: true, served: async (slug) => !(await changelogSeen.markChangelogSeen(slug, new Date().toISOString())).error },
 ];

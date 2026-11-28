@@ -667,12 +667,6 @@ const matrix: Matrix = {
         posts.createPost({}, form({ projectSlug: slug, boardSlug: "feature-requests", title: "Dark mode" })),
     },
     setPostSubscription: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => posts.setPostSubscription(f.postId, true) },
-    addComment: {
-      allowed: "signed in",
-      refusesSsoUsers: true,
-      call: (_slug, f) => posts.addComment({}, form({ postId: f.postId, body: "Me too" })),
-    },
-    setCommentLike: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => posts.setCommentLike(f.commentId, true) },
   },
   projects: {
     createProject: {
@@ -1433,6 +1427,9 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   "codeChanges.button": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.codeChanges.button({ project: slug, id: "none", actions: [] }) },
   // Owners only (plans are off here, so every project has Advanced tuning).
   "codeChangesTuning.update": { allowed: "OWNER", scope: "write", call: (caller, slug) => caller.codeChangesTuning.update({ project: slug, "decide.rounds": 6 }) },
+  // A post's comment and its like, from the portal's and the team's post pages: anyone who may act in the project.
+  "comments.create": { allowed: "signed in", refusesSsoUsers: true, scope: "write", call: (caller, slug) => caller.comments.create({ project: slug, number: 1, body: "Me too" }) },
+  "comments.like": { allowed: "signed in", refusesSsoUsers: true, scope: "write", call: (caller, slug, f) => caller.comments.like({ project: slug, number: 1, id: f.commentId, liked: true }) },
   // Its details beside it (who it's with is inbox.conversation's `person`): its Activity, and its posts (Link a post's
   // search, Link and Unlink).
   "conversations.activity": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.conversations.activity({ project: slug, number: 1 }) },

@@ -126,6 +126,7 @@ export async function FeedbackPane({
             <CommentForm
               key={post.id}
               postId={post.id}
+              post={{ project: projectSlug, number: post.number }}
               placeholder="Reply as the team…"
               notes
               voters={toEmail}
