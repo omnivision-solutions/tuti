@@ -27,12 +27,17 @@ jobs:
   # table in docs/self-hosting.md), as do the secret scan, the workflow audit, the CLA and the
   # reviews. Pushes to main and the nightly always run everything; so does a diff that can't be
   # read. Renames list both paths, so renaming code to .md isn't Markdown-only.
+  # The Docker images build on a pull request only when it changes what the Production build
+  # doesn't prove for them: the Dockerfiles and .dockerignore, turbo prune's and pnpm's inputs
+  # (package.json files, the lockfile, workspace, .npmrc, patches, turbo.json), the Prisma schema
+  # and config, the worker's bundle config, the start scripts and this workflow.
   changes:
     name: Changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       code: ${{ steps.diff.outputs.code }}
+      docker: ${{ steps.diff.outputs.docker }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -43,13 +48,15 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
+          DOCKER: '(^|/)(Dockerfile|package\.json|start\.sh)$|^(\.dockerignore|\.npmrc|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json|patches/|packages/db/prisma/schema\.prisma|packages/db/prisma\.config\.ts|apps/worker/tsup\.config\.ts|\.github/workflows/ci\.yml)'
         run: |
-          if [[ "$EVENT" == pull_request ]] && files=$(git diff --name-only --no-renames "$BASE...$HEAD") \
-            && [ -n "$files" ] && ! grep -qv '\.md$' <<< "$files"; then
-            echo "code=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "code=true" >> "$GITHUB_OUTPUT"
+          code=true docker=true
+          if [[ "$EVENT" == pull_request ]] && files=$(git diff --name-only --no-renames "$BASE...$HEAD"); then
+            if [ -n "$files" ] && ! grep -qv '\.md$' <<< "$files"; then code=false; fi
+            if ! grep -qE "$DOCKER" <<< "$files"; then docker=false; fi
           fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "docker=$docker" >> "$GITHUB_OUTPUT"
 
   lint:
     name: Lint
@@ -229,7 +236,7 @@ jobs:
   docker:
     name: Docker images
     needs: changes
-    if: ${{ needs.changes.outputs.code == 'true' }}
+    if: ${{ needs.changes.outputs.docker == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -240,7 +247,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-      # Build only (no push): proves the Dockerfile still works on every PR.
+      # Build only (no push): proves the Dockerfile still works.
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
