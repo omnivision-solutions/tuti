@@ -142,8 +142,9 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
       setAsking(null);
       if (result.error) {
         toast.error(result.error);
-        // The card back where it is (saved, it's refreshed already).
-        router.refresh();
+        // The card back where it is (saved, it's refreshed already), in this move's transition (after an await, React's
+        // own updates aren't, unless started again).
+        startTransition(() => router.refresh());
       } else {
         toast.success(`${card.title}: ${STATUS_LABELS[status]}`);
         setMoved({ id: card.id, status, presses: from });
