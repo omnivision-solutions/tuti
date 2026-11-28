@@ -9,7 +9,10 @@ vi.mock("sonner", () => ({ toast: { error: () => {} } }));
 
 const { ApiReferenceEndpoints } = await import("./api-reference-endpoints");
 
-afterEach(() => document.body.replaceChildren());
+afterEach(() => {
+  document.body.replaceChildren();
+  setApiReferenceShown.mockReset();
+});
 
 type Props = Parameters<typeof ApiReferenceEndpoints>[0];
 const admin = (onHelpCenter: boolean): Props["groups"][number] => ({ key: "Admin", name: "Admin", description: "", onHelpCenter });
