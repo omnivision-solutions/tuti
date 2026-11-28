@@ -1,5 +1,5 @@
 import { apiError as error, authenticate, authenticateTeammate, PROJECT_HEADER, sendsSession } from "@/server/api-auth";
-import { matchOperation } from "@/server/operations";
+import { matchOperation, OperationError } from "@/server/operations";
 import { keyContext, teammateContext, type TrpcContext } from "@/server/trpc/context";
 import { callOperation } from "@/server/trpc/server";
 
@@ -45,7 +45,9 @@ async function handle(request: Request, { params }: RouteContext<"/api/v1/[...pa
       body = null;
     }
     if (!body || typeof body !== "object" || Array.isArray(body)) {
-      return error(400, "invalid_json", "Send a JSON object");
+      // Answered by the router once the caller may (who may comes first), with nothing of the body.
+      body = {};
+      context = { ...context, unreadable: new OperationError(400, "invalid_json", "Send a JSON object") };
     }
   }
   const query = Object.fromEntries(new URL(request.url).searchParams);

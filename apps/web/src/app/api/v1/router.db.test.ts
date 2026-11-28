@@ -70,17 +70,22 @@ test("an internal operation is in the router, but neither REST nor MCP serves it
   expect(await client.callTool({ name: "project_get", arguments: {} })).toMatchObject({ isError: true, content: [{ text: "Unknown tool project_get" }] });
 });
 
-test("who may comes before what they sent: a read-only key writing a bad post is refused, not told how to fix it", async () => {
-  const response = await rest(
-    new Request("http://tuti.localhost:3100/api/v1/posts", {
-      method: "POST",
-      headers: { authorization: `Bearer ${readKey}`, "content-type": "application/json" },
-      body: JSON.stringify({ board: "feature-requests", title: "x" }),
-    }),
-    { params: Promise.resolve({ path: ["posts"] }) },
-  );
-  expect({ status: response.status, body: await response.json() }).toEqual({
-    status: 403,
-    body: { error: { code: "forbidden", message: "This key can only read. Create a read + write key to change things." } },
-  });
+test("who may comes before what they sent: a read-only key writing a bad post, or no JSON, is refused, not told how to fix it", async () => {
+  const createPost = async (body: string, apiKey = readKey) => {
+    const response = await rest(
+      new Request("http://tuti.localhost:3100/api/v1/posts", {
+        method: "POST",
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body,
+      }),
+      { params: Promise.resolve({ path: ["posts"] }) },
+    );
+    return { status: response.status, body: await response.json() };
+  };
+  const refused = { status: 403, body: { error: { code: "forbidden", message: "This key can only read. Create a read + write key to change things." } } };
+  expect(await createPost(JSON.stringify({ board: "feature-requests", title: "x" }))).toEqual(refused);
+  expect(await createPost("not json")).toEqual(refused);
+  // A key that may: what's wrong with what it sent.
+  expect(await createPost("not json", key)).toEqual({ status: 400, body: { error: { code: "invalid_json", message: "Send a JSON object" } } });
+  expect(await prisma.post.count()).toBe(0);
 });
