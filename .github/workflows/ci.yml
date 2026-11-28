@@ -21,8 +21,38 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # A pull request that changes only Markdown (docs, the plan, agents' instructions, skills' text)
+  # skips the builds and test suites below: nothing they run reads a .md file. The secret scan,
+  # the workflow audit, the CLA and the reviews still run. Pushes to main and the nightly always
+  # run everything. When the diff can't be read, everything runs.
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "$EVENT" == pull_request ]] && files=$(git diff --name-only "$BASE...$HEAD") \
+            && [ -n "$files" ] && ! grep -qv '\.md$' <<< "$files"; then
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          fi
+
   lint:
     name: Lint
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -39,6 +69,8 @@ jobs:
 
   typecheck:
     name: Typecheck
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -55,6 +87,8 @@ jobs:
 
   test:
     name: Unit tests
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -73,6 +107,8 @@ jobs:
   # Split three ways, each with its own Postgres: the slowest check when it ran on one runner.
   test-db-shard:
     name: Database tests (${{ matrix.shard }}/3)
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -96,7 +132,7 @@ jobs:
   # The required check: passes only when every shard did.
   test-db:
     name: Database tests
-    needs: test-db-shard
+    needs: [changes, test-db-shard]
     # Always, so a cancelled run fails the check: a skipped required check counts as passed.
     if: ${{ always() }}
     runs-on: ubuntu-latest
@@ -104,15 +140,20 @@ jobs:
     steps:
       # Its own always() too: in a cancelled run a step's default success() would skip it.
       - if: ${{ always() }}
-        run: test "$RESULT" = success
+        # Skipped shards pass only for a Markdown-only pull request, as the changes job decided.
+        run: test "$RESULT" = success || { test "$CHANGES" = success && test "$CODE" = false && test "$RESULT" = skipped; }
         env:
           RESULT: ${{ needs.test-db-shard.result }}
+          CHANGES: ${{ needs.changes.result }}
+          CODE: ${{ needs.changes.outputs.code }}
 
   # The journeys split ten ways by journey (fullyParallel), each on its own runner with its own
   # build and database: one runner is CPU-bound well before its tests run out. Building once for
   # all of them would make every shard wait for that build, and download it: no faster.
   e2e-shard:
     name: E2E tests (${{ matrix.shard }}/10)
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     # Room for a slow apt mirror: installing Chromium's system packages has taken over 10 minutes on its own.
     timeout-minutes: 25
@@ -156,7 +197,7 @@ jobs:
   # The required check: passes only when every shard did.
   e2e:
     name: E2E tests
-    needs: e2e-shard
+    needs: [changes, e2e-shard]
     # Always, so a cancelled run fails the check: a skipped required check counts as passed.
     if: ${{ always() }}
     runs-on: ubuntu-latest
@@ -164,18 +205,21 @@ jobs:
     steps:
       # Its own always() too: in a cancelled run a step's default success() would skip it.
       - if: ${{ always() }}
-        run: test "$RESULT" = success
+        # Skipped shards pass only for a Markdown-only pull request, as the changes job decided.
+        run: test "$RESULT" = success || { test "$CHANGES" = success && test "$CODE" = false && test "$RESULT" = skipped; }
         env:
           RESULT: ${{ needs.e2e-shard.result }}
+          CHANGES: ${{ needs.changes.result }}
+          CODE: ${{ needs.changes.outputs.code }}
       # One artifact, posted on the pull request by .github/workflows/screenshots.yml.
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         with:
           pattern: e2e-screenshots-*
           path: e2e-screenshots
           merge-multiple: true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         with:
           name: e2e-screenshots
           path: e2e-screenshots
@@ -184,6 +228,8 @@ jobs:
 
   docker:
     name: Docker images
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -222,6 +268,8 @@ jobs:
 
   build:
     name: Production build
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
