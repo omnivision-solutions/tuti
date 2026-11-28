@@ -469,13 +469,15 @@ test("what a teammate saves in another tab is what Save changes compares with, o
     await expect(team.getByText(`Drafts ${model}`, { exact: true })).toBeVisible();
     await expect(team.getByText("AI model saved")).toBeVisible();
   };
-  // A teammate's tab, open from before: its instructions are empty, and it's long ready by the time they type.
+  // Instructions stored with Windows line breaks (as the API may save them) are no change to save: the field holds \n.
+  // (Stored before the teammate's tab opens: the refresh its live stream makes once open brings what it already shows,
+  // never this, which would fill its untouched field halfway through their typing.)
+  await query(`UPDATE project SET "changelogTone" = $1 WHERE slug = $2`, ["Short.\r\nPlain.", slug]);
+  // A teammate's tab, open from before, long ready by the time they type.
   const other = await team.context().newPage();
   await other.goto(`/app/${slug}/settings/changelog`);
   await expect(other.getByRole("button", { name: "Pick a style example" })).toBeVisible();
 
-  // Instructions stored with Windows line breaks (as the API may save them) are no change to save: the field holds \n.
-  await query(`UPDATE project SET "changelogTone" = $1 WHERE slug = $2`, ["Short.\r\nPlain.", slug]);
   await team.goto(`/app/${slug}/settings/changelog`);
   await expect(instructions(team)).toHaveValue("Short.\nPlain.");
   await expect(save(team)).toBeDisabled();
