@@ -1,3 +1,5 @@
+import { afterAll } from "vitest";
+
 /**
  * Tests are offline by default: they never see a real database, an AI provider (OPENAI_*; the old OPENROUTER_* only earn a warning, still kept out),
  * Hatchet, mail server, media storage, GitHub, Stripe or Amazon SES (nor the AI_ settings: models, their cap, credits; nor Autopilot's, CODE_CHANGES_; nor the config file, TUTI_CONFIG; nor plans: BILLING_CONFIG, and the PLANS it replaced; nor Featurebase, FEATUREBASE_, Intercom, INTERCOM_, Ferndesk, FERNDESK_, Canny, CANNY_, Frill, FRILL_, or Nolt, NOLT_; nor Expo's push service, EXPO_), whatever is in the shell or a .env file. Tests that need one of
@@ -9,3 +11,12 @@ for (const name of Object.keys(process.env)) {
   }
 }
 
+// Unit test files share a worker (isolate: false in vitest.config.mts): what one sets in the environment, at import or
+// in a test, is undone before the next file.
+const env = { ...process.env };
+afterAll(() => {
+  for (const name of Object.keys(process.env)) {
+    if (!(name in env)) delete process.env[name];
+  }
+  Object.assign(process.env, env);
+});
