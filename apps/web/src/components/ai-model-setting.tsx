@@ -2,6 +2,7 @@
 
 import { cn } from "cn";
 import { useId, useOptimistic, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { SettingRow } from "@/components/settings-card";
@@ -10,7 +11,10 @@ import { UpgradeDialog } from "@/components/upgrade-dialog";
 import type { AiModelSettingProps } from "@/lib/ai-model-setting";
 import { costLabel, costPerUse } from "@/lib/model-tiers";
 import type { UpgradePrompt } from "@/lib/upgrade-prompt";
-import { saveAiModel } from "@/server/ai-models";
+import { useTRPCClient } from "@/components/trpc";
+import { TRPCClientError } from "@trpc/client";
+import type { updateAiModels } from "@/server/operations/ai-models";
+import type { InputOf } from "@/server/operations/define";
 
 /**
  * A settings page's "AI model" (docs/plan.md, AI models by role): one level for a group of roles, saved as it's chosen;
@@ -41,19 +45,26 @@ export function AiModelSetting({
   // The last prompt opened stays while the dialog closes.
   const [prompt, setPrompt] = useState<UpgradePrompt | null>(null);
   const [upgrading, setUpgrading] = useState(false);
+  const trpc = useTRPCClient();
+  const router = useRouter();
   const id = useId();
 
   /** Resolves with why it wasn't saved, if it wasn't. A level's reason goes in a toast; a role's model's under its box. */
-  const save = (input: Parameters<typeof saveAiModel>[1], level?: typeof used) =>
+  const save = (input: Omit<InputOf<typeof updateAiModels>, "project">, level?: typeof used) =>
     new Promise<string | undefined>((resolve) =>
       startTransition(async () => {
         if (level) {
           setShown(level);
         }
-        // A save that throws (the network, the server) is told like one refused, so the same choice can be sent again.
-        const result = await saveAiModel(projectSlug, input).catch(() => ({ error: "Couldn't save. Try again." }));
+        // A save that fails (refused, the network, the server) is told, so the same choice can be sent again.
+        const result = await trpc.aiModels.update.mutate({ project: projectSlug, ...input }).then(
+          () => ({ error: undefined }),
+          (error: unknown) => ({ error: error instanceof TRPCClientError && error.shape ? error.message : "Couldn't save. Try again." }),
+        );
         if (!result.error) {
           toast.success("AI model saved");
+          // The summary and the roles' models in use come from the page.
+          router.refresh();
         } else if (level) {
           toast.error(result.error);
         }

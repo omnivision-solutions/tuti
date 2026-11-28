@@ -8,6 +8,8 @@ vi.mock("@/server/rewrite", () => ({}));
 vi.mock("@/server/branding", () => ({}));
 vi.mock("@/server/widget", () => ({}));
 vi.mock("@/components/trpc", () => ({ useTRPCClient: () => ({}) }));
+// Rendered on its own, outside the app router: the form refreshes the page after a save.
+vi.mock("next/navigation", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/navigation")>()), useRouter: () => ({ refresh: () => {} }) }));
 
 const { ChangelogStyleForm, changelogStyleSaved } = await import("./changelog");
 

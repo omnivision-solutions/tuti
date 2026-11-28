@@ -6,7 +6,7 @@ import { type S3Fake, startS3Fake } from "@tuti/testkit";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { composeChangelogCover as composeAction, publishChangelogEntry as publishAction, saveChangelogStyle } from "@/server/changelog";
+import { composeChangelogCover as composeAction, publishChangelogEntry as publishAction } from "@/server/changelog";
 import * as coverCard from "@/server/cover-card";
 import {
   composeChangelogCover,
@@ -17,7 +17,7 @@ import {
   updateChangelogStyle,
 } from "@/server/operations/changelog";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, callerAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 /** An entry's composed cover (changelog.composeCover): drawn from the entry and the portal's branding, kept as a normal cover. */
 
@@ -314,10 +314,7 @@ test("the cover's design and background are saved and checked, each on its own: 
 
 test("Settings' form without AI (the cover only) saves the cover and leaves what drafts follow as it is", async () => {
   await setStyle({ tone: "Short and plain.", screenshotMarkers: true });
-  actAs(owner);
-  const form = new FormData();
-  form.set("coverDesign", "pattern");
-  form.set("coverBackground", "");
-  expect(await saveChangelogStyle(project.slug, {}, form)).toEqual({});
+  // What the form sends without AI: the cover's fields only.
+  await (await callerAs(owner)).changelogStyle.update({ project: project.slug, coverDesign: "pattern", coverBackground: null });
   expect(await call(getChangelogStyle, team(), {})).toMatchObject({ tone: "Short and plain.", screenshotMarkers: true, coverDesign: "pattern" });
 });

@@ -6,8 +6,21 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import type { AiModelSettingProps } from "@/lib/ai-model-setting";
 
-const saveAiModel = vi.hoisted(() => vi.fn(async (): Promise<{ error?: string }> => ({})));
-vi.mock("@/server/ai-models", () => ({ saveAiModel }));
+// What the server answers each save (by project and input): a refusal's message, or nothing; through the tRPC client.
+const saveAiModel = vi.hoisted(() => vi.fn<(project: string, input: unknown) => Promise<{ error?: string }>>(async () => ({})));
+vi.mock("@/components/trpc", async () => {
+  const { TRPCClientError } = await import("@trpc/client");
+  const mutate = async ({ project, ...input }: { project: string }) => {
+    const result = await saveAiModel(project, input);
+    if (result.error) {
+      throw new TRPCClientError(result.error, { result: { error: { message: result.error, code: -32600, data: { code: "BAD_REQUEST", httpStatus: 400 } } } });
+    }
+    return {};
+  };
+  return { useTRPCClient: () => ({ aiModels: { update: { mutate } } }) };
+});
+// Rendered on its own, outside the app router: a save refreshes the page.
+vi.mock("next/navigation", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/navigation")>()), useRouter: () => ({ refresh: () => {} }) }));
 
 const { AiModelSetting } = await import("./ai-model-setting");
 

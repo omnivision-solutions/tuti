@@ -50,6 +50,7 @@ import {
   reactToChangelogEntry,
   unpublishChangelogEntry,
   updateChangelogEntry,
+  getChangelogStyleSettings,
   updateChangelogStyle,
 } from "./changelog";
 import {
@@ -100,6 +101,7 @@ import { getBoardTranslations, getCollectionTranslations, getTabTranslations, up
 import { getChangelogTranslation, saveChangelogTranslation } from "./changelog-translations";
 import { getTranslation, keepTranslationUpToDate, publishTranslation, saveTranslation, updateTranslationSections } from "./translations";
 import { getPortalPreview } from "./customize";
+import { getAiModelSetting } from "./ai-model-setting";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
 import { createUpload, finishUpload, getUploadStatus } from "./uploads";
 import { getUsage } from "./usage";
@@ -193,6 +195,7 @@ export const all = [
   unpublishChangelogEntry,
   deleteChangelogEntry,
   getChangelogStyle,
+  getChangelogStyleSettings,
   updateChangelogStyle,
   listArticles,
   getArticle,
@@ -327,6 +330,7 @@ export const all = [
   updateBoardTranslation,
   getPortalPreview,
   // Before screenshots.get: /screenshots/settings isn't a run's id.
+  getAiModelSetting,
   getScreenshotSettings,
   updateScreenshotSettings,
   testScreenshotSettings,

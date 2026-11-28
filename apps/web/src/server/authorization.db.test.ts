@@ -295,15 +295,6 @@ const matrix: Matrix = {
       refusesSsoUsers: true,
       call: (slug, f) => changelog.deleteChangelogComment(slug, 1, f.entryCommentId),
     },
-    saveChangelogStyle: {
-      allowed: "ADMIN",
-      call: (slug) => {
-        const form = new FormData();
-        form.set("tone", "Friendly");
-        form.append("examples", "1");
-        return changelog.saveChangelogStyle(slug, {}, form);
-      },
-    },
   },
   "changelog-seen": {
     markChangelogSeen: { allowed: "signed in", refusesSsoUsers: true, call: (slug) => changelogSeen.markChangelogSeen(slug, new Date().toISOString()) },
@@ -1444,6 +1435,10 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   "branding.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.branding.get({ project: slug }) },
   "branding.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.branding.update({ project: slug, seo: { title: "Matrix" } }) },
   "customize.preview": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.customize.preview({ project: slug, path: "/" }) },
+  "aiModels.setting": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.aiModels.setting({ project: slug, group: "changelog" }) },
+  "aiModels.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.aiModels.update({ project: slug, levels: { changelog: "balanced" } }) },
+  "changelogStyle.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.changelogStyle.update({ project: slug, tone: "Matrix tone" }) },
+  "changelogStyle.settings": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.changelogStyle.settings({ project: slug }) },
   "changelog.update": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.changelog.update({ project: slug, number: 1, title: "Renamed by the matrix" }) },
   // Owners only (plans are off here, so every project has Advanced tuning).
   "codeChangesTuning.update": { allowed: "OWNER", scope: "write", call: (caller, slug) => caller.codeChangesTuning.update({ project: slug, "decide.rounds": 6 }) },
