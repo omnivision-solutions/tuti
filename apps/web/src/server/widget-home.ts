@@ -119,13 +119,13 @@ export type IdeaNews = { title: string; status: PostStatus; href: string; at: st
  * last 30 days and are still there ("Dark mode is now Planned"), newest first, one per post, three at
  * most; none if they may not read the portal. Never sample posts (server/sample-content.ts): a team trying things isn't news.
  */
-export async function ideaNews(projectId: string, userId: string, now = new Date()): Promise<IdeaNews[]> {
+export async function ideaNews(projectId: string, userId: string, now = new Date(), asReader = false): Promise<IdeaNews[]> {
   if (!(await canReadPortal({ id: projectId }, userId))) {
     return [];
   }
   const since = new Date(now.getTime() - NEWS_DAYS * DAY_MS);
-  // Only those they may still see (post-visibility.ts).
-  const viewer = await postViewer(projectId, userId);
+  // Only those they may still see (post-visibility.ts); `asReader`: by the widget's token, never the team's.
+  const viewer = await postViewer(projectId, userId, asReader);
   // Their ideas in a roadmap status, each with its newest move to where it is now (post_event by post and
   // time, its index; two in one millisecond by id): news if that's recent; the newest three.
   const rows = await prisma.$queryRaw<{ title: string; number: number; status: PostStatus; board: string; at: Date }[]>`

@@ -45,7 +45,8 @@ export async function findSimilarPosts(projectSlug: string, title: string, widge
 
   // Only posts they may see (post-visibility.ts): the widget's person, or whoever's reading the portal.
   const tokenUser = widgetToken ? await widgetTokenUser(project.id, String(widgetToken)) : null;
-  const viewer = widgetToken ? await postViewer(project.id, tokenUser) : await currentPostViewer(project.id);
+  // By the widget's token: a reader whatever their role (Actor's viaWidget).
+  const viewer = widgetToken ? await postViewer(project.id, tokenUser, true) : await currentPostViewer(project.id);
   const [byWords, byMeaning] = await Promise.all([
     trigramMatches(project.id, query.data, viewer),
     query.data.length >= MIN_EMBED_LENGTH && embeddingsEnabled() ? embeddingMatches(project.id, query.data, viewer) : [],

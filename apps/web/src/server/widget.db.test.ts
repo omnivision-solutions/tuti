@@ -316,3 +316,15 @@ test("a private portal's widget lists and takes comments only from those who may
   expect(await widgetDeleteComment(project.slug, readerToken, 1, id!)).toEqual({ error: "Sign in to comment" });
   expect(await prisma.changelogComment.count({ where: { entry: { projectId: project.id } } })).toBe(1);
 });
+
+test("a teammate the customer's site signs in is a reader in the widget: their comment isn't the team's, and team-only ideas stay hidden", async () => {
+  await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Dark mode", publishedAt: new Date() } });
+  await post("For the team only", { voteCount: 3 });
+  await prisma.post.updateMany({ where: { projectId: project.id, title: "For the team only" }, data: { visibility: "TEAM" } });
+  await post("Out in the open", { voteCount: 1 });
+  const token = widgetToken(project.id, owner.id);
+
+  const { id } = await widgetComment(project.slug, token, 1, {}, text("From the widget"));
+  expect(await prisma.changelogComment.findUniqueOrThrow({ where: { id: id! }, select: { asReader: true } })).toEqual({ asReader: true });
+  expect((await widgetIdeas(project.slug, token)).map((idea) => idea.title)).toEqual(["Out in the open"]);
+});
