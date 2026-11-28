@@ -38,6 +38,9 @@ test("the boundary: pages, components and lib/ take only serverCaller, types and
   expect(await warnings("src/proxy.ts", 'import { siteMount } from "@/server/custom-domains";\n\nvoid siteMount;\n')).toEqual([]);
   // An exemption covers the imports it names, not the whole file.
   expect(await warnings("src/proxy.ts", 'import { getMembership } from "@/server/membership";\n\nvoid getMembership;\n')).toEqual(["tuti/server-boundary"]);
+  // proxy.ts's gate decides with server/auth/portal-readers.ts, the context's function; the rest of portal-access isn't its.
+  expect(await warnings("src/proxy.ts", 'import { portalVisitor } from "@/server/auth/portal-readers";\n\nvoid portalVisitor;\n')).toEqual([]);
+  expect(await warnings("src/proxy.ts", 'import { currentReader } from "@/server/portal-access";\n\nvoid currentReader;\n')).toEqual(["tuti/server-boundary"]);
   // The server layer itself isn't checked.
   expect(await warnings("src/server/example.ts", 'import { prisma } from "@tuti/db";\n\nvoid prisma;\n')).toEqual([]);
 });
