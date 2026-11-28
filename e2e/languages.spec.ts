@@ -1311,3 +1311,89 @@ test("the widget's panel in German framed by a page: a portal reader's named gre
   await expect(visitorPanel.getByText("Anmeldung fehlgeschlagen")).toBeVisible();
   await expect(visitorPanel.getByText("sign-in-failed")).toHaveCount(0);
 });
+
+test("the widget's Help center and Messages in German at /de/widget: browsing, an article, a search, and a first message with where the reply comes", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  await api("/collections", { name: "Basics" });
+  const intro = await api("/articles", { title: "Getting started", body: "Invite your team from the Team page.", collection: "basics" });
+  await api(`/articles/${intro.slug}/publish`, {});
+  const loose = await api("/articles", { title: "Release notes", body: "What changed." });
+  await api(`/articles/${loose.slug}/publish`, {});
+  // Its German version, written by the team.
+  await query(
+    `INSERT INTO article_translation (id, "articleId", "projectId", language, title, slug, body, automatic, "publishedAt", "updatedAt")
+     SELECT gen_random_uuid()::text, a.id, a."projectId", 'de', 'Versionshinweise', 'versionshinweise', 'Was sich geändert hat.', false, now(), now()
+     FROM article a JOIN project p ON p.id = a."projectId" WHERE p.slug = $1 AND a.slug = $2`,
+    [slug, loose.slug],
+  );
+  await team.goto(`/app/${slug}/settings/support`);
+  await team.getByRole("switch", { name: "Messages in the widget" }).click();
+  await expect(team.getByText("Messages on")).toBeVisible();
+
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.setViewportSize({ width: 390, height: 700 });
+  // The Help center: its collections and the articles in none, the team's names in theirs.
+  await visitor.goto("/de/widget?tab=docs");
+  const collections = visitor.getByRole("list", { name: "Sammlungen" });
+  await expect(collections.getByText("Basics")).toHaveAttribute("lang", "en");
+  await expect(collections).toContainText("1 Artikel");
+  await expect(visitor.getByRole("heading", { name: "Weitere Artikel" })).toBeVisible();
+  await expect(visitor.getByRole("searchbox", { name: "Die Dokumentation durchsuchen" })).toHaveAttribute("placeholder", "Dokumentation durchsuchen");
+  // A collection, then its article: the way back, Open in new tab, the title the team's words.
+  await collections.getByRole("link", { name: /Basics/ }).click();
+  await expect(visitor.getByRole("link", { name: "Alle Artikel" })).toBeVisible();
+  // Its articles' titles: the team's words.
+  await expect(visitor.getByRole("link", { name: "Getting started" }).locator("xpath=descendant-or-self::*[@lang][1]")).toHaveAttribute("lang", "en");
+  await visitor.getByRole("link", { name: "Getting started" }).click();
+  await expect(visitor.getByRole("heading", { level: 1, name: "Getting started" })).toHaveAttribute("lang", "en");
+  await expect(visitor.getByText("Invite your team from the Team page.").locator("xpath=ancestor::*[@lang][1]")).toHaveAttribute("lang", "en");
+  // Not in German yet: said in German.
+  await expect(visitor.getByText("Diese Seite gibt es noch nicht auf Deutsch: Sie wird in ihrer Originalsprache angezeigt.")).toBeVisible();
+  await expect(visitor.getByRole("link", { name: "In neuem Tab öffnen" })).toHaveAttribute("href", /^\/de\/docs\//);
+  await checkpoint(visitor, "widget-help-center-in-german-phone", { fullPage: false });
+  // A search with nothing found, and an article that isn't there.
+  await visitor.goto(`/de/widget?tab=docs&q=zebra`);
+  await expect(visitor.getByText("Keine Artikel zu „zebra“")).toBeVisible();
+  await visitor.goto(`/de/widget?tab=docs&article=nowhere`);
+  await expect(visitor.getByText("Artikel nicht gefunden")).toBeVisible();
+  // A translated article: its German version, marked German.
+  await visitor.goto(`/de/widget?tab=docs&article=${loose.slug}`);
+  await expect(visitor.getByRole("heading", { level: 1, name: "Versionshinweise" })).toHaveAttribute("lang", "de");
+  await expect(visitor.getByText("Was sich geändert hat.").locator("xpath=ancestor::*[@lang][1]")).toHaveAttribute("lang", "de");
+  await expect(visitor.getByText("Diese Seite gibt es noch nicht auf Deutsch", { exact: false })).toBeHidden();
+
+  // Messages with the docs to answer from: the AI first, said in German.
+  await visitor.goto("/de/widget?tab=messages");
+  await expect(visitor.getByText("Frag einfach: Du bekommst sofort eine Antwort und bei Bedarf eine Person.")).toBeVisible();
+
+  // Messages where the team answers (no docs for the AI yet), signed out: the form in German, and once sent, where the reply comes.
+  const quiet = `e2e-${randomUUID().slice(0, 8)}`;
+  await createProject(team, "Beta", quiet);
+  await (await apiFor(team, quiet))("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  await team.goto(`/app/${quiet}/settings/support`);
+  await team.getByRole("switch", { name: "Messages in the widget" }).click();
+  await expect(team.getByText("Messages on")).toBeVisible();
+  await visitor.goto(`${portalUrl(quiet)}/de/widget?tab=messages`);
+  await expect(visitor.getByText("Hinterlass deine E-Mail-Adresse, damit das Team dir antworten kann.")).toBeVisible();
+  await expect(visitor.getByRole("link", { name: "Melde dich an" })).toBeVisible();
+  await visitor.getByRole("textbox", { name: "Deine E-Mail-Adresse" }).fill(`e2e-${randomUUID()}@example.com`);
+  await visitor.getByRole("textbox", { name: "Nachricht" }).fill("Gibt es eine Telefonnummer?");
+  await visitor.getByRole("button", { name: "Senden" }).click();
+  await expect(visitor.getByRole("list", { name: "Nachrichten" })).toContainText("Gibt es eine Telefonnummer?");
+  await expect(visitor.getByText(/^Wir antworten hier/)).toBeVisible();
+  await expect(visitor.getByRole("textbox", { name: "Antwort" })).toHaveAttribute("placeholder", "Antwort schreiben…");
+  await checkpoint(visitor, "widget-messages-in-german-phone", { fullPage: false });
+  // Back to the list: the conversation, waiting for a reply.
+  await visitor.getByRole("button", { name: "Nachrichten" }).click();
+  await expect(visitor.getByRole("heading", { name: "Deine Unterhaltungen" })).toBeVisible();
+  await expect(visitor.getByRole("list", { name: "Unterhaltungen" })).toContainText("Wartet auf Antwort");
+  // A new message, now that they're known here: attaching files, in German.
+  await visitor.getByRole("button", { name: "Neue Nachricht" }).click();
+  await expect(visitor.getByRole("button", { name: "Dateien anhängen" })).toBeVisible();
+});

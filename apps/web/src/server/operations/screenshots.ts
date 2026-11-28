@@ -1,7 +1,7 @@
 import type { Doc } from "@tuti/content";
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { type Prisma, prisma, type ScreenshotSignIn, type ScreenshotWindow } from "@tuti/db";
-import { aiPaused, allowedHosts, dropChangedScreenshotProfile, enqueue, LANDING_SHOT, lockProject, lastingMediaUrl, MAX_SHOW, placeScreenshots, SCREENSHOT_SECRET, partlyScannedFor, scannedFor, screenshotsAsked, settleStaleScreenshotRuns, type SignInService, startScreenshots } from "@tuti/jobs";
+import { aiPaused, dropChangedScreenshotProfile, enqueue, foundDomains, LANDING_SHOT, lockProject, lastingMediaUrl, MAX_SHOW, placeScreenshots, SCREENSHOT_SECRET, partlyScannedFor, scannedFor, screenshotsAsked, settleStaleScreenshotRuns, startScreenshots } from "@tuti/jobs";
 import { creditsEnabled, creditsPerUsageDollar, screenshotsEnabled } from "@tuti/shared";
 import { sealValue } from "@tuti/shared/signed";
 import { mediaStorage } from "@tuti/shared/storage";
@@ -32,8 +32,6 @@ export const MAX_OTHER_DOMAINS = 20;
 /** A domain name as Browser Use's network policies take one: letters, digits and hyphens in dot-separated labels, no IP. */
 const DOMAIN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/;
 export const MAX_ABOUT = 2000;
-/** A domain screenshotSettings.update takes as another domain: a domain name, of its own (not a shared suffix like vercel.app). */
-const acceptedDomain = (domain: string) => DOMAIN.test(domain) && getDomain(domain, { allowPrivateDomains: true }) !== null;
 
 const SIGN_INS = ["none", "password", "link"] as const;
 const WINDOW_NAMES = ["desktop", "phone"] as const;
@@ -143,6 +141,10 @@ const settingsOutput = z
       .array(z.string())
       .describe("Other hosts your app needs (its API, a sign-in page, a CDN): the browser opens only your app's own host, its sign-in link's, and these (with their subdomains), and the password can be entered on any of them")
       .meta({ examples: [["acme.auth0.com"]] }),
+    skippedDomains: z
+      .array(z.string())
+      .describe("Hosts found for your app's sign-in (screenshotSettings.signInDomains) that you removed: not allowed for its runs")
+      .meta({ examples: [[]] }),
     test: runOutput.nullable().describe("The latest Test (screenshotSettings.test), if any"),
   })
   .meta({ id: "ScreenshotSettings", description: "How screenshots sign in to your app" });
@@ -161,6 +163,7 @@ export async function settingsView(projectId: string): Promise<z.infer<typeof se
     window: (settings?.window.toLowerCase() ?? "desktop") as (typeof WINDOW_NAMES)[number],
     residentialProxy: settings?.residentialProxy ?? false,
     otherDomains: settings?.otherDomains ?? [],
+    skippedDomains: settings?.skippedDomains ?? [],
     test: await readRun(projectId, { test: true }),
   };
 }
@@ -196,7 +199,7 @@ export const updateScreenshotSettings = defineOperation({
   input: z.object({
     appUrl: webAddress("Enter your app's full address, starting with https://")
       .optional()
-      .describe("Your app's address, where the agent starts. Moved to another site (host, scheme or port), the saved password and sign-in link are forgotten unless new ones are sent with it"),
+      .describe("Your app's address, where the agent starts. Changed in any way (another page on the same site too), the saved password and sign-in link are forgotten unless sent again with it"),
     signIn: z.enum(SIGN_INS, { error: "Pick password, link or none" }).optional().describe("How it signs in: `password`, `link` or `none`; the other way's secret is forgotten"),
     username: z.string().trim().max(320, "Keep the username under 320 characters").optional().describe("The username or email to sign in with (`password`)"),
     password: z.string().max(1000, "Keep the password under 1,000 characters").optional().describe("The password (`password`); left out or empty keeps the saved one"),
@@ -225,8 +228,13 @@ export const updateScreenshotSettings = defineOperation({
       .max(MAX_OTHER_DOMAINS, `List up to ${MAX_OTHER_DOMAINS} other domains`)
       .optional()
       .describe(
-        `Other hosts your app needs, up to ${MAX_OTHER_DOMAINS} (its API like api.example.com, a sign-in page like acme.auth0.com, a CDN): the browser opens only your app's own host, its sign-in link's, and these (with their subdomains), and the password can be entered on any of them. They replace the list`,
+        `Other hosts your app needs, up to ${MAX_OTHER_DOMAINS} (its API like api.example.com, a sign-in page like acme.auth0.com, a CDN): the browser opens only your app's own host, its sign-in link's, these and those found for its sign-in (screenshotSettings.signInDomains), each with its subdomains, and the password can be entered on any of them. They replace the list; adding one needs the password or sign-in link sent again`,
       ),
+    skippedDomains: z
+      .array(z.string().trim().toLowerCase().regex(DOMAIN, "Enter each domain on its own, like cdn.example.com: no https://, path or port"))
+      .max(50, "List up to 50 removed domains")
+      .optional()
+      .describe("Hosts found for your app's sign-in (screenshotSettings.signInDomains) not to allow for its runs. They replace the list; needs nothing sent again either way"),
   }),
   output: settingsOutput.describe("The screenshot settings, as saved"),
   example: { appUrl: "https://app.example.com", signIn: "password", username: "demo@example.com", password: "a demo account's password", about: "Close the welcome tour.", window: "desktop" },
@@ -250,13 +258,15 @@ async function saveSettings(tx: Prisma.TransactionClient, projectId: string, inp
   }
   const signIn = (input.signIn?.toUpperCase() ?? saved?.signIn ?? "NONE") as ScreenshotSignIn;
   const username = input.username ?? saved?.username ?? "";
-  // The secrets are only ever given to the agent on the app's own host: one that moved forgets them, so changing the
-  // address can't send the saved password (typed only on that host) or link somewhere else.
-  // By origin: another scheme (https to http) or port is another place too.
-  const sameHost = !!saved && new URL(saved.appUrl).origin === new URL(appUrl).origin;
-  const password = input.password ? sealValue(SCREENSHOT_SECRET, input.password) : sameHost ? saved.password : null;
-  const signInLink = input.signInLink ? sealValue(SCREENSHOT_SECRET, input.signInLink) : sameHost ? saved.signInLink : null;
-  const moved = saved && !sameHost ? " again: the app's address moved to another site" : "";
+  // The secrets are only ever given to the agent on the app's own host: an address changed forgets them, so changing
+  // it can't send the saved password (typed only on that host) or link somewhere else. Any change, a path on the same
+  // site too: the hosts found in the page it points to are allowed for them (foundDomains), and a page can echo text
+  // from its address (a search's query).
+  const sameAddress = !!saved && saved.appUrl === appUrl;
+  // Sent again, it's saved as sent: never checked against the saved one, so no request can test a guess at it.
+  const password = input.password ? sealValue(SCREENSHOT_SECRET, input.password) : sameAddress ? saved.password : null;
+  const signInLink = input.signInLink ? sealValue(SCREENSHOT_SECRET, input.signInLink) : sameAddress ? saved.signInLink : null;
+  const moved = saved && !sameAddress ? " again: the app's address changed" : "";
   if (signIn === "PASSWORD" && (!username || !password)) {
     throw new OperationError(400, "invalid_input", username && moved ? `Enter the password${moved}` : "Enter the username and password to sign in with");
   }
@@ -265,7 +275,9 @@ async function saveSettings(tx: Prisma.TransactionClient, projectId: string, inp
   }
   // A domain added sends the browser, and the password typed there, somewhere new: as when the app moves, only with the
   // secret sent again, so whoever adds one (another admin, a key) must know it. Taking domains off needs nothing.
-  const added = (input.otherDomains ?? []).filter((domain) => !(saved?.otherDomains ?? []).includes(domain));
+  // One found for the app's sign-in (allowed already) isn't another.
+  const found = saved ? foundDomains({ ...saved, appUrl }).map(({ host }) => host) : [];
+  const added = (input.otherDomains ?? []).filter((domain) => !(saved?.otherDomains ?? []).includes(domain) && !found.includes(domain));
   if (added.length > 0 && signIn === "PASSWORD" && password && !input.password) {
     throw new OperationError(400, "invalid_input", "Enter the password again to add another domain: it can be typed there");
   }
@@ -283,23 +295,26 @@ async function saveSettings(tx: Prisma.TransactionClient, projectId: string, inp
     window: (input.window?.toUpperCase() ?? saved?.window ?? "DESKTOP") as ScreenshotWindow,
     residentialProxy: input.residentialProxy ?? saved?.residentialProxy ?? false,
     otherDomains: input.otherDomains ? [...new Set(input.otherDomains)] : (saved?.otherDomains ?? []),
+    // Found per address: another address's are found again, none removed.
+    skippedDomains: input.skippedDomains && sameAddress ? [...new Set(input.skippedDomains)] : sameAddress ? saved.skippedDomains : [],
   };
   await tx.screenshotSettings.upsert({ where: { projectId }, create: { projectId, ...data }, update: data });
 }
 
-const suggestionsOutput = z
+const signInDomainsOutput = z
   .object({
-    suggestions: z
+    domains: z
       .array(
         z.object({
-          provider: z.string().describe("The sign-in service").meta({ examples: ["Firebase"] }),
-          hosts: z.array(z.string()).describe("Its hosts to add to the other domains").meta({ examples: [["identitytoolkit.googleapis.com", "securetoken.googleapis.com"]] }),
+          host: z.string().describe("The host, allowed for your app's runs unless `skipped`").meta({ examples: ["identitytoolkit.googleapis.com"] }),
+          provider: z.string().describe("The sign-in service it's for").meta({ examples: ["Firebase"] }),
+          skipped: z.boolean().describe("Whether you removed it (skippedDomains): not allowed").meta({ examples: [false] }),
         }),
       )
-      .describe("Each sign-in service found whose hosts aren't allowed yet; empty when none is, the app's page couldn't be read, or it hasn't been read yet"),
+      .describe("Each host found; empty when none is, the app's page couldn't be read, or it hasn't been read yet"),
     checking: z.boolean().describe("Whether the app is being read now: ask again in a few seconds for the answer").meta({ examples: [false] }),
   })
-  .meta({ id: "ScreenshotDomainSuggestions", description: "Hosts the screenshot agent likely needs to sign in" });
+  .meta({ id: "ScreenshotSignInDomains", description: "Hosts your app's sign-in needs, found in its code and allowed for its runs" });
 
 /** An answer older than this is read again: the app may sign in through another service now. */
 const CHECK_AGAIN_MS = 7 * 24 * 60 * 60 * 1000;
@@ -313,24 +328,24 @@ const SCAN_STALE_MS = 3 * 60 * 1000;
 const POLL_GRACE_MS = SCAN_STALE_MS + 60 * 1000;
 
 /**
- * The hosted sign-in services the app calls (@tuti/jobs sign-in-hosts.ts), with their hosts its runs' browser doesn't
- * open yet. Reading the app's page and scripts takes seconds, so the worker does it (the screenshot-sign-in-scan job),
+ * The hosts of the hosted sign-in services the app calls (@tuti/jobs sign-in-hosts.ts), allowed for its runs (foundDomains).
+ * Reading the app's page and scripts takes seconds, so the worker does it (the screenshot-sign-in-scan job),
  * once per app address and week (kept on the settings); a look meanwhile says it's checking. `start: false` (the
  * screen's polls) never starts a read: one that ended without an answer (a script didn't load) ends the waiting.
  */
-async function domainSuggestions(context: { actor: Actor; projectId: string }, start: boolean): Promise<{ suggestions: SignInService[]; checking: boolean }> {
+async function signInDomains(context: { actor: Actor; projectId: string }, start: boolean): Promise<z.infer<typeof signInDomainsOutput>> {
   const { projectId } = context;
   const settings = await prisma.screenshotSettings.findUnique({
     where: { projectId },
-    select: { appUrl: true, signIn: true, signInLink: true, otherDomains: true, signInServices: true, signInServicesFor: true, signInServicesAt: true, signInScanFor: true, signInScanAt: true },
+    select: { appUrl: true, skippedDomains: true, signInServices: true, signInServicesFor: true, signInServicesAt: true, signInScanFor: true, signInScanAt: true },
   });
   if (!settings?.appUrl) {
-    return { suggestions: [], checking: false };
+    return { domains: [], checking: false };
   }
   const key = scannedFor(settings.appUrl);
   const now = Date.now();
   // A full answer, or what a read that wasn't complete found (no time, so read again).
-  const kept = settings.signInServicesFor === key || settings.signInServicesFor === partlyScannedFor(settings.appUrl) ? (settings.signInServices as SignInService[] | null) : null;
+  const kept = settings.signInServicesFor === key || settings.signInServicesFor === partlyScannedFor(settings.appUrl) ? settings.signInServices : null;
   // One kept before answers had a time (until 2026-11) is read again too.
   const fresh = kept !== null && settings.signInServicesAt !== null && now - settings.signInServicesAt.getTime() < CHECK_AGAIN_MS;
   // A read claimed: still checking while it may run. One taken for lost (never run, or the worker restarted) still is
@@ -341,22 +356,8 @@ async function domainSuggestions(context: { actor: Actor; projectId: string }, s
   if (!fresh && !checking && start) {
     checking = await startScan(context, settings.appUrl, kept !== null);
   }
-  if (!kept) {
-    return { suggestions: [], checking };
-  }
-  // What its runs' browser opens already: the app's host, the sign-in link's, the other domains (with subdomains).
-  // A sign-in link that no longer opens (another server secret): without its host, rather than no answer.
-  let open: string[];
-  try {
-    open = allowedHosts(settings);
-  } catch {
-    open = allowedHosts({ ...settings, signInLink: null });
-  }
-  const allowed = (host: string) => open.some((domain) => host === domain || host.endsWith(`.${domain}`));
-  return {
-    suggestions: kept.map(({ provider, hosts }) => ({ provider, hosts: hosts.filter((host) => acceptedDomain(host) && !allowed(host)) })).filter(({ hosts }) => hosts.length > 0),
-    checking,
-  };
+  // Those removed too, said so: typed again, one comes back as found.
+  return { domains: foundDomains({ ...settings, skippedDomains: [] }).map((one) => ({ ...one, skipped: settings.skippedDomains.includes(one.host) })), checking };
 }
 
 /**
@@ -393,13 +394,13 @@ async function startScan(context: { actor: Actor; projectId: string }, appUrl: s
   return true;
 }
 
-export const suggestScreenshotDomains = defineOperation({
-  name: "screenshotSettings.suggestions",
-  title: "Suggest screenshot domains",
+export const getScreenshotSignInDomains = defineOperation({
+  name: "screenshotSettings.signInDomains",
+  title: "Get screenshot sign-in domains",
   summary:
-    "The hosted sign-in services your app calls (found in its page and scripts: Firebase, Auth0, Supabase, Okta, Amazon Cognito, Clerk, Stytch, WorkOS), with their hosts that aren't among the other domains yet: the agent can't sign in until they are. Read in the background: ask again while `checking`.",
+    "Hosts of the sign-in services your app calls (Firebase, Auth0, Supabase, Okta, Amazon Cognito, Clerk, Stytch, WorkOS), found in its code and allowed for its runs; remove one with screenshotSettings.update's `skippedDomains`. Read in the background: ask again while `checking`.",
   method: "GET",
-  path: "/screenshots/settings/suggestions",
+  path: "/screenshots/settings/sign-in-domains",
   scope: "read",
   access: "admin",
   input: z.object({
@@ -409,9 +410,9 @@ export const suggestScreenshotDomains = defineOperation({
       .describe("`false` only reads: no read of the app is started (to ask again while `checking`)")
       .meta({ examples: [false] }),
   }),
-  output: suggestionsOutput.describe("The suggested domains"),
+  output: signInDomainsOutput.describe("The sign-in domains found"),
   errors: [429],
-  run: async (context, { start }) => domainSuggestions(context, start),
+  run: async (context, { start }) => signInDomains(context, start),
 });
 
 /** Refuses a run that can't go: no key or uploads here (503), no settings (409), no credits (402). */
