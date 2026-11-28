@@ -302,6 +302,38 @@ describe("finishing", () => {
     expect(await uploadStatus(created.mediaId)).toMatchObject({ status: "READY" });
   });
 
+  // A job queued twice (an enqueue that timed out but went through, then a retry): two runs at once for one image.
+  test("the image job run twice at once keeps the image ready, its size counted once", async () => {
+    const file = await photo(400, 300);
+    const created = (await createUpload(project.slug, { type: "image/jpeg", size: file.length })) as { mediaId: string; uploadUrl: string };
+    await fetch(created.uploadUrl, { method: "PUT", body: new Uint8Array(file) });
+    // Claimed, its job queued but not run here: the two runs below are it.
+    jobs.enqueue.mockImplementationOnce(async () => {});
+    expect(await finishUpload(created.mediaId)).toEqual({});
+    // The second run reads the original only once the first is done with it (and has deleted it).
+    let reads = 0;
+    let firstDone!: () => void;
+    const done = new Promise<void>((resolve) => (firstDone = resolve));
+    s3.beforeGet = async (key) => {
+      if (key === originalKey(created.mediaId) && ++reads === 2) {
+        await done;
+      }
+    };
+    const quiet = { info: () => {}, warn: () => {} };
+    const first = handlers.imageUploaded({ mediaId: created.mediaId }, quiet).finally(firstDone);
+    const second = handlers.imageUploaded({ mediaId: created.mediaId }, quiet);
+    const [one, other] = await Promise.all([first, second]);
+    s3.beforeGet = undefined;
+    expect(one).toMatchObject({ ready: true });
+    expect(other).toEqual({ skipped: true });
+    const media = await prisma.media.findUniqueOrThrow({ where: { id: created.mediaId } });
+    expect(media.status).toBe("READY");
+    const stored = [...s3.objects.entries()].filter(([key]) => key.includes(created.mediaId)).reduce((sum, [, object]) => sum + object.body.length, 0);
+    expect(media.size).toBe(stored);
+    // Run again later: nothing to do.
+    expect(await handlers.imageUploaded({ mediaId: created.mediaId }, quiet)).toEqual({ skipped: true });
+  });
+
   test("only the uploader can finish an upload or see its status", async () => {
     const file = await photo(100, 100);
     const created = (await createUpload(project.slug, { type: "image/jpeg", size: file.length })) as { mediaId: string; uploadUrl: string };
