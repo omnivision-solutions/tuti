@@ -78,6 +78,7 @@ import { Input } from "@/components/ui/input";
 import { EditorTableOfContents } from "@/components/rich-editor-toc";
 import { ASK_AI, type AskAiSetup, useAskAi } from "@/components/ask-ai";
 import { type GeneratedImage, ImageGenerator, type ImageEditing, type KeptTries, type Try } from "@/components/image-generator";
+import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { MIN_GENERATED_SIDE } from "@/lib/image-limits";
 import { uploadFile, uploadImage } from "@/lib/upload-image";
@@ -88,7 +89,6 @@ const FILE_ACCEPT = [...Object.keys(UPLOAD_FILE_TYPES), ...Object.keys(UPLOAD_VI
   .join(",");
 
 type Prompt = "link" | "video" | "alt" | "filename";
-const UPLOAD_FAILED = "The upload failed. Try again.";
 /** A title written above a bare editor, as it's published: no box, set like a heading (add its size). */
 export const BARE_TITLE =
   "w-full min-w-0 bg-transparent font-heading font-bold tracking-tight outline-none placeholder:text-muted-foreground/60";
@@ -235,6 +235,8 @@ export function RichEditor({
   /** Ask AI on selected text (the team's), where the server has AI; null or left out, there's none. */
   askAi?: AskAiSetup | null;
 }) {
+  // The page's words: the portal's in its language (a post or comment box), the app's English (the root layout's messages).
+  const t = useTranslations("editor");
   const toolbarHost = useEditorSlot(toolbarId);
   const [value, setValue] = useState(initial && !isEmptyDoc(initial) ? JSON.stringify(initial) : "");
   const [prompt, setPrompt] = useState<Prompt | null>(null);
@@ -274,7 +276,7 @@ export function RichEditor({
     for (const file of files) {
       setUploading((n) => n + 1);
       // A request that fails outright (offline) is an error too, so the count goes back down.
-      const result = await uploadImage(uploads.projectSlug, file).catch(() => ({ error: UPLOAD_FAILED }));
+      const result = await uploadImage(uploads.projectSlug, file).catch(() => ({ error: t("uploadFailed") }));
       setUploading((n) => n - 1);
       if ("error" in result) {
         setUploadError(result.error);
@@ -291,7 +293,7 @@ export function RichEditor({
     for (const file of files) {
       setUploading((n) => n + 1);
       setAttaching((n) => n + 1);
-      const result = await uploadFile(uploads.projectSlug, file).catch(() => ({ error: UPLOAD_FAILED }));
+      const result = await uploadFile(uploads.projectSlug, file).catch(() => ({ error: t("uploadFailed") }));
       setUploading((n) => n - 1);
       setAttaching((n) => n - 1);
       if ("error" in result) {
@@ -511,7 +513,7 @@ export function RichEditor({
           if (parent === "step") {
             return canUpload ? STEP_HINT : STEP_HINT_NO_IMAGES;
           }
-          return parent !== "doc" ? "" : node.type.name === "heading" ? "Heading" : SLASH_HINTS[profile];
+          return parent !== "doc" ? "" : node.type.name === "heading" ? "Heading" : profile === "post" ? t("slashHintPost") : SLASH_HINTS[profile];
         },
       }),
     ],
@@ -666,8 +668,7 @@ export function RichEditor({
       {/* Above the text, where Save's top bar is: a held save scrolls it into view too. */}
       {unreadable && (
         <p id={unreadableNote} role="alert" tabIndex={-1} className="text-sm text-destructive outline-none">
-          Part of this text can&apos;t be shown here, likely because of an update that&apos;s just gone out. Reload the page to
-          edit it: nothing on this page can be saved until then, and the saved text stays as it is.
+          {t("unreadable")}
         </p>
       )}
       <div
@@ -693,7 +694,7 @@ export function RichEditor({
               editImage={editImage}
               askAi={askAi ? { paused: askAi.paused, run: () => asking.open() } : undefined}
               host={menusHost}
-              label={toolbarId ? "Text selection" : "Formatting"}
+              label={toolbarId ? "Text selection" : t("formatting")}
             />
             <SlashMenu
               editor={editor}
@@ -765,15 +766,16 @@ export function RichEditor({
       {uploading > 0 &&
         (held ? (
           <p role="alert" className="text-sm text-destructive">
-            Wait for the {uploading === 1 ? noun : `${noun}s`} to finish uploading, then try again.
+            {t(noun === "file" ? "waitFiles" : "waitImages", { count: uploading })}
           </p>
         ) : (
           <p role="status" className="text-sm text-muted-foreground">
-            Uploading {uploading === 1 ? noun : `${uploading} ${noun}s`}…
+            {t(noun === "file" ? "uploadingFiles" : "uploadingImages", { count: uploading })}
           </p>
         ))}
       {uploadError && (
-        <p role="alert" className="text-sm text-destructive">
+        // The server's own words stay English (L5); the editor's own failure is in the page's language.
+        <p role="alert" lang={uploadError === t("uploadFailed") ? undefined : "en"} className="text-sm text-destructive">
           {uploadError}
         </p>
       )}
@@ -781,12 +783,8 @@ export function RichEditor({
   );
 }
 
-const SIZE_LABELS: Record<(typeof IMAGE_SIZES)[number], string> = {
-  "25": "Small",
-  "50": "Medium",
-  "75": "Large",
-  "100": "Full width",
-};
+const SIZE_LABELS = { "25": "small", "50": "medium", "75": "large", "100": "fullWidth" } as const satisfies Record<(typeof IMAGE_SIZES)[number], string>;
+const ALIGN_LABELS = { left: "alignLeft", center: "alignCenter", right: "alignRight" } as const satisfies Record<(typeof IMAGE_ALIGNMENTS)[number], string>;
 const ALIGN_ICONS: Record<(typeof IMAGE_ALIGNMENTS)[number], LucideIcon> = {
   left: AlignLeftIcon,
   center: AlignCenterIcon,
@@ -814,6 +812,7 @@ function holdsDetails(node: ProseMirrorNode): boolean {
 /** What the / menu offers in each profile; the empty line being written says so (bare editors). */
 const SLASH_HINTS: Record<Profile, string> = {
   comment: "",
+  // (In the page's language: the `editor` messages' slashHintPost.)
   post: "Type / for lists, images and more",
   changelog: "Type / for headings, lists, images and more",
   article: "Type / for headings, lists, tables and more",
@@ -825,10 +824,12 @@ const STEP_HINT = "Type / for lists, code and images";
 const STEP_HINT_NO_IMAGES = "Type / for lists and code";
 const STEP_BLOCKS = new Set(["Bulleted list", "Numbered list", "Code block", "Code tabs", "Image", "Video", "Upload video", "File"]);
 
-type Block = { label: string; icon: LucideIcon; run: () => void };
+/** `name`: what it's known by (STEP_BLOCKS); `label`: what the menu says, in the page's language where a post or comment shows it. */
+type Block = { name: string; label: string; icon: LucideIcon; run: () => void };
+type EditorWords = ReturnType<typeof useTranslations<"editor">>;
 
 /** The blocks a profile has, for the / menu. */
-function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => void, onImage?: () => void, onFile?: () => void): Block[] {
+function blocks(editor: Editor, profile: Profile, t: EditorWords, onPrompt: (kind: Prompt) => void, onImage?: () => void, onFile?: () => void): Block[] {
   if (profile === "comment") {
     return [];
   }
@@ -836,7 +837,7 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
   const long = profile === "changelog" || profile === "article";
   // A collapsible block's body takes no headings or collapsible blocks of its own.
   const inDetails = editor.isActive("details");
-  const all: Block[] = [
+  const all: Omit<Block, "name">[] = [
     ...(long && !inDetails
       ? [
           { label: "Heading", icon: Heading2Icon, run: () => chain().setHeading({ level: 2 }).run() },
@@ -867,7 +868,10 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
     ...(onFile ? [{ label: "Upload video", icon: VideoIcon, run: onFile }] : []),
     ...(onFile ? [{ label: "File", icon: PaperclipIcon, run: onFile }] : []),
   ];
-  return editor.isActive("step") ? all.filter((block) => STEP_BLOCKS.has(block.label)) : all;
+  // The ones a post shows, in the page's language.
+  const words: Record<string, string> = { "Bulleted list": t("bulletedList"), "Numbered list": t("numberedList"), "Code block": t("codeBlock"), Image: t("image"), Video: t("video") };
+  const named = all.map((block) => ({ ...block, name: block.label, label: words[block.label] ?? block.label }));
+  return editor.isActive("step") ? named.filter((block) => STEP_BLOCKS.has(block.name)) : named;
 }
 
 /** Code tabs (articles): two to start with, the cursor in the first. */
@@ -970,6 +974,7 @@ function SlashMenu({
   /** Attach a file (articles). */
   onFile?: () => void;
 }) {
+  const t = useTranslations("editor");
   const query = useEditorState({ editor, selector: ({ editor }) => slashQuery(editor) });
   const [active, setActive] = useState(0);
   const [dismissed, setDismissed] = useState(false);
@@ -982,7 +987,7 @@ function SlashMenu({
       setDismissed(false);
     }
   }
-  const matches = query === null || dismissed ? [] : blocks(editor, profile, onPrompt, onImage, onFile).filter((block) => block.label.toLowerCase().includes(query));
+  const matches = query === null || dismissed ? [] : blocks(editor, profile, t, onPrompt, onImage, onFile).filter((block) => block.label.toLowerCase().includes(query));
   const current = Math.min(active, matches.length - 1);
 
   const choose = (block: Block) => {
@@ -1017,12 +1022,12 @@ function SlashMenu({
       {matches.length > 0 && (
         <div
           role="listbox"
-          aria-label="Blocks"
+          aria-label={t("blocks")}
           className="flex max-h-72 w-56 flex-col overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
         >
           {matches.map((block, index) => (
             <div
-              key={block.label}
+              key={block.name}
               role="option"
               aria-selected={index === current}
               className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm aria-selected:bg-accent aria-selected:text-accent-foreground [&_svg]:size-4 [&_svg]:text-muted-foreground"
@@ -1115,7 +1120,7 @@ function Toolbar({
   askAi,
   className,
   expanded = false,
-  label = "Formatting",
+  label,
 }: {
   label?: string;
   editor: Editor;
@@ -1146,9 +1151,10 @@ function Toolbar({
   });
   const chain = () => editor.chain().focus();
   const inserted = useRef(false);
+  const t = useTranslations("editor");
 
   return (
-    <div role="toolbar" aria-label={label} className={cn("flex flex-wrap items-center gap-0.5", className)}>
+    <div role="toolbar" aria-label={label ?? t("formatting")} className={cn("flex flex-wrap items-center gap-0.5", className)}>
       {!active.image && !active.codeBlock && (
         <>
           {expanded && <>
@@ -1162,12 +1168,12 @@ function Toolbar({
             </Select>
             <span className="docs-toolbar-separator w-0.25 h-4 bg-border m-[0_3px] shrink-0" />
           </>}
-          <Tool icon={BoldIcon} label="Bold" active={active.bold} onClick={() => chain().toggleBold().run()} />
-          <Tool icon={ItalicIcon} label="Italic" active={active.italic} onClick={() => chain().toggleItalic().run()} />
-          <Tool icon={CodeIcon} label="Code" active={active.code} onClick={() => chain().toggleCode().run()} />
+          <Tool icon={BoldIcon} label={t("bold")} active={active.bold} onClick={() => chain().toggleBold().run()} />
+          <Tool icon={ItalicIcon} label={t("italic")} active={active.italic} onClick={() => chain().toggleItalic().run()} />
+          <Tool icon={CodeIcon} label={t("code")} active={active.code} onClick={() => chain().toggleCode().run()} />
           <Tool
             icon={LinkIcon}
-            label={active.link ? "Remove link" : "Link"}
+            label={active.link ? t("removeLink") : t("link")}
             active={active.link}
             onClick={() => (active.link ? chain().extendMarkRange("link").unsetLink().run() : onPrompt("link"))}
           />
@@ -1188,7 +1194,7 @@ function Toolbar({
               onClick={askAi.run}
             />
           )}
-          {onImage && <Tool icon={ImageIcon} label="Image" active={false} onClick={onImage} />}
+          {onImage && <Tool icon={ImageIcon} label={t("image")} active={false} onClick={onImage} />}
           {expanded && <>
             <Tool icon={TableIcon} label="Table" active={active.table} onClick={() => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} />
             <DropdownMenu onOpenChange={(open, details) => { inserted.current = !open && details.reason === "item-press"; }}>
@@ -1205,7 +1211,7 @@ function Toolbar({
         </>
       )}
       {active.image && (
-        <div role="group" aria-label="Image" className="flex flex-wrap items-center gap-0.5">
+        <div role="group" aria-label={t("image")} className="flex flex-wrap items-center gap-0.5">
           {IMAGE_SIZES.map((size) => (
             <Button
               key={size}
@@ -1213,7 +1219,7 @@ function Toolbar({
               variant={active.image?.width === size ? "secondary" : "ghost"}
               size="sm"
               aria-pressed={active.image?.width === size}
-              aria-label={SIZE_LABELS[size]}
+              aria-label={t(SIZE_LABELS[size])}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => chain().updateAttributes("image", { width: size }).run()}
             >
@@ -1224,12 +1230,12 @@ function Toolbar({
             <Tool
               key={align}
               icon={ALIGN_ICONS[align]}
-              label={`Align ${align}`}
+              label={t(ALIGN_LABELS[align])}
               active={active.image?.align === align}
               onClick={() => chain().updateAttributes("image", { align }).run()}
             />
           ))}
-          <Tool icon={TextIcon} label="Alt text" active={false} onClick={() => onPrompt("alt")} />
+          <Tool icon={TextIcon} label={t("altText")} active={false} onClick={() => onPrompt("alt")} />
           {editImage?.can(active.image) && (
             <Tool
               icon={SparklesIcon}
@@ -1335,23 +1341,20 @@ function normaliseHref(input: string): string {
   return /^[^\s/@]+@[^\s/@]+$/.test(value) ? `mailto:${value}` : `https://${value}`;
 }
 
-const DIALOGS: Record<Prompt, { title: string; label: string; placeholder?: string; submit: string }> = {
-  link: { title: "Add a link", label: "Link", placeholder: "https://example.com", submit: "Add link" },
-  video: {
-    title: "Embed a video",
-    label: "Video link (YouTube, Vimeo or Loom)",
-    placeholder: "https://www.youtube.com/watch?v=…",
-    submit: "Embed video",
-  },
-  alt: { title: "Describe the image", label: "Alt text, for people who can't see it", submit: "Save" },
-  filename: { title: "Name the code", label: "File name, shown above the code (in code tabs, the tab's label)", submit: "Save" },
-};
+/** Each prompt's dialog, in the page's language (the file name's is articles' only: the team's English). */
+const dialogs = (t: EditorWords): Record<Prompt, { title: string; label: string; placeholder?: string; submit: string }> => ({
+  link: { title: t("addLinkTitle"), label: t("link"), placeholder: "https://example.com", submit: t("addLink") },
+  video: { title: t("embedVideoTitle"), label: t("videoLabel"), placeholder: "https://www.youtube.com/watch?v=…", submit: t("embedVideo") },
+  alt: { title: t("describeImage"), label: t("altLabel"), submit: t("save") },
+  filename: { title: "Name the code", label: "File name, shown above the code (in code tabs, the tab's label)", submit: t("save") },
+});
 
 function EditorDialog({ editor, kind, onClose }: { editor: Editor; kind: Prompt | null; onClose: () => void }) {
   const inputId = useId();
   const errorId = useId();
   const [error, setError] = useState<string>();
-  const dialog = kind && DIALOGS[kind];
+  const t = useTranslations("editor");
+  const dialog = kind && dialogs(t)[kind];
 
   const close = () => {
     setError(undefined);
@@ -1366,7 +1369,7 @@ function EditorDialog({ editor, kind, onClose }: { editor: Editor; kind: Prompt 
     if (kind === "link") {
       const href = normaliseHref(input);
       if (!isSafeLink(href)) {
-        setError("Links must start with http://, https:// or mailto:.");
+        setError(t("linkError"));
         return;
       }
       const chain = editor.chain().focus();
@@ -1378,7 +1381,7 @@ function EditorDialog({ editor, kind, onClose }: { editor: Editor; kind: Prompt 
     } else if (kind === "video") {
       const video = parseVideoUrl(input);
       if (!video) {
-        setError("Paste a YouTube, Vimeo or Loom link.");
+        setError(t("videoError"));
         return;
       }
       editor.chain().focus().setVideo(video).run();
@@ -1446,7 +1449,7 @@ function EditorDialog({ editor, kind, onClose }: { editor: Editor; kind: Prompt 
             </Field>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={close}>
-                Cancel
+                {t("cancel")}
               </Button>
               <Button type="submit">{dialog.submit}</Button>
             </DialogFooter>
