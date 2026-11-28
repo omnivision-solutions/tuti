@@ -270,9 +270,15 @@ test("one run at a time per project: another is refused while one runs, starts a
       ),
     ),
   );
-  // The other four refused while the first one's agent is still running; only then is it let finish.
-  await vi.waitFor(() => expect(outcomes).toEqual(["busy", "busy", "busy", "busy"]), { timeout: 30_000, interval: 100 });
-  expect(browserUse.runs).toHaveLength(before + 1);
+  // The other four refused while the first one's agent is still running; only then is it let finish. Refused as soon as
+  // the first is recorded, they can come back before its job has reached the agent: both waited for.
+  await vi.waitFor(
+    () => {
+      expect(outcomes).toEqual(["busy", "busy", "busy", "busy"]);
+      expect(browserUse.runs).toHaveLength(before + 1);
+    },
+    { timeout: 30_000, interval: 100 },
+  );
   browserUse.release();
   await all;
   expect(outcomes).toEqual(["busy", "busy", "busy", "busy", "started"]);
