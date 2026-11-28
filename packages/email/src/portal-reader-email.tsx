@@ -1,37 +1,30 @@
 import { Button } from "@react-email/components";
 
 import { Paragraph } from "./blocks";
+import { emailTranslator } from "./language";
 import { buttonStyle, type EmailBrand, Eyebrow, Layout, Note, Title } from "./layout";
 
-type PortalReaderProps = EmailBrand & { inviterName: string; email: string; url: string };
+/** `language`: the reader's (their saved one while the portal serves it, else its default). */
+type PortalReaderProps = EmailBrand & { inviterName: string; email: string; url: string; language?: string };
 
 /** To someone the team added as a reader of its private portal: where to sign in, and with which address. */
-export function PortalReaderEmail({ inviterName, projectName, email, url, accent, poweredBy, logo, logoText }: PortalReaderProps) {
+export function PortalReaderEmail({ inviterName, projectName, email, url, accent, poweredBy, logo, logoText, language }: PortalReaderProps) {
+  const t = emailTranslator(language, "emails");
   return (
-    <Layout
-      preview={`You can now read ${projectName}'s portal.`}
-      project={{ projectName, accent, poweredBy, logo, logoText }}
-      footer={<>If you weren&apos;t expecting this, you can ignore this email.</>}
-    >
-      <Eyebrow accent={accent}>You&apos;re invited</Eyebrow>
-      <Title>
-        {inviterName} gave you access to {projectName}&apos;s portal
-      </Title>
-      <Paragraph>Read the docs, follow the changelog and share feedback with the {projectName} team.</Paragraph>
-      <Button
-        href={url}
-        style={buttonStyle(accent)}
-      >
-        Open the portal
+    <Layout preview={t("readerPreview", { name: projectName })} project={{ projectName, accent, poweredBy, logo, logoText }} footer={t("readerFooter")} language={language}>
+      <Eyebrow accent={accent}>{t("readerEyebrow")}</Eyebrow>
+      <Title>{t("readerTitle", { inviter: inviterName, name: projectName })}</Title>
+      <Paragraph>{t("readerText", { name: projectName })}</Paragraph>
+      <Button href={url} style={buttonStyle(accent)}>
+        {t("readerButton")}
       </Button>
-      <Note>
-        Sign in as <strong>{email}</strong>. &ldquo;Email me a sign-in link&rdquo; works even if you don&apos;t have an account yet.
-      </Note>
+      <Note>{t.rich("readerNote", { email, // What the sign-in page calls it, in the same words.
+        button: emailTranslator(language, "auth")("emailSignInLink"), b: (chunks) => <strong>{chunks}</strong> })}</Note>
     </Layout>
   );
 }
 
 export const portalReaderEmail = (props: PortalReaderProps) => ({
-  subject: `${props.inviterName} gave you access to ${props.projectName}`,
+  subject: emailTranslator(props.language, "emails")("readerSubject", { inviter: props.inviterName, name: props.projectName }),
   body: <PortalReaderEmail {...props} />,
 });

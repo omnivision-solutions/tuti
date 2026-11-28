@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { emailBrand, handOverOnVerified, projectSender } from "@tuti/jobs";
+import { emailBrand, handOverOnVerified, projectSender, readerEmailLanguage } from "@tuti/jobs";
 import { emailConfigured, passwordResetEmail, sendEmail, signInLinkEmail, verifyEmail } from "@tuti/email";
 import { log } from "@tuti/shared";
 import { betterAuth } from "better-auth";
@@ -14,8 +14,11 @@ import { magicLink } from "better-auth/plugins/magic-link";
 import { portalAddress, requestTarget, sessionBinding, sessionWorksOn, siteMount } from "@/server/custom-domains";
 
 import { APP_ORIGIN, appSignIn, noAccountFromApp } from "./app-sign-in";
+import { appPortalMount } from "@/lib/app-portal";
 import { CLIENT_IP_HEADER, withClientIp } from "@/lib/client-ip";
 import { allowedHostPatterns, appUrl, portalTemplate } from "@/lib/hosts";
+import { PAGE_LANGUAGE_HEADER } from "@/lib/language-addresses";
+import { BASE_HEADER } from "@/lib/portal-base";
 import { hashSecret, portalHandoff } from "./portal-handoff";
 import { supportSignIn } from "./support-sign-in";
 import { PASSWORD_RESET_MINUTES, SIGN_IN_LINK_MINUTES, type SignInLinkMetadata } from "@/lib/sign-in-link";
@@ -63,6 +66,29 @@ async function sendPasswordReset({ user, url, token }: { user: { email: string }
     ...(project && (await projectSender(project.id))),
   });
 }
+
+/**
+ * The verification email's language, as a reader's other emails (docs/plan.md L5): asked on a portal (its Resend email, for
+ * someone signed in), the one they chose on a portal (`chosen`), else the page's it says (PAGE_LANGUAGE_HEADER), while that
+ * portal serves it; else the portal's default. Asked on the app, English: its sign-up and sign-in pages are (a portal's
+ * password sign-up is the app's page).
+ */
+export async function verificationLanguage(request: Request | undefined, chosen: string | null): Promise<string | undefined> {
+  const boundTo = request ? await sessionBinding(request.headers.get("host")) : null;
+  // On the app's host, Tuti's own portal under its path (lib/app-portal.ts) is a portal too.
+  const own = appPortalMount();
+  const ownPortal = boundTo === "app" && own && request?.headers.get(BASE_HEADER) === own.path;
+  const projectId = ownPortal ? (await prisma.project.findUnique({ where: { slug: own.slug }, select: { id: true } }))?.id : boundTo !== "app" ? boundTo : null;
+  if (!request || !projectId) {
+    return undefined;
+  }
+  const served = await readerEmailLanguage(projectId);
+  // (A language it doesn't serve comes back as its default.)
+  return chosen && served(chosen).language === chosen ? chosen : served(request.headers.get(PAGE_LANGUAGE_HEADER)).language;
+}
+
+/** The language someone chose on a portal (User.language), or null. */
+const chosenLanguage = async (userId: string) => (await prisma.user.findUnique({ where: { id: userId }, select: { language: true } }))?.language ?? null;
 
 /** How long an emailed verification link works (emailVerification.expiresIn), and so the way back it carries. */
 export const VERIFICATION_SECONDS = 24 * 60 * 60;
@@ -312,7 +338,10 @@ export const auth = betterAuth({
       try {
         // Signing up, or signing in before verifying (its password checked): the account's own email.
         const signingUp = !!request && /\/(sign-up|sign-in)\/email$/.test(new URL(request.url).pathname);
-        await sendEmail({ to: user.email, ...verifyEmail({ name: user.name, url: await withoutHandoffState(url, user.id, signingUp) }) });
+        await sendEmail({
+          to: user.email,
+          ...verifyEmail({ name: user.name, url: await withoutHandoffState(url, user.id, signingUp), language: await verificationLanguage(request, await chosenLanguage(user.id)) }),
+        });
       } catch (error) {
         log.error("Sending the verification email failed", { error });
         // A failed email mustn't fail a sign-up (it can be sent again), but asking to send it again should say it failed,

@@ -591,7 +591,21 @@
     "replyPreview": "{author} reageerde op {title}",
     "replyEyebrow": "Nieuwe reactie op een idee waarop je hebt gestemd",
     "replyTitle": "{author} van {name} reageerde",
-    "replyOnPost": "Reageren in het bericht"
+    "replyOnPost": "Reageren in het bericht",
+    "verifySubject": "Bevestig je e-mailadres voor Tuti",
+    "verifyPreview": "Bevestig je e-mailadres om je aanmelding af te ronden.",
+    "verifyFooter": "De link werkt 24 uur. Als je je niet bij Tuti hebt aangemeld, kun je deze e-mail negeren.",
+    "verifyTitle": "Bevestig je e-mailadres, {name}",
+    "verifyText": "Bevestig dat dit je e-mailadres is om je aanmelding af te ronden.",
+    "verifyButton": "Mijn e-mailadres bevestigen",
+    "readerSubject": "{inviter} heeft je toegang gegeven tot {name}",
+    "readerPreview": "Je kunt nu het portaal van {name} lezen.",
+    "readerFooter": "Als je dit niet verwachtte, kun je deze e-mail negeren.",
+    "readerEyebrow": "Je bent uitgenodigd",
+    "readerTitle": "{inviter} heeft je toegang gegeven tot het portaal van {name}",
+    "readerText": "Lees de documentatie, volg de changelog en deel je feedback met het team van {name}.",
+    "readerButton": "Portaal openen",
+    "readerNote": "Meld je aan als <b>{email}</b>. ‘{button}’ werkt ook als je nog geen account hebt."
   },
   "subscription": {
     "title": "Changelog-e-mails",

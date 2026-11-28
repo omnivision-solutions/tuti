@@ -591,7 +591,21 @@
     "replyPreview": "{author} 回复了 {title}",
     "replyEyebrow": "你投票的想法有新回复",
     "replyTitle": "{name} 的 {author} 回复了",
-    "replyOnPost": "在帖子中回复"
+    "replyOnPost": "在帖子中回复",
+    "verifySubject": "验证你在 Tuti 的邮箱",
+    "verifyPreview": "请确认你的邮箱地址以完成注册。",
+    "verifyFooter": "链接 24 小时内有效。如果你没有注册 Tuti，可以忽略这封邮件。",
+    "verifyTitle": "{name}，请确认你的邮箱",
+    "verifyText": "请确认这是你的邮箱，以完成注册。",
+    "verifyButton": "验证我的邮箱",
+    "readerSubject": "{inviter} 已授予你访问 {name} 的权限",
+    "readerPreview": "你现在可以阅读 {name} 的门户了。",
+    "readerFooter": "如果你没有预料到这封邮件，可以忽略它。",
+    "readerEyebrow": "你收到了邀请",
+    "readerTitle": "{inviter} 已授予你访问 {name} 门户的权限",
+    "readerText": "阅读文档、关注更新日志，并向 {name} 团队分享反馈。",
+    "readerButton": "打开门户",
+    "readerNote": "请用 <b>{email}</b> 登录。即使你还没有账户，也可以使用“{button}”。"
   },
   "subscription": {
     "title": "更新日志邮件",

@@ -591,7 +591,21 @@
     "replyPreview": "{author} 님이 {title}에 답글을 남겼습니다",
     "replyEyebrow": "투표한 아이디어에 새 답글",
     "replyTitle": "{name}의 {author} 님이 답글을 남겼습니다",
-    "replyOnPost": "게시물에서 답글 달기"
+    "replyOnPost": "게시물에서 답글 달기",
+    "verifySubject": "Tuti 이메일 주소를 인증하세요",
+    "verifyPreview": "가입을 마치려면 이메일 주소를 확인하세요.",
+    "verifyFooter": "링크는 24시간 동안 유효합니다. Tuti에 가입하지 않았다면 이 이메일을 무시하셔도 됩니다.",
+    "verifyTitle": "{name}님, 이메일 주소를 확인하세요",
+    "verifyText": "가입을 마치려면 이 이메일 주소가 본인의 것인지 확인하세요.",
+    "verifyButton": "이메일 인증하기",
+    "readerSubject": "{inviter}님이 {name}에 대한 접근 권한을 드렸습니다",
+    "readerPreview": "이제 {name}의 포털을 읽을 수 있습니다.",
+    "readerFooter": "예상하지 못한 이메일이라면 무시하셔도 됩니다.",
+    "readerEyebrow": "초대를 받았습니다",
+    "readerTitle": "{inviter}님이 {name} 포털에 대한 접근 권한을 드렸습니다",
+    "readerText": "문서를 읽고, 변경 내역을 확인하고, {name} 팀에 피드백을 보내 보세요.",
+    "readerButton": "포털 열기",
+    "readerNote": "<b>{email}</b>(으)로 로그인하세요. 아직 계정이 없어도 “{button}”을 사용할 수 있습니다."
   },
   "subscription": {
     "title": "변경 기록 이메일",

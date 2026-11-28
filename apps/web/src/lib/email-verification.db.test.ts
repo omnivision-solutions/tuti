@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
+import { configFile } from "@tuti/testkit";
 import { expect, test, vi } from "vitest";
 
 import ContinuePage from "@/app/app/(account-pages)/auth/continue/page";
@@ -11,6 +12,8 @@ import { request } from "@/test/next-headers";
 import { auth, VERIFICATION_SECONDS } from "@/server/auth/auth";
 import { getSession } from "@/server/session";
 
+import { PAGE_LANGUAGE_HEADER } from "./language-addresses";
+import { BASE_HEADER } from "./portal-base";
 import { randomSecret } from "@/server/auth/portal-handoff";
 import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR } from "./sign-in-link";
 
@@ -393,4 +396,44 @@ test("someone else's address signed up with a hand-picked callback: its own veri
   expect(outcome).not.toHaveProperty("redirect");
   expect(JSON.stringify(((outcome as { tree: React.ReactElement }).tree).props)).toContain(`["Continue to ","${theirs.name}"]`);
   expect(await continueButton(Promise.resolve((outcome as { tree: unknown }).tree))).toBe(`http://${theirs.slug}.localhost:3100/continue?redirect=%2F`);
+});
+
+test("asked again on a portal (Resend email), the verification email is in its page's language while the portal serves it, else its default; on the app, English", async () => {
+  const project = await createProject(await signUpUser("Owner"));
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  const ada = await signUpUser("Ada", undefined, { verified: false });
+  const origin = `http://${project.slug}.localhost:3100`;
+  /** Resend email on `at`, as its button does: saying the page's language (PAGE_LANGUAGE_HEADER). */
+  const resendAt = async (at: string, language: string, more: Record<string, string> = {}) => {
+    const response = await auth.handler(
+      new Request(`${at}/api/auth/send-verification-email`, {
+        method: "POST",
+        headers: { host: new URL(at).host, origin: at, "content-type": "application/json", [PAGE_LANGUAGE_HEADER]: language, ...more },
+        body: JSON.stringify({ email: ada.email, callbackURL: "/account" }),
+      }),
+    );
+    expect(response.ok, await response.clone().text()).toBe(true);
+    return (await mailbox.latestTo(ada.email)).subject;
+  };
+  expect(await resendAt(origin, "de")).toBe("Bestätige deine E-Mail-Adresse für Tuti");
+  // A language it doesn't serve (any word a browser sends): its default's.
+  expect(await resendAt(origin, "fr")).toBe("Verify your email for Tuti");
+  // One they chose on a portal comes first, while it serves it.
+  await prisma.user.update({ where: { id: ada.id }, data: { language: "de" } });
+  expect(await resendAt(origin, "en")).toBe("Bestätige deine E-Mail-Adresse für Tuti");
+  await prisma.user.update({ where: { id: ada.id }, data: { language: "ja" } });
+  expect(await resendAt(origin, "en")).toBe("Verify your email for Tuti");
+  await prisma.user.update({ where: { id: ada.id }, data: { language: null } });
+  await prisma.project.update({ where: { id: project.id }, data: { language: "de" } });
+  await prisma.projectLanguage.deleteMany({ where: { projectId: project.id } });
+  expect(await resendAt(origin, "fr")).toBe("Bestätige deine E-Mail-Adresse für Tuti");
+  // The app's (its sign-up and sign-in pages, a portal's password sign-up included): English, whatever it says.
+  expect(await resendAt(APP_URL, "de")).toBe("Verify your email for Tuti");
+  // Tuti's own portal, under its path on the app's host (the proxy says so with BASE_HEADER): a portal's.
+  vi.stubEnv("TUTI_CONFIG", configFile({ ownPortal: { project: project.slug } }));
+  try {
+    expect(await resendAt(APP_URL, "fr", { [BASE_HEADER]: `/${project.slug}` })).toBe("Bestätige deine E-Mail-Adresse für Tuti");
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });

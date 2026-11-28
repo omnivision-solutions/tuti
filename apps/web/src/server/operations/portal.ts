@@ -1,6 +1,6 @@
 import { type Prisma, prisma } from "@tuti/db";
 import { emailConfigured, portalReaderEmail, sendEmail } from "@tuti/email";
-import { emailBrand, lockProject, projectSender } from "@tuti/jobs";
+import { emailBrand, lockProject, projectSender, readerEmailLanguage } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -196,7 +196,7 @@ export const addPortalReaders = defineOperation({
     const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true, name: true, portalAccess: true, brandColor: true } });
     const notify = input.notify && project.portalAccess === "PRIVATE" && emailConfigured();
     // Before the readers are added: if it failed after, a retry would find them added and email nobody.
-    const signInUrl = notify ? `${await portalAddress(project.slug)}/sign-in` : "";
+    const address = notify ? await portalAddress(project.slug) : "";
     // Under the project's lock, so adds at the same time can't go past the limits together.
     const { added, toEmail } = await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
@@ -219,15 +219,25 @@ export const addPortalReaders = defineOperation({
         where: { id: actor.kind === "user" ? actor.userId : actor.createdById },
         select: { name: true, email: true },
       });
-      const url = signInUrl;
       // Inside each send: setting up the project's sender or reading its brand failing is a failed email, never a failed add.
       // Both awaited together, so a failing brand is handled even when the sender failed first.
-      const setup = Promise.all([projectSender(projectId, inviter?.email), emailBrand(projectId)]);
+      // Each in their language: one they chose on a portal (an account with that address) while this portal serves it,
+      // else the portal's default; its sign-in page at that language's address.
+      const setup = Promise.all([
+        projectSender(projectId, inviter?.email),
+        emailBrand(projectId),
+        readerEmailLanguage(projectId),
+        prisma.user
+          .findMany({ where: { email: { in: toEmail, mode: "insensitive" } }, select: { email: true, language: true } })
+          .then((people) => new Map(people.map((person) => [person.email.toLowerCase(), person.language]))),
+      ]);
       // Never fails the add: they're readers either way, and the team can tell them.
       const sent = await Promise.allSettled(
         toEmail.map(async (email) => {
-          const [sender, brand] = await setup;
-          return sendEmail({ to: email, ...sender, ...portalReaderEmail({ ...brand, inviterName: inviter?.name ?? project.name, email, url }) });
+          const [sender, brand, language, chosen] = await setup;
+          const words = language(chosen.get(email.toLowerCase()) ?? null);
+          const url = `${address}${words.prefix}/sign-in`;
+          return sendEmail({ to: email, ...sender, ...portalReaderEmail({ ...brand, inviterName: inviter?.name ?? project.name, email, url, language: words.language }) });
         }),
       );
       for (const result of sent) {
