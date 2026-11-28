@@ -13,7 +13,7 @@ for (const name of Object.keys(process.env)) {
 
 // Unit test files share a worker (isolate: false in vitest.config.mts): what one file changes, at import or in a test,
 // is undone before the next: spies, stubbed globals, fake timers and the environment. The environment goes back to the
-// worker's first one, also before each file, since a file that fails to load never runs its afterAll.
+// worker's first one. All of it is also undone before each file, since a file that fails to load never runs its afterAll.
 const env = ((globalThis as { tutiTestEnv?: NodeJS.ProcessEnv }).tutiTestEnv ??= { ...process.env });
 function restoreEnv() {
   for (const name of Object.keys(process.env)) {
@@ -21,11 +21,12 @@ function restoreEnv() {
   }
   Object.assign(process.env, env);
 }
-restoreEnv();
-afterAll(() => {
+function restoreWorker() {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   vi.useRealTimers();
   restoreEnv();
-});
+}
+restoreWorker();
+afterAll(restoreWorker);
