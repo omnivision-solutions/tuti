@@ -1,4 +1,4 @@
-import type { TeamRole } from "@tuti/db";
+import { prisma, type TeamRole } from "@tuti/db";
 
 import type { OperationError } from "../operations/define";
 import { type ApiKey, authenticateSession, sendsSession, type Teammate } from "../api-auth";
@@ -116,3 +116,12 @@ export const teammateContext = (teammate: Teammate, slug: string): TrpcContext =
   sameSite: true,
   memberships: new Map([[slug, Promise.resolve({ projectId: teammate.projectId, role: teammate.role })]]),
 });
+
+/**
+ * The same caller again, for a stream's later checks (/api/live, at each keepalive): null once their session has ended
+ * (signed out, expired). Their membership is read anew, so a procedure refuses them once they've left the team.
+ */
+export async function stillContext(who: Extract<Who, { kind: "session" }>): Promise<TrpcContext | null> {
+  const signedIn = await prisma.session.count({ where: { id: who.sessionId, expiresAt: { gt: new Date() } } });
+  return signedIn ? { who, sameSite: true, memberships: new Map() } : null;
+}
