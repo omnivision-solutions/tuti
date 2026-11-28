@@ -193,6 +193,9 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   const api = await apiFor(owner, slug);
   await api("/widget", { onPortal: false }, "PATCH");
   await owner.goto(`/app/${slug}/settings/custom-code`);
+  // Filled once the form has hydrated (its "Save changes" is there): hydrating midway through the fill drops its
+  // select-all, and the new code goes in front of the saved one instead of replacing it.
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await owner.getByLabel("Custom HTML").fill(`<script src="${APP_URL}/api/widget.js" data-project="${slug}" async></script>`);
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();

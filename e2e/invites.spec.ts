@@ -116,8 +116,10 @@ test("an owner invites someone by email, who signs up from the email and joins",
   // By keyboard this time: focus stays on the dropdown once the role is saved.
   await role.focus();
   await owner.keyboard.press("Enter");
-  await expect(owner.getByRole("option", { name: "Member" })).toBeVisible();
+  // The list opens on the current role; an arrow pressed before that lands starts from the top (Owner).
+  await expect(owner.getByRole("option", { name: "Admin" })).toBeFocused();
   await owner.keyboard.press("ArrowDown");
+  await expect(owner.getByRole("option", { name: "Member" })).toBeFocused();
   await owner.keyboard.press("Enter");
   await expect(owner.getByText("Role changed to Member")).toBeVisible();
   await expect(role).toContainText("Member");
