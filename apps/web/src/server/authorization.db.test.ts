@@ -1458,6 +1458,12 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   "conversations.articles": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.conversations.articles({ project: slug, number: 1, q: "Getting started" }) },
   "inbox.language": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.language({ project: slug, number: 1 }) },
   "inbox.newConversationEmails": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.inbox.newConversationEmails({ project: slug, on: false }) },
+  // The editors' polls while screenshots are taken (the cover and screenshot routes), and the covers to pick from: an
+  // entry's for the team, Settings → Changelog's samples for owners and admins.
+  "changelog.screenshotsStatus": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.changelog.screenshotsStatus({ project: slug, number: 1 }) },
+  "articles.screenshotsStatus": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.articles.screenshotsStatus({ project: slug, slug: "matrix-article" }) },
+  "changelog.cover": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.changelog.cover({ project: slug, number: 1, design: "title" }) },
+  "changelogStyle.cover": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.changelogStyle.cover({ project: slug, design: "title" }) },
   // The Inbox's conversation page: what it reads, and its buttons (status, assignee, snooze, spam, priority, take over and
   // hand back are all conversations.update), Summarize, Try again on a translation, and marking it read.
   "inbox.conversation": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.conversation({ project: slug, number: 1 }) },
