@@ -10,6 +10,8 @@ import { previewToken } from "@/server/auth/preview-session";
 import { newVisitor } from "@/server/auth/visitor-session";
 import { widgetToken } from "@/server/auth/widget-session";
 import { authorId } from "@/server/operations/create";
+import { runOperation } from "@/server/operations/define";
+import { listTeam } from "@/server/operations/more";
 import { serverCaller } from "@/server/trpc/server";
 import { callerAs, createProject, onPortal, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
@@ -249,4 +251,11 @@ test("a teammate through the widget reads as a reader: no draft entry, no team-o
   await expect(app.changelog.get({ project: project.slug, number: 1 })).resolves.toMatchObject({ number: 1 });
   await expect(app.comments.create({ project: project.slug, ...note })).resolves.toBeTruthy();
   await expect(app.uploads.create({ project: project.slug, ...file })).resolves.toMatchObject({ name: "plan.pdf" });
+});
+
+test("the widget's person never runs the team's operations, by the router or in a chain (runOperation): one check refuses both", async () => {
+  const asWidgetTeammate = { actor: { kind: "user" as const, userId: owner.id, viaWidget: true as const }, projectId: project.id };
+  await expect(runOperation(listTeam, asWidgetTeammate, {})).rejects.toMatchObject({ status: 403 });
+  // As themselves in the app, the same operation runs.
+  await expect(runOperation(listTeam, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {})).resolves.toBeTruthy();
 });

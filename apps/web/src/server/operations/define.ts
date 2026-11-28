@@ -172,7 +172,7 @@ const roleIn = async (projectId: string, userId: string) =>
  * act in the project (canActIn: not another project's single sign-on user, a reader of a private portal); `reader`
  * needs someone who can read the project's portal (`mayRead`: the middleware's answer for the request's reader, its
  * preview and widget cookies included; else the actor's), and a key counts as the team. A visitor (nobody signed in)
- * acts only where `access` is `reader`. `role`: the actor's, when the caller already read it. Returns the context to run
+ * acts only where `access` is `reader`, and the widget's person (`viaWidget`) only where it's `anyone` or `reader`. `role`: the actor's, when the caller already read it. Returns the context to run
  * with (with `ownerId` for owner operations).
  */
 export async function authorize<C extends Context>(
@@ -193,6 +193,11 @@ export async function authorize<C extends Context>(
       throw refusedReader();
     }
     return context;
+  }
+  // The widget's person: a reader whatever their role (the embedding site holds their token), so never the team's
+  // operations, however they're reached (the router, or runOperation in a chain).
+  if (actor.kind === "user" && actor.viaWidget && operation.access !== "anyone" && operation.access !== "reader") {
+    throw new OperationError(403, "forbidden", "This can't be done from the widget");
   }
   const userId = actor.kind === "user" ? actor.userId : actor.createdById;
   if (actor.kind === "apiKey") {
