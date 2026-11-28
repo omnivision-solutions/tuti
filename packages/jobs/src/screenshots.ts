@@ -10,6 +10,7 @@ import { aiPaused } from "./credits";
 import { storeImage } from "./import-media";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lockProject } from "./running-draft";
+import { foundDomains, scannedFor, partlyScannedFor, scanSignInServices } from "./sign-in-hosts";
 
 /**
  * Screenshots (docs/plan.md, Screenshots): an agent in Browser Use's cloud browser opens a team's own app (Settings →
@@ -204,9 +205,21 @@ export async function takeScreenshots(runId: string): Promise<ShotResult[]> {
   if (count === 0) {
     return results(runId);
   }
-  const settings = await prisma.screenshotSettings.findUnique({ where: { projectId: run.projectId } });
+  let settings = await prisma.screenshotSettings.findUnique({ where: { projectId: run.projectId } });
   if (!settings || !settings.appUrl) {
     return finish(runId, SCREENSHOT_ERRORS.noSettings);
+  }
+  // The app not read yet for its sign-in's hosts (a Test right after the address changed): read first (15 seconds at
+  // most), so the browser opens them; a read failing goes without them.
+  if (settings.signInServicesFor !== scannedFor(settings.appUrl) && settings.signInServicesFor !== partlyScannedFor(settings.appUrl)) {
+    // A claim of its own (no read the page started is claimed at this instant): it leaves the page's read's alone.
+    await scanSignInServices({ projectId: run.projectId, appUrl: settings.appUrl, claimedAt: new Date().toISOString() }).catch((error: unknown) => log.warn("Reading an app's sign-in hosts before a screenshot run failed", { projectId: run.projectId, error }));
+    // Read again after it (seconds): settings removed meanwhile end the run, never run on with what they held.
+    const read = await prisma.screenshotSettings.findUnique({ where: { projectId: run.projectId } });
+    if (!read?.appUrl) {
+      return finish(runId, SCREENSHOT_ERRORS.noSettings);
+    }
+    settings = read;
   }
   if (await aiPaused(run.projectId)) {
     return finish(runId, SCREENSHOT_ERRORS.credits);
@@ -329,13 +342,14 @@ async function attempt(client: BrowserUse, input: Attempt): Promise<({ answer: A
 
 /**
  * The hosts a run's browser may open, and the password may be typed on: the app's own host, its sign-in link's, and the
- * other domains the team listed, each with its subdomains (as Browser Use counts them). Exact hosts, never their
+ * other domains the team listed and those found for its sign-in (foundDomains), each with its subdomains (as Browser Use counts them). Exact hosts, never their
  * registrable domain: on a multi-tenant app (acme.saas.com) that would reach other tenants' hosts, which an injected
  * line could send the sign-in link to. Another host the app needs (its API, a login page) is listed by the team.
  */
-export function allowedHosts(settings: Pick<Settings, "appUrl" | "signIn" | "signInLink" | "otherDomains">): string[] {
+export function allowedHosts(settings: Pick<Settings, "appUrl" | "signIn" | "signInLink" | "otherDomains"> & Parameters<typeof foundDomains>[0]): string[] {
   const link = signInLink(settings);
-  return [...new Set([new URL(settings.appUrl).hostname, ...(link && URL.canParse(link) ? [new URL(link).hostname] : []), ...settings.otherDomains])].sort();
+  const found = foundDomains(settings).map(({ host }) => host);
+  return [...new Set([new URL(settings.appUrl).hostname, ...(link && URL.canParse(link) ? [new URL(link).hostname] : []), ...settings.otherDomains, ...found])].sort();
 }
 
 /**

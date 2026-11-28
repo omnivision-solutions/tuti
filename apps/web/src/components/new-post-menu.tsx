@@ -17,7 +17,7 @@ export function NewPostMenu({
   round = false,
   newPost = "New post",
 }: {
-  boards: { name: string; postButton: string | null; href: string }[];
+  boards: { name: string; lang?: string; postButton: string | null; href: string }[];
   round?: boolean;
   /** "New post" in the page's language: a board without its own words gets it too. */
   newPost?: string;
@@ -53,7 +53,9 @@ export function NewPostMenu({
             <span className="font-medium">
               {postButtonText(board, newPost)}
             </span>{" "}
-            <span className="text-xs text-muted-foreground">{board.name}</span>
+            <span lang={board.lang} className="text-xs text-muted-foreground">
+              {board.name}
+            </span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

@@ -91,7 +91,7 @@ function windows(text: string, folded: string, names: string[]): string {
 
 /** The sign-in services named in `texts` (a page and its scripts), each with the hosts found, in SERVICES' order. */
 export function findSignInServices(texts: string[]): SignInService[] {
-  return merge(texts.map(findIn));
+  return merge(texts.map((text) => findIn(text)));
 }
 
 /** Each text's services as one list, in SERVICES' order, each service's hosts together. */
@@ -102,7 +102,12 @@ function merge(lists: SignInService[][]): SignInService[] {
   });
 }
 
-function findIn(original: string): SignInService[] {
+/**
+ * The services `original` names. `ownCode` false (a page, whose text and inline data can be its users'): only those
+ * whose hosts are the service's own, the same for every app (Firebase's), never a tenant's host, which anyone can
+ * name (evil.auth0.com in a post the page shows).
+ */
+function findIn(original: string, ownCode = true): SignInService[] {
   const text = original.toLowerCase();
   // The lowered text where its offsets match the original's (nearly always); else only A–Z lowered, runs at a time.
   const folded = text.length === original.length ? text : original.replace(/[A-Z]+/g, (run) => run.toLowerCase());
@@ -118,7 +123,7 @@ function findIn(original: string): SignInService[] {
     }
     const near = windows(original, folded, service.near ?? []);
     const lower = near.toLowerCase();
-    const candidates = [...(service.found ?? []).flatMap((pattern) => [...lower.matchAll(pattern)].map(([host]) => host)), ...(service.derived?.(near) ?? [])];
+    const candidates = ownCode ? [...(service.found ?? []).flatMap((pattern) => [...lower.matchAll(pattern)].map(([host]) => host)), ...(service.derived?.(near) ?? [])] : [];
     for (const host of candidates) {
       if (/^[a-z0-9.-]+$/.test(host) && !service.not?.test(host) && realHost(host) && !NEVER.test(host)) {
         hosts.add(host);
@@ -197,29 +202,59 @@ async function get(url: URL, max: number, signal: AbortSignal, budget = { left: 
   return null;
 }
 
-/** The scripts a page loads (and preloads), on its own site. */
-export function scriptsOf(page: { url: URL; text: string }): URL[] {
-  const site = getDomain(page.url.hostname, { allowPrivateDomains: true }) ?? page.url.hostname;
+const siteOf = (url: URL) => getDomain(url.hostname, { allowPrivateDomains: true }) ?? url.hostname;
+
+/**
+ * The scripts a page loads (and preloads), on the app's own site (`app`, the address asked for: a redirect elsewhere
+ * doesn't make that site's scripts the app's).
+ */
+export function scriptsOf(page: { url: URL; text: string }, app: URL = page.url): URL[] {
+  const site = siteOf(app);
   const sources = [
     ...page.text.matchAll(/<script\b[^>]{0,2000}?\bsrc\s{0,20}=\s{0,20}["']([^"']{1,2000})["']/gi),
     ...page.text.matchAll(/<link\b[^>]{0,2000}?\bhref\s{0,20}=\s{0,20}["']([^"']{1,2000}?\.m?js(?:\?[^"']{0,2000})?)["']/gi),
   ].map(([, src]) => URL.canParse(src!, page.url) && new URL(src!, page.url));
-  const own = sources.filter((url): url is URL => !!url && (url.origin === page.url.origin || getDomain(url.hostname, { allowPrivateDomains: true }) === site));
+  const own = sources.filter((url): url is URL => !!url && (url.hostname === app.hostname || siteOf(url) === site));
   return [...new Map(own.map((url) => [url.href, url])).values()];
 }
 
 /**
  * What a saved answer is kept under (ScreenshotSettings.signInServicesFor): the address and this scanner's version, so
- * an answer from an earlier one (15 scripts, until 2026-11) is found again, even one saved by the previous release
+ * an answer from an earlier one (15 scripts, or tenants' hosts in the page, until 2026-11) is found again, even one saved by the previous release
  * while a deploy runs both.
  */
-export const scannedFor = (appUrl: string) => `2 ${appUrl}`;
+export const scannedFor = (appUrl: string) => `3 ${appUrl}`;
 /**
  * What a read that wasn't complete (a script that didn't load may hold the service) is kept under: shown, read again on
  * the next look, and never in place of a full answer, which is kept under scannedFor (with a time or, saved before
  * answers had one, without).
  */
 export const partlyScannedFor = (appUrl: string) => `partial ${scannedFor(appUrl)}`;
+
+/**
+ * The hosts found for the app at its saved address (a full answer or a partial one), allowed for its runs as the
+ * other domains are, without the team adding them: each with its service. Not those the team removed
+ * (`skippedDomains`), nor a shared suffix (vercel.app), nor a Clerk host but its development one or clerk. under the
+ * app's own site (where Clerk's own domain for an app always is; never another tenant's host on a shared site). A
+ * tenant's host is only ever taken from the app's own script files (detectSignInServices), so whoever could name
+ * another there controls the app already.
+ */
+export function foundDomains(settings: { appUrl: string; signInServices: unknown; signInServicesFor: string | null; skippedDomains: string[] }): { host: string; provider: string }[] {
+  if (settings.signInServicesFor !== scannedFor(settings.appUrl) && settings.signInServicesFor !== partlyScannedFor(settings.appUrl)) {
+    return [];
+  }
+  const site = getDomain(new URL(settings.appUrl).hostname, { allowPrivateDomains: true });
+  const services = Array.isArray(settings.signInServices) ? (settings.signInServices as SignInService[]) : [];
+  return services.flatMap(({ provider, hosts }) =>
+    hosts
+      .filter((host) => !settings.skippedDomains.includes(host))
+      .filter((host) => {
+        const domain = getDomain(host, { allowPrivateDomains: true });
+        return domain !== null && (provider !== "Clerk" || host.endsWith(".clerk.accounts.dev") || (host.startsWith("clerk.") && domain === site));
+      })
+      .map((host) => ({ host, provider })),
+  );
+}
 
 /**
  * The sign-in services the app at `appUrl` calls: its page (over https, an http address asked for over https) and the
@@ -237,9 +272,12 @@ export async function detectSignInServices(appUrl: string): Promise<{ services: 
     if (!page) {
       return null;
     }
-    // Only the first MAX_SCRIPTS, the same ones each time: what they show is kept all the same.
-    const queue = scriptsOf(page).slice(0, MAX_SCRIPTS);
-    const found = [findIn(page.text)];
+    // The app's own scripts only: none from a page a redirect took to another site, and (below) none whose read ended
+    // on another. Only the first MAX_SCRIPTS, the same ones each time: what they show is kept all the same.
+    const site = siteOf(url);
+    const queue = siteOf(page.url) === site ? scriptsOf(page, url).slice(0, MAX_SCRIPTS) : [];
+    // The page's text and inline data can be its users': only services' own hosts from it, tenants' from the scripts.
+    const found = [findIn(page.text, false)];
     let complete = true;
     const budget = { left: SCRIPTS_BYTES };
     await Promise.all(
@@ -247,7 +285,7 @@ export async function detectSignInServices(appUrl: string): Promise<{ services: 
         while (budget.left > 0 && queue.length > 0) {
           const read = await get(queue.shift()!, SCRIPT_BYTES, signal, budget).catch(() => null);
           complete &&= !!read;
-          found.push(read ? findIn(read.text) : []);
+          found.push(read ? findIn(read.text, siteOf(read.url) === site) : []);
         }
       }),
     );
@@ -271,10 +309,14 @@ export async function scanSignInServices({ projectId, appUrl, claimedAt }: JobIn
     const found = await detectSignInServices(appUrl);
     if (found?.complete) {
       await prisma.screenshotSettings.updateMany({ where: { projectId, appUrl }, data: { signInServices: found.services, signInServicesFor: key, signInServicesAt: new Date() } });
-    } else if (found) {
+    } else {
+      // A page that couldn't be read is kept as found partly, with nothing: read again on the next look, but a run
+      // (which reads first when there's no answer) doesn't wait on it again every time.
+      // One that failed replaces nothing found for this address before, partly either.
+      const kept = found ? [key] : [key, partlyScannedFor(appUrl)];
       await prisma.screenshotSettings.updateMany({
-        where: { projectId, appUrl, OR: [{ signInServicesFor: null }, { signInServicesFor: { not: key } }] },
-        data: { signInServices: found.services, signInServicesFor: partlyScannedFor(appUrl), signInServicesAt: null },
+        where: { projectId, appUrl, OR: [{ signInServicesFor: null }, { signInServicesFor: { notIn: kept } }] },
+        data: { signInServices: found?.services ?? [], signInServicesFor: partlyScannedFor(appUrl), signInServicesAt: null },
       });
     }
     return { read: !!found, complete: !!found?.complete, services: found?.services.length ?? 0 };

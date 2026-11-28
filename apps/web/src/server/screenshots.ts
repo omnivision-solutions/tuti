@@ -18,14 +18,17 @@ export async function saveScreenshotSettings(projectSlug: string, _state: FormSt
     appUrl: text("appUrl") ?? "",
     signIn,
     username: signIn === "password" ? text("username") : undefined,
-    password: signIn === "password" ? text("password") : undefined,
+    // Or the box under Other domains, there when one is added and a password is saved: the password all the same.
+    password: signIn === "password" ? text("password") || text("domainPassword") : undefined,
     signInLink: signIn === "link" ? text("signInLink") : undefined,
     about: text("about")?.replace(/\r\n/g, "\n"),
     window: text("window") as "desktop" | "phone" | undefined,
     // A checkbox: sent only when it's on.
     residentialProxy: formData.get("residentialProxy") === "on",
     // One per line (or separated by commas or spaces); empty clears them.
-    otherDomains: (text("otherDomains") ?? "").split(/[\s,]+/).filter(Boolean),
+    // The chips, and what's typed after them, not a chip yet.
+    otherDomains: [...new Set(`${text("otherDomains") ?? ""} ${text("otherDomainsDraft") ?? ""}`.split(/[\s,]+/).filter(Boolean))],
+    skippedDomains: (text("skippedDomains") ?? "").split(/[\s,]+/).filter(Boolean),
   };
   return asAdmin(projectSlug, DENIED, (context) => call(updateScreenshotSettings, context, input));
 }

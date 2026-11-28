@@ -28,6 +28,7 @@ import { visibleEntry } from "@/lib/reader-groups";
 import { VisibilityBadge } from "@/components/visibility-badge";
 import { cn } from "@/lib/utils";
 import { shownBoards } from "@/server/post-visibility";
+import { boardNames } from "@/server/portal-labels";
 
 /** One address for search engines, whichever board it shows (`?board=`). */
 export async function generateMetadata(props: PageProps<"/portal/[project]/roadmap">): Promise<Metadata> {
@@ -59,8 +60,12 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
   const viewer = await currentPostViewer(found.id);
   const project = {
     id: found.id,
-    boards: await prisma.board.findMany({ where: { projectId: found.id, ...shownBoards(viewer) }, orderBy: { createdAt: "asc" }, select: { id: true, slug: true, name: true, postButton: true } }),
+    // Their names in the page's language where they're translated, with their `lang` (docs/plan.md L14).
+    boards: (
+      await prisma.board.findMany({ where: { projectId: found.id, ...shownBoards(viewer) }, orderBy: { createdAt: "asc" }, select: { id: true, slug: true, name: true, description: true, translations: true, postButton: true } })
+    ).map(await boardNames()),
   };
+  const boardsBySlug = new Map(project.boards.map((b) => [b.slug, b]));
   const session = await getSession();
   // As voting checks it: someone signed in through another project's single sign-on can't vote here.
   const voter = session && (await canActIn(session.user.id, project.id)) ? session.user.id : null;
@@ -99,7 +104,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
     return params.size > 0 ? `${at("/roadmap")}?${params}` : at("/roadmap");
   };
   // New post: on the board shown, or a pick of every board (one board: its own).
-  const postBoards = (board ? [board] : project.boards).map((b) => ({ name: b.name, postButton: b.postButton, href: `${at(boardPath(b))}?new` }));
+  const postBoards = (board ? [board] : project.boards).map((b) => ({ name: b.name, lang: b.lang, postButton: b.postButton, href: `${at(boardPath(b))}?new` }));
   // A board's chip keeps the column open on phones (`?column=`).
   const boardHref = (slug?: string) => {
     const params = new URLSearchParams({ ...(slug && { board: slug }), ...(column !== "planned" && { column }) });
@@ -131,7 +136,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
               current={boardHref(board?.slug)}
               items={[
                 { title: f("allBoards"), href: boardHref(), count: [...counts.values()].reduce((sum, n) => sum + n, 0).toLocaleString(language) },
-                ...project.boards.map((b) => ({ title: b.name, href: boardHref(b.slug), count: (counts.get(b.id) ?? 0).toLocaleString(language) })),
+                ...project.boards.map((b) => ({ title: <span lang={b.lang}>{b.name}</span>, href: boardHref(b.slug), count: (counts.get(b.id) ?? 0).toLocaleString(language) })),
               ]}
             />
           )
@@ -198,8 +203,14 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                     return (
                       <li key={post.number} className="flex flex-col rounded-xl bg-card p-4 shadow-card ring-1 ring-card-edge sm:px-5">
                         <p className="flex flex-wrap items-center gap-1.5 text-[0.8125rem] font-medium text-muted-foreground">
-                          <LayoutListIcon aria-hidden className="size-3.5" />
-                          {post.board.name} <VisibilityBadge visibility={post.visibility} />
+                          {/* A board they can't open (Team only) goes unnamed, as on the post's page. */}
+                          {boardsBySlug.has(post.board.slug) && (
+                            <>
+                              <LayoutListIcon aria-hidden className="size-3.5" />
+                              <span lang={boardsBySlug.get(post.board.slug)!.lang}>{boardsBySlug.get(post.board.slug)!.name}</span>{" "}
+                            </>
+                          )}
+                          <VisibilityBadge visibility={post.visibility} />
                         </p>
                         <Link lang={lang} href={at(postPath(post))} className="mt-1.5 text-base leading-snug font-[650] tracking-[-0.01em] break-words hover:underline">
                           {post.title}

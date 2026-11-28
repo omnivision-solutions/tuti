@@ -41,6 +41,7 @@ import { VisibilityBadge } from "@/components/visibility-badge";
 import { portalAddress } from "@/server/custom-domains";
 import { portalTranslator } from "@/server/portal-language";
 import { portalPageMetadata } from "@/server/portal-metadata";
+import { boardNames } from "@/server/portal-labels";
 import { summary } from "@/lib/article-links";
 
 /** Only a post this reader may see, at its current address; sample content (server/sample-content.ts) is kept from search engines. */
@@ -90,7 +91,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   const post = await prisma.post.findFirst({
     where: { number, project: { slug: projectSlug } },
     include: {
-      board: { select: { slug: true, name: true, postVisibility: true, off: true } },
+      board: { select: { slug: true, name: true, description: true, translations: true, postVisibility: true, off: true } },
       author: { select: { id: true, name: true, image: true } },
       votes: { where: { userId: session?.user.id ?? "" }, select: { userId: true } },
       subscriptions: { where: { userId: session?.user.id ?? "" }, select: { userId: true } },
@@ -200,6 +201,8 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   // The post's, its comments' and similar posts' words: people's, never translated, so in the default language under another's
   // address (teamLanguage); not the portal's own text around them.
   const lang = await teamLanguage();
+  // Its board's name in the page's language where it's translated, with its `lang` (docs/plan.md L14).
+  const board = (await boardNames())(post.board);
   return (
     <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start lg:gap-x-16">
       <article className="flex min-w-0 flex-col gap-3.5 lg:col-start-1">
@@ -219,7 +222,9 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
                 </BackLink>
               )
             ) : (
-              <BackLink href={at(boardPath(post.board))}>{post.board.name}</BackLink>
+              <BackLink href={at(boardPath(post.board))}>
+                <span lang={board.lang}>{board.name}</span>
+              </BackLink>
             )
           }
         />
@@ -279,8 +284,8 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
                 <LayoutListIcon aria-hidden />
                 {t("board")}
               </dt>
-              <dd className="min-w-0 truncate">
-                {post.board.name}
+              <dd lang={board.lang} className="min-w-0 truncate">
+                {board.name}
               </dd>
             </div>
           )}

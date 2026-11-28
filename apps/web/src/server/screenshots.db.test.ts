@@ -1,5 +1,8 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+
 import { prisma } from "@tuti/db";
-import { creditBalance, grantCredits, handlers, lockProject, SCREENSHOT_SECRET, takeScreenshots as takeScreenshotRun, withoutLink } from "@tuti/jobs";
+import { creditBalance, grantCredits, handlers, lockProject, SCREENSHOT_SECRET, scannedFor, takeScreenshots as takeScreenshotRun, withoutLink } from "@tuti/jobs";
 import { type BrowserUseFake, configFile, creditsOn, type S3Fake, startBrowserUseFake, startS3Fake } from "@tuti/testkit";
 import { openValue } from "@tuti/shared/signed";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -75,22 +78,24 @@ test("settings keep the password and sign-in link sealed, never return them, and
   expect(await call(getScreenshotSettings, as(), {})).toMatchObject({ signInLinkSet: true });
 });
 
-test("moving the app to another host forgets the saved password and link, so they're never given to it", async () => {
+test("changing the app's address forgets the saved password and link, so they're never given to it", async () => {
   await setUp();
-  // The same host keeps it.
-  expect(await call(updateScreenshotSettings, as(), { appUrl: "https://app.example.com/other" })).toMatchObject({ passwordSet: true });
+  // The same address keeps it.
+  expect(await call(updateScreenshotSettings, as(), { appUrl: "https://app.example.com/home", about: "Close the tour." })).toMatchObject({ passwordSet: true });
   await expect(call(updateScreenshotSettings, as(), { appUrl: "https://evil.example.net" })).rejects.toMatchObject({
     status: 400,
-    message: "Enter the password again: the app's address moved to another site",
+    message: "Enter the password again: the app's address changed",
   });
-  expect(await call(getScreenshotSettings, as(), {})).toMatchObject({ appUrl: "https://app.example.com/other", passwordSet: true });
+  // Another page on the same site too: what's found in it is allowed for the password, and a page can echo its address.
+  await expect(call(updateScreenshotSettings, as(), { appUrl: "https://app.example.com/search?q=evil.auth0.com" })).rejects.toMatchObject({ status: 400 });
+  expect(await call(getScreenshotSettings, as(), {})).toMatchObject({ appUrl: "https://app.example.com/home", passwordSet: true });
   // With a new one, it moves, and the agent gets only that one, bound to the new host.
   expect(await call(updateScreenshotSettings, as(), { appUrl: "https://demo.example.net", password: "a-new-password" })).toMatchObject({ passwordSet: true });
   await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
   expect(browserUse.runs.at(-1)!.body.secretBindings).toEqual([{ alias: "app_password", source: { type: "inline", value: "a-new-password" }, allowedDomains: ["demo.example.net"] }]);
   // A link too.
   await call(updateScreenshotSettings, as(), { signIn: "link", signInLink: LINK, appUrl: "https://app.example.com" });
-  await expect(call(updateScreenshotSettings, as(), { appUrl: "https://evil.example.net" })).rejects.toMatchObject({ message: "Enter the sign-in link again: the app's address moved to another site" });
+  await expect(call(updateScreenshotSettings, as(), { appUrl: "https://evil.example.net" })).rejects.toMatchObject({ message: "Enter the sign-in link again: the app's address changed" });
   // Another scheme or port on the same host is another site too.
   await expect(call(updateScreenshotSettings, as(), { appUrl: "http://app.example.com" })).rejects.toMatchObject({ status: 400 });
   await expect(call(updateScreenshotSettings, as(), { appUrl: "https://app.example.com:8443" })).rejects.toMatchObject({ status: 400 });
@@ -810,6 +815,57 @@ test("adding another domain while a password or sign-in link is saved needs it s
   expect(await call(updateScreenshotSettings, as(), { otherDomains: ["evil.example.net"], signInLink: LINK })).toMatchObject({ otherDomains: ["evil.example.net"] });
 });
 
+test("hosts found for the app's sign-in are allowed and bound to the password with no one adding them; removing one needs nothing sent again", async () => {
+  await setUp();
+  const appUrl = "https://app.example.com/home";
+  await prisma.screenshotSettings.update({
+    where: { projectId: project.id },
+    data: { signInServicesFor: scannedFor(appUrl), signInServices: [{ provider: "Firebase", hosts: ["identitytoolkit.googleapis.com", "securetoken.googleapis.com"] }] },
+  });
+  const bound = () => (browserUse.runs.at(-1)!.body.secretBindings as { allowedDomains: string[] }[])[0]!.allowedDomains;
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  expect(bound()).toEqual(["app.example.com", "identitytoolkit.googleapis.com", "securetoken.googleapis.com"]);
+  // Removed without the password; listed again among the other domains, allowed already, so without it too.
+  expect(await call(updateScreenshotSettings, as(), { skippedDomains: ["securetoken.googleapis.com"] })).toMatchObject({ skippedDomains: ["securetoken.googleapis.com"] });
+  await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+  expect(bound()).toEqual(["app.example.com", "identitytoolkit.googleapis.com"]);
+  expect(await call(updateScreenshotSettings, as(), { otherDomains: ["identitytoolkit.googleapis.com"] })).toMatchObject({ otherDomains: ["identitytoolkit.googleapis.com"] });
+  // One removed isn't allowed, so typing it needs the password.
+  await expect(call(updateScreenshotSettings, as(), { otherDomains: ["securetoken.googleapis.com"] })).rejects.toMatchObject({ status: 400 });
+  // Found per address: another address (sent with the password) starts with none removed, whatever the screen sends.
+  expect(await call(updateScreenshotSettings, as(), { appUrl: "https://app.example.com/other", password: PASSWORD, skippedDomains: ["securetoken.googleapis.com"] })).toMatchObject({ skippedDomains: [] });
+});
+
+test("a run before the app was read for its sign-in's hosts reads it first, so its browser opens them", async () => {
+  const app = createServer((request, response) => {
+    response.end(request.url === "/" ? '<script src="/main.js"></script>' : 'fetch("https://identitytoolkit.googleapis.com/v1/accounts")');
+  });
+  await new Promise<void>((resolve) => app.listen(0, "127.0.0.1", resolve));
+  try {
+    await setUp({ appUrl: `http://localhost:${(app.address() as AddressInfo).port}/` });
+    await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
+    expect((browserUse.runs.at(-1)!.body.secretBindings as { allowedDomains: string[] }[])[0]!.allowedDomains).toEqual(["identitytoolkit.googleapis.com", "localhost", "securetoken.googleapis.com"]);
+  } finally {
+    app.close();
+  }
+});
+
+test("settings removed while a run reads the app end the run: it never goes on with what they held", async () => {
+  const app = createServer((request, response) => {
+    // Removed while the page is read.
+    void prisma.screenshotSettings.deleteMany({ where: { projectId: project.id } }).then(() => response.end("<html></html>"));
+  });
+  await new Promise<void>((resolve) => app.listen(0, "127.0.0.1", resolve));
+  try {
+    await setUp({ appUrl: `http://localhost:${(app.address() as AddressInfo).port}/` });
+    const runs = browserUse.runs.length;
+    expect(await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] })).toMatchObject({ state: "failed" });
+    expect(browserUse.runs).toHaveLength(runs);
+  } finally {
+    app.close();
+  }
+});
+
 const profileOf = (run = browserUse.runs.at(-1)!) => (run.body.browserSettings as { profileId?: string }).profileId;
 
 test("runs reuse one browser profile per project, so the agent stays signed in; a Test signs in afresh and keeps its profile for runs", async () => {
@@ -843,7 +899,7 @@ test("a changed sign-in deletes the profile at once: a new password, then a new 
   await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
   const second = profileOf()!;
   expect(second).not.toBe(first);
-  await call(updateScreenshotSettings, as(), { appUrl: "https://app.example.com/other" });
+  await call(updateScreenshotSettings, as(), { appUrl: "https://app.example.com/other", password: PASSWORD });
   expect(browserUse.profiles.has(second)).toBe(false);
   await call(takeScreenshots, as(), { shots: [{ show: "The dashboard" }] });
   expect([first, second]).not.toContain(profileOf());

@@ -16,22 +16,29 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
  */
 export function BoardSwitcher({
   name,
+  nameLang,
   allHref,
   boards,
   className,
 }: {
   name: string;
+  /** The language its name is in (docs/plan.md L14): the page's where it's translated, else the team's. */
+  nameLang?: string;
   allHref: string;
-  boards: { name: string; href: string; count: number; current: boolean }[];
+  boards: { name: string; lang?: string; href: string; count: number; current: boolean }[];
   className?: string;
 }) {
   const t = useTranslations("feedback");
   const lang = useLocale();
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger aria-label={t("boardMenu", { board: name })} className={pillClass(false, className)}>
+      {/* Named by its content, "Board: Bugs": the board's name in its own language (docs/plan.md L14). */}
+      <DropdownMenuTrigger className={pillClass(false, className)}>
         <LayoutListIcon aria-hidden />
-        <span className="truncate">{name}</span>
+        <span className="sr-only">{t("boardMenu")}</span>
+        <span lang={nameLang} className="truncate">
+          {name}
+        </span>
         <ChevronDownIcon aria-hidden />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-auto min-w-56">
@@ -40,7 +47,7 @@ export function BoardSwitcher({
         </DropdownMenuItem>
         {boards.map((board) => (
           <DropdownMenuItem key={board.href} render={<Link href={board.href} aria-current={board.current ? "page" : undefined} />}>
-            {board.name}
+            <span lang={board.lang}>{board.name}</span>
             <span className="ml-auto pl-4 text-xs text-muted-foreground tabular-nums">{board.count.toLocaleString(lang)}</span>
             <CheckIcon aria-hidden className={board.current ? "text-primary" : "invisible"} />
           </DropdownMenuItem>
