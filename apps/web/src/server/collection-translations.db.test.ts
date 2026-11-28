@@ -178,6 +178,9 @@ test("the labels job's translation leaves a collection's updatedAt (the sitemap'
   await languageTranslationsDone();
   expect(labelIn(await billing(), "de")).toMatchObject({ name: "Abrechnung" });
   expect((await billing()).updatedAt).toEqual(before);
+  // From a fixed past time, so the database's clock against Node's doesn't decide it.
+  const past = new Date("2020-01-01T00:00:00Z");
+  await prisma.collection.update({ where: { id: (await billing()).id }, data: { updatedAt: past } });
   await call(updateCollectionTranslation, as(), { slug: "billing", language: "de", keepUpToDate: false, name: "Rechnungen" });
-  expect((await billing()).updatedAt.getTime()).toBeGreaterThan(before!.getTime());
+  expect((await billing()).updatedAt.getTime()).toBeGreaterThan(past.getTime());
 });
