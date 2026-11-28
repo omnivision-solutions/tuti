@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 import { automatedRepliesEmailed, handlers } from "@tuti/jobs";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { startWebhookReceiver, type WebhookReceiver } from "@tuti/testkit";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { AUTOMATED_REPLIES_PER_HOUR } from "@/lib/workflows";
 import { widgetToken } from "@/server/auth/widget-session";
@@ -29,7 +30,14 @@ import { widgetConversation, widgetStartConversation } from "./widget-inbox";
 const DOMAIN = "tuti.email";
 const log = { info: () => {}, warn: () => {} };
 
+// The project's webhook, on this machine: a delivery never waits on outside DNS.
+let hooks: WebhookReceiver;
+beforeAll(async () => {
+  hooks = await startWebhookReceiver();
+});
+afterAll(() => hooks.close());
 beforeEach(() => {
+  vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", DOMAIN);
   vi.stubEnv("INBOUND_SECRET", "test-inbound-secret");
 });
@@ -46,7 +54,7 @@ async function setup() {
   await upsertProjectUser(projectId, "vip-1", { name: "Vic", properties: { plan: "vip" } });
   await upsertProjectUser(projectId, "free-1", { name: "Fay", properties: { plan: "free" } });
   await prisma.webhook.create({
-    data: { projectId, url: "https://hooks.example.com/tuti", secret: "secret", events: ["conversation.created", "conversation.message_created", "conversation.handed_over"], createdById: owner.id },
+    data: { projectId, url: hooks.url, secret: "secret", events: ["conversation.created", "conversation.message_created", "conversation.handed_over"], createdById: owner.id },
   });
   const admin = { actor: { kind: "user" as const, userId: owner.id }, projectId };
   const to = supportAddress(await mailSubdomain(projectId), DOMAIN);
