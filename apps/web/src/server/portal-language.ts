@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { DEFAULT_LANGUAGE, isLanguage, languageLimit, log } from "@tuti/shared";
+import { DEFAULT_LANGUAGE, isLanguage, type Language, languageLimit, log } from "@tuti/shared";
 import { MESSAGES, type Messages } from "@tuti/shared/messages";
 import { createTranslator } from "next-intl";
 import { cookies } from "next/headers";
@@ -81,16 +81,20 @@ export async function subscriberLanguage(projectId: string, userId: string): Pro
  * they do something on a language's address that emails them (vote, comment, post, follow, sign in with its link). Never over one
  * they chose; only for someone acting as themselves (`actor`: never an API key writing on someone's behalf, whatever headers
  * it sends); only a language the project has live (not the team's preview of one that isn't); nothing at the default
- * language's address.
+ * language's address. `sent`: the page's language as a call from it says (its address's, only under a language's prefix):
+ * through /api/trpc the page's address isn't the request's, so the page sends it; without it, the request's own page.
  */
-export async function rememberPageLanguage(actor: { kind: string; userId?: string }, userId: string, projectId: string) {
+export async function rememberPageLanguage(actor: { kind: string; userId?: string }, userId: string, projectId: string, sent?: string) {
   if (actor.kind !== "user" || actor.userId !== userId) {
     return;
   }
-  // Outside a request (an operation a job runs): no page, nothing to remember.
-  const page = await portalLanguage().catch(() => null);
-  const { language, prefix } = page ?? { language: null, prefix: "" };
-  if (!prefix || !language) {
+  let language: Language | null = sent !== undefined && isLanguage(sent) ? sent : null;
+  if (sent === undefined) {
+    // Outside a request (an operation a job runs): no page, nothing to remember.
+    const page = await portalLanguage().catch(() => null);
+    language = page?.prefix ? page.language : null;
+  }
+  if (!language) {
     return;
   }
   // After what they did is saved: a failure here mustn't report it as failed (a retry would post or comment twice).

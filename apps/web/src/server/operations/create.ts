@@ -101,6 +101,18 @@ export const describedAuthor = author
   )
   .meta({ examples: [{ id: "user-42", name: "Sam", email: "sam@example.com" }] });
 
+/**
+ * The language of the portal page it was done on, when that page is under a language's address (a portal's or the
+ * widget's call through /api/trpc, whose own address isn't the page's): remembered as the reader's language for their
+ * emails when they have none (rememberPageLanguage).
+ */
+export const pageLanguage = z
+  .string()
+  .max(10)
+  .optional()
+  .describe("The language of the page it was done on (its code, like `de`), when that's a language's address: kept as the person's language for emails if they have none")
+  .meta({ examples: ["de"] });
+
 export const createPost = defineOperation({
   name: "posts.create",
   title: "Create a post",

@@ -10,7 +10,7 @@ import { createComment, createPost } from "@/server/operations/create";
 import { updatePost } from "@/server/operations/manage";
 import { setSubscription, setVote } from "@/server/operations/more";
 import { call } from "@/server/operations/run";
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { callerAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
@@ -435,6 +435,22 @@ test("a reader who never chose a language takes the page's when they vote at a l
   await setStatus(post.number, "in_progress");
   expect(subjectsTo(german.email)).toEqual(["In Arbeit: CSV export"]);
   expect(subjectsTo(french.email)).toEqual(["En cours : CSV export"]);
+});
+
+test("a vote through /api/trpc from a language's address saves that language: the page sends it (its own address isn't the call's)", async () => {
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "fr", live: false, automatic: false } });
+  const author = await verified("Author");
+  const post = await call(createPost, as(author.id), { board: "feature-requests", title: "CSV export" });
+  const languageOf = async (id: string) => (await prisma.user.findUniqueOrThrow({ where: { id } })).language;
+  // No page headers: the call is /api/trpc's, not the page's.
+  const [german, previewing, atDefault] = [await verified("Greta"), await verified("Previewing"), await verified("At default")];
+  await (await callerAs(german)).votes.set({ project: project.slug, number: post.number, voted: true, language: "de" });
+  expect(await languageOf(german.id)).toBe("de");
+  // An offline language (the team's preview) isn't kept; nor anything when the page is at the default's address.
+  await (await callerAs(previewing)).votes.set({ project: project.slug, number: post.number, voted: true, language: "fr" });
+  await (await callerAs(atDefault)).votes.set({ project: project.slug, number: post.number, voted: true });
+  expect([await languageOf(previewing.id), await languageOf(atDefault.id)]).toEqual([null, null]);
 });
 
 test("a vote saves no language at the default language's address, at an offline one's (the team's preview), or by an API key on someone's behalf", async () => {
