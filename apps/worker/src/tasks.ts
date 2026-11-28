@@ -68,7 +68,8 @@ const SIGN_IN_SCAN_QUEUE = "2m" as const;
 const SIGN_IN_SCANS = 4;
 
 /** A job's Hatchet task options, but its input and function. */
-export function taskOptions(key: JobKey, job: Job = jobs[key]) {
+export function taskOptions(key: JobKey) {
+  const job: Job = jobs[key];
   // Queued behind the run with the same key, not cancelling it (Hatchet's default).
   const own = job.concurrencyKey && { expression: job.concurrencyKey, maxRuns: 1, limitStrategy: ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN };
   const { limits } = codeChangesSettings();
