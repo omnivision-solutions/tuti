@@ -6,7 +6,7 @@ import { FAKE_FEATUREBASE_KEY, FAKE_FEATUREBASE_SLOW_KEY, type FeaturebaseFake, 
 import { openValue, sealValue } from "@tuti/shared/signed";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { auth } from "@/lib/auth";
+import { auth } from "@/server/auth/auth";
 import { IMPORT_PARTS } from "@/lib/import-parts";
 import { generateInvitationToken, hashInvitationToken } from "@tuti/jobs";
 import { updateConversation } from "@/server/operations/conversations";

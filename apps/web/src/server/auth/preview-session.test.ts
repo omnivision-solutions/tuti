@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { PREVIEW_TTL_SECONDS, previewToken, previewUser } from "./preview-session";
-import { signValue } from "./signed";
+import { signValue } from "@/lib/signed";
 import { widgetToken } from "./widget-session";
 
 beforeEach(() => vi.stubEnv("BETTER_AUTH_SECRET", "test-secret"));

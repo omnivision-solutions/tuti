@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 
-import { PREVIEW_TTL_SECONDS } from "./portal-base";
-import { signValue, verifyValue } from "./signed";
+import { PREVIEW_TTL_SECONDS } from "@/lib/portal-base";
+import { signValue, verifyValue } from "@/lib/signed";
 
 /**
  * Preview tokens: Customize's preview of a portal reads it as the team member customizing it, even a
@@ -14,7 +14,7 @@ import { signValue, verifyValue } from "./signed";
  */
 
 const PURPOSE = "preview";
-export { PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "./portal-base";
+export { PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/lib/portal-base";
 
 /**
  * With a random part, so each render of a page gets a token of its own: Customize's preview takes a new

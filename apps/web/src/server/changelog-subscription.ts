@@ -19,7 +19,7 @@ import type { Language } from "@tuti/shared/languages";
 import { MESSAGES } from "@tuti/shared/messages";
 import { createTranslator } from "next-intl";
 
-import { hashSecret } from "@/lib/portal-handoff";
+import { hashSecret } from "@/server/auth/portal-handoff";
 import { portalAddress } from "@/server/custom-domains";
 import { withLockRetries } from "@/server/lock-retries";
 import { portalLanguages } from "@/server/portal-language";

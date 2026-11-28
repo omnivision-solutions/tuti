@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { useCustomizeForm } from "@/components/customize-shell";
@@ -8,7 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { saveAiFirst } from "@/server/ai-first";
+import { errorMessage, useTRPCClient } from "@/components/trpc";
 import type { AiFirstSettings as Settings } from "@/server/operations/ai-first";
 
 /** What keeps the AI from answering, in words. */
@@ -23,13 +24,18 @@ export const OFF_FOR: Record<Settings["offFor"][number], string> = {
  * switches for the widget and email and the name its emails come from, saved with the page's "Save changes".
  */
 export function AiFirstSettings({ projectSlug, projectName, settings, maxName }: { projectSlug: string; projectName: string; settings: Settings; maxName: number }) {
+  const trpc = useTRPCClient();
+  const router = useRouter();
   const { state, pending, form } = useCustomizeForm({
     save: async (_prev, formData) => {
-      const result = await saveAiFirst(projectSlug, { widget: formData.get("widget") === "on", email: formData.get("email") === "on", name: String(formData.get("name") ?? "") });
-      if (!result.error) {
-        toast.success("AI answers first saved");
+      try {
+        await trpc.aiFirst.update.mutate({ project: projectSlug, widget: formData.get("widget") === "on", email: formData.get("email") === "on", name: String(formData.get("name") ?? "") });
+      } catch (error) {
+        return { error: errorMessage(error) };
       }
-      return result;
+      toast.success("AI answers first saved");
+      router.refresh();
+      return {};
     },
   });
   return (

@@ -11,7 +11,7 @@ import { getSession } from "@/server/session";
  *
  * Two ways in. The web app's pages: the session cookie and `?project=<slug>`, 404 for anyone else. The mobile app:
  * its session as /api/v1 takes it, `Authorization: Bearer <session token>` and the slug in `Tuti-Project`, refused as
- * /api/v1 refuses (lib/app-sign-in.ts has the app's contract). Which one is told by what only the web sends (the
+ * /api/v1 refuses (server/auth/app-sign-in.ts has the app's contract). Which one is told by what only the web sends (the
  * query) and only the app sends (the header, which no page's EventSource can), never by Authorization: a self-hoster's
  * proxy may add its own to the web's requests (a password, a sign-in's token). On the app's way the request's cookies
  * aren't read, and nothing it gets back sets one.

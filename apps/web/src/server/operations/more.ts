@@ -33,7 +33,7 @@ export const getProject = defineOperation({
   method: "GET",
   path: "/project",
   scope: "read",
-  access: "anyone",
+  access: "team",
   input: z.object({}),
   output: z.object(projectFields).describe("The project"),
   run: async ({ projectId }) => {
@@ -216,7 +216,7 @@ export const listTeam = defineOperation({
   method: "GET",
   path: "/team",
   scope: "read",
-  access: "anyone",
+  access: "team",
   input: z.object({}),
   output: z
     .object({

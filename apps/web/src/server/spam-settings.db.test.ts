@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { z } from "zod";
 
 import { NEW_BY_EMAIL_PER_HOUR } from "@/lib/spam-reasons";
-import { widgetToken } from "@/lib/widget-session";
+import { widgetToken } from "@/server/auth/widget-session";
 import { actAs, addMember, createProject, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
 

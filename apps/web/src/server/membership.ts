@@ -15,7 +15,7 @@ export const isAdminRole = (role: string) => (ADMIN_ROLES as readonly string[]).
 /** The signed-in user's membership in a project, if any; looked up once per request (a layout and its metadata both ask). */
 export const getMembership = cache(async (slug: string) => {
   const session = await getSession();
-  // Signed in on the app: a portal's session (lib/auth.ts) is never the team's, not even on its own project, whose
+  // Signed in on the app: a portal's session (server/auth/auth.ts) is never the team's, not even on its own project, whose
   // portal's site or custom domain any admin may run.
   if (session?.session.boundTo !== "app") {
     return null;

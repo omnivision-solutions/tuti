@@ -94,7 +94,7 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
           <Or word={t("or")} />
         </>
       )}
-      {/* Sign-in links need email that really goes out. Passwords are typed on the app (lib/auth.ts): its "Use a password instead"
+      {/* Sign-in links need email that really goes out. Passwords are typed on the app (server/auth/auth.ts): its "Use a password instead"
           and the team's Tuti account go there. A plain link to /continue: a route that sets a cookie and leaves for the app host. */}
       {emailConfigured() ? (
         <AuthForm

@@ -3,7 +3,7 @@ import { handlers } from "@tuti/jobs";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { widgetToken } from "@/lib/widget-session";
+import { widgetToken } from "@/server/auth/widget-session";
 import { actAs, addMember, createProject, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
 import { mailbox } from "@/test/mailbox";

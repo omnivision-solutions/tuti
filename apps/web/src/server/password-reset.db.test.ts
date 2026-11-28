@@ -11,7 +11,7 @@ import SignInPage from "@/app/app/(account-pages)/auth/sign-in/page";
 import PortalSignInPage from "@/app/portal/[project]/(site)/sign-in/page";
 import { AuthForm } from "@/components/auth-form";
 import { ForgotPasswordForm, NewPasswordForm } from "@/components/password-reset-forms";
-import { auth } from "@/lib/auth";
+import { auth } from "@/server/auth/auth";
 import {
   PASSWORD_RESET_MINUTES,
   SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR,

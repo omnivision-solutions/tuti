@@ -1,4 +1,4 @@
-import type { Operation } from "./define";
+import type { Operation, PublicOperation } from "./define";
 import { getAiFirst, updateAiFirst } from "./ai-first";
 import { getBranding, updateBranding } from "./branding";
 import { checkLicense } from "./license";
@@ -105,12 +105,13 @@ import { getImport, startImport } from "./imports";
 import { listVerifications, verifyAll, verifyArticle } from "./verify";
 import { getWidgetSettings, updateWidgetSettings } from "./widget";
 import { generateImageOperation } from "./images";
-import { getScreenshots, getScreenshotSettings, getScreenshotSignInDomains, takeArticleScreenshots, takeChangelogScreenshots, takeScreenshots, testScreenshotSettings, updateScreenshotSettings } from "./screenshots";
+import { getScreenshots, getScreenshotSettings, getScreenshotSignInDomains, scanScreenshotSignInDomains, takeArticleScreenshots, takeChangelogScreenshots, takeScreenshots, testScreenshotSettings, updateScreenshotSettings } from "./screenshots";
 import { createWorkflow, deleteWorkflow, getWorkflow, listWorkflows, moveWorkflow, updateWorkflow } from "./workflows";
 
-export { type Actor, type ApiKeyActor, type Operation, OperationError } from "./define";
+export { type Actor, type ApiKeyActor, type Operation, OperationError, type PublicOperation } from "./define";
 
-const all = [
+/** Every operation, as a list of literal types: the tRPC router is typed from it. */
+export const all = [
   getProject,
   updateProject,
   updatePropertyFormats,
@@ -315,14 +316,18 @@ const all = [
   updateScreenshotSettings,
   testScreenshotSettings,
   getScreenshotSignInDomains,
+  scanScreenshotSignInDomains,
   takeScreenshots,
   getScreenshots,
   takeChangelogScreenshots,
   takeArticleScreenshots,
 ] as const;
 
-/** Every operation, served in the app, the REST API and MCP. */
-export const operations: Operation[] = all as unknown as Operation[];
+/** Every operation, each a tRPC procedure (server/trpc/router.ts). */
+export const allOperations: readonly Operation[] = all;
+
+/** The public API's operations, served in REST, MCP and the docs: all but the `internal` ones. */
+export const operations: PublicOperation[] = allOperations.filter((operation): operation is PublicOperation => !operation.internal);
 
 /** Every operation's name, e.g. "posts.list". */
 export type OperationName = (typeof all)[number]["name"];

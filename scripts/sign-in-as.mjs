@@ -3,7 +3,7 @@
 //
 //   infisical run --env=prod --path=/web -- node scripts/sign-in-as.mjs <email>
 //
-// The link works once, for 10 minutes, on the app's host (lib/support-sign-in.ts). Open it in a private window: it
+// The link works once, for 10 minutes, on the app's host (server/auth/support-sign-in.ts). Open it in a private window: it
 // replaces that browser's session, and the account's session ends when the window closes (at most a day).
 // What you do there, you do as them.
 import { createHash, randomBytes, randomUUID } from "node:crypto";

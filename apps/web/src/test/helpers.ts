@@ -5,7 +5,7 @@ import { type Prisma, type TeamRole, prisma } from "@tuti/db";
 import { onTestFinished, vi } from "vitest";
 import { docOf, landEdit, lockProject } from "@tuti/jobs";
 
-import { auth } from "@/lib/auth";
+import { auth } from "@/server/auth/auth";
 import { appUrl } from "@/lib/hosts";
 
 import { request } from "./next-headers";
@@ -76,6 +76,27 @@ export async function withoutEmail<T>(run: () => Promise<T>): Promise<T> {
 /** Server actions called after this run as `user`; `null` means signed out. */
 export function actAs(user: TestUser | null) {
   request.cookie = user?.cookie ?? "";
+}
+
+/**
+ * A tRPC caller (server/trpc), in process as pages, REST and MCP call the router: as a user by their cookie (on the app,
+ * or the portal's host onPortal set), as nobody (null), or as a project API key by its id (with its creator's current
+ * role). Each call names its project, as the app's do: `caller.aiFirst.get({ project: slug })`.
+ */
+export async function callerAs(who: TestUser | null | { apiKeyId: string }) {
+  // Imported here: the router imports every operation, which a test file that doesn't call it needn't load.
+  const [{ createCaller }, { keyContext, sessionContext }, { sessionFrom }] = await Promise.all([import("@/server/trpc/server"), import("@/server/trpc/context"), import("@/server/session")]);
+  if (who && "apiKeyId" in who) {
+    const key = await prisma.apiKey.findUniqueOrThrow({ where: { id: who.apiKeyId }, select: { id: true, projectId: true, scope: true, createdById: true } });
+    const member = await prisma.teamMember.findUnique({ where: { projectId_userId: { projectId: key.projectId, userId: key.createdById } }, select: { role: true } });
+    if (!member) {
+      throw new Error("This key's creator left the team: the key doesn't work (api-auth.ts: authenticate)");
+    }
+    const scope = key.scope === "WRITE" ? ("write" as const) : ("read" as const);
+    return createCaller(keyContext({ kind: "apiKey", keyId: key.id, projectId: key.projectId, scope, createdById: key.createdById, role: member.role }));
+  }
+  const headers = new Headers({ host: request.host || appUrl().host, ...(who && { cookie: who.cookie }) });
+  return createCaller(sessionContext(who && (await sessionFrom(headers, { refresh: false }))));
 }
 
 /** A project owned by `owner`, with one board ("feature-requests"). */

@@ -12,7 +12,7 @@ import { hashSecret, randomSecret } from "./portal-handoff";
 /**
  * Signing in from Tuti's mobile app (docs/plan.md, Mobile app): Google, GitHub, or the account's email and password.
  * The app has no web view of its own for it: Google and GitHub finish in the device's browser, which then opens the app
- * through its link scheme. Only this scheme is trusted (lib/auth.ts), on the app's host only, on every server: a
+ * through its link scheme. Only this scheme is trusted (server/auth/auth.ts), on the app's host only, on every server: a
  * self-hosted one needs no setting.
  *
  * A link scheme belongs to nobody: on Android another app can register it and receive the redirect. So the redirect
@@ -88,7 +88,7 @@ type AppSignIn = { challenge: string; provider: unknown };
 const appSignInOf = (state: unknown) => (state as { serverContext?: { app?: Partial<AppSignIn> } } | null)?.serverContext?.app;
 
 /**
- * For `databaseHooks.user.create.before` (lib/auth.ts): the app has no sign-up, so a Google or GitHub sign-in it
+ * For `databaseHooks.user.create.before` (server/auth/auth.ts): the app has no sign-up, so a Google or GitHub sign-in it
  * started makes no account. Someone new goes back to the app with this error, to make their account on the web first.
  * Every other way an account is made, the web's Continue with Google and GitHub among them, is as it was.
  */
@@ -285,7 +285,7 @@ export const appSignIn = () =>
           headers.delete("content-length");
           headers.set("content-type", "application/json");
           const { email, password } = ctx.body;
-          // Imported here, and its type named: lib/auth.ts imports this file.
+          // Imported here, and its type named: server/auth/auth.ts imports this file.
           const { auth } = (await import("./auth")) as { auth: { handler: (request: Request) => Promise<Response> } };
           const answer = await auth.handler(
             new Request(new URL("/api/auth/sign-in/email", ctx.request.url), { method: "POST", headers, body: JSON.stringify({ email, password }) }),

@@ -51,7 +51,7 @@ import { createComment } from "./create";
 import { linkEntryPosts } from "./changelog";
 import { aiOrRefuse } from "./credits";
 import { collectionNamed, createArticle, indexArticle, keepText, publishArticleChanges, recordRevision, reorderArticle, saveArticle, updateArticle } from "./docs";
-import { type Actor, defineOperation, OperationError } from "./define";
+import { type Actor, defineOperation, OperationError, runOperation } from "./define";
 import { updatePost } from "./manage";
 import { requirePlan } from "./plan";
 import { postSummarySelect, projectPortal, STATUSES, summary, toApiStatus } from "./read";
@@ -1942,15 +1942,11 @@ export const applyCodeChangeAction = defineOperation({
       const moves = whole?.completes ? post.status !== "COMPLETED" : progress && NOT_STARTED.has(post.status);
       first = moves && commenting && !!comment.trim() && !reuse;
       if (first) {
-        // Checked as comments.create checks it (call), before it's being posted: refused, it's an OperationError, so the
-        // update waits again with nothing posted (never "maybe saved").
-        const commentInput = createComment.input.safeParse({ number: post.number, body: comment });
-        if (!commentInput.success) {
-          throw new OperationError(400, "invalid_input", commentInput.error.issues[0]?.message ?? "Invalid input");
-        }
+        // Checked as comments.create checks it (its input, and whether this actor may comment here), before it's being
+        // posted: refused, it's an OperationError, so the update waits again with nothing posted (never "maybe saved").
         posting = true;
         // Saved as any comment (due to the post's author, comment-email): until the completion goes, it's only a comment.
-        shared.commentId = (await createComment.run(context, commentInput.data)).id;
+        shared.commentId = (await runOperation(createComment, context, { number: post.number, body: comment })).id;
         posting = false;
         // The email moving it sends quotes this comment and no other (postShipped reads `note`).
         const note = shared.commentId;
@@ -1995,7 +1991,8 @@ export const applyCodeChangeAction = defineOperation({
       }
       if (commenting && comment.trim() && !first && !reuse) {
         posting = true;
-        shared.commentId = (await call(createComment, context, { number: post.number, body: comment })).id;
+        // Checked as comments.create checks it, as the comment posted first is (runOperation).
+        shared.commentId = (await runOperation(createComment, context, { number: post.number, body: comment })).id;
       }
     } catch (error) {
       if (shared.commentId && noteDue) {

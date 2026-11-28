@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, test } from "vitest";
 
 import SignInLinkPage from "@/app/portal/[project]/(site)/sign-in/link/page";
-import { auth } from "@/lib/auth";
+import { auth } from "@/server/auth/auth";
 import {
   SIGN_IN_LINK_MINUTES,
   SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR,
@@ -96,7 +96,7 @@ test("the email has a link to a page that asks to confirm, then signs a new addr
   const { location, user } = await confirm(link);
   expect(location).toBe("/");
   expect(user).toMatchObject({ email, name: email.split("@")[0], emailVerified: true });
-  // The session works on this portal only (lib/auth.ts).
+  // The session works on this portal only (server/auth/auth.ts).
   expect(await prisma.session.findFirst({ where: { userId: user!.id }, select: { boundTo: true } })).toEqual({ boundTo: project.id });
 
   // Used once: confirming again fails, and the page now sends them to ask for a new one.

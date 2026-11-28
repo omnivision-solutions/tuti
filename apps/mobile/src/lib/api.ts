@@ -3,7 +3,7 @@ import { hostOf } from "./server";
 /**
  * Talking to a Tuti server. `/api/v1` (the operations, docs at the server's /api/docs) takes the teammate's session
  * token and the project's slug; `/api/auth` (signing in and out) takes the session's cookie and the app's scheme in
- * place of an origin (apps/web/src/lib/app-sign-in.ts has the contract).
+ * place of an origin (apps/web/src/server/auth/app-sign-in.ts has the contract).
  */
 
 /** What went wrong, in the server's words when it gives them: `{ error: { code, message } }` from /api/v1, `{ code, message }` from /api/auth. */

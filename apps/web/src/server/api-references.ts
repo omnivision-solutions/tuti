@@ -16,6 +16,7 @@ import {
 } from "./operations/api-references";
 import { listGithubRepositories } from "./operations/github";
 import { asTeam, call } from "./operations/run";
+import type { OutputOf } from "@/server/operations/define";
 
 /** The team's actions on an API reference's page (see the apiReferences.* operations). */
 
@@ -54,7 +55,7 @@ export async function replaceApiReferenceSpec(projectSlug: string, slug: string,
 
 /** "Sync now" on a URL's reference: read it again. Says what changed for the toast, or why the read failed (the page says so too). */
 export async function syncApiReferenceNow(projectSlug: string, slug: string): Promise<FormState & { added?: number; removed?: number; changed?: boolean }> {
-  let answer: Awaited<ReturnType<typeof syncOperation.run>> | undefined;
+  let answer: OutputOf<typeof syncOperation> | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
     answer = await call(syncOperation, context, { slug: String(slug) });
   });
@@ -67,7 +68,7 @@ export async function syncApiReferenceNow(projectSlug: string, slug: string): Pr
 
 /** Settings' Source: the reference is read from `url` from now on, once it's read there (the toast says what that changed). */
 export async function changeApiReferenceUrl(projectSlug: string, slug: string, url: string): Promise<FormState & { added?: number; removed?: number; changed?: boolean }> {
-  let answer: Awaited<ReturnType<typeof syncOperation.run>> | undefined;
+  let answer: OutputOf<typeof syncOperation> | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
     answer = await call(syncOperation, context, { slug: String(slug), url: String(url) });
   });
@@ -110,7 +111,7 @@ export async function changeApiReferenceGithub(
   slug: string,
   source: { repoId?: number; path?: string; ref?: string },
 ): Promise<FormState & { added?: number; removed?: number; changed?: boolean }> {
-  let answer: Awaited<ReturnType<typeof syncOperation.run>> | undefined;
+  let answer: OutputOf<typeof syncOperation> | undefined;
   const { repoId, path, ref } = source ?? {};
   const github = { ...(repoId !== undefined && { repoId: Number(repoId) }), ...(path !== undefined && { path: String(path) }), ...(ref !== undefined && { ref: String(ref) }) };
   const result = await asTeam(projectSlug, DENIED, async (context) => {

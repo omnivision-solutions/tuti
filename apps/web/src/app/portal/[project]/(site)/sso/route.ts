@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { auth } from "@/server/auth/auth";
 
 // <project>.tuti.so/sso?token=…&redirect=… (the project comes from the host).
 export async function GET(request: Request) {

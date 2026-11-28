@@ -5,7 +5,7 @@ import { log } from "@tuti/shared";
 import { z } from "zod";
 
 import { portalAddress } from "@/server/custom-domains";
-import { hashSecret } from "@/lib/portal-handoff";
+import { hashSecret } from "@/server/auth/portal-handoff";
 import { DOMAIN_ENTRY, OPEN_DOMAINS } from "@/lib/reader-domains";
 
 import { emailAddress } from "./assistant";

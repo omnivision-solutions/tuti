@@ -17,7 +17,7 @@ import { GET as postMarkdown } from "@/app/portal/[project]/(site)/feedback/[boa
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { SIGNED_OUT } from "@/lib/read-access";
-import { generateSsoSecret } from "@/lib/sso";
+import { generateSsoSecret } from "@/server/auth/sso";
 import { actAs, createProject, inGroupNamed, signUp, type TestUser, untilWaitingOnLock } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 

@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
+import { useTRPCClient } from "@/components/trpc";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { settingsView } from "@/server/operations/screenshots";
@@ -52,6 +53,7 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
   const id = useId();
   const [signIn, setSignIn] = useState<SignIn>(settings.signIn);
   const [found, setFound] = useState<Found[]>([]);
+  const trpc = useTRPCClient();
   // Saves that went through: each reads the sign-in domains again (the address may have changed).
   const [saves, setSaves] = useState(0);
   const { state, pending, form } = useCustomizeForm({
@@ -81,10 +83,9 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
     let current = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let polls = CHECK_FOR_MS / CHECK_EVERY_MS;
-    // The first look may start a read; the next ones only ask how it went.
+    // The first look may start a read (screenshotSettings.scan); the next ones only ask how it went (the query).
     const ask = (start: boolean) =>
-      fetch(`/app/${projectSlug}/settings/screenshots/sign-in-domains${start ? "" : "?start=false"}`)
-        .then((response) => (response.ok ? (response.json() as Promise<{ domains: Found[]; checking: boolean }>) : null))
+      (start ? trpc.screenshotSettings.scan.mutate({ project: projectSlug }) : trpc.screenshotSettings.signInDomains.query({ project: projectSlug }))
         .catch(() => null)
         .then((answer) => {
           if (!current) {
@@ -112,7 +113,7 @@ export function ScreenshotSettings({ projectSlug, settings, aboutMax }: { projec
       current = false;
       clearTimeout(timer);
     };
-  }, [projectSlug, settings.appUrl, saves]);
+  }, [projectSlug, settings.appUrl, saves, trpc]);
 
   return (
     <>

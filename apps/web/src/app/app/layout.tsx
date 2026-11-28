@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { TrpcProvider } from "@/components/trpc";
 import { appUrl } from "@/lib/hosts";
 
 const description = "The help center that stays in sync with your code: docs, AI answers, an inbox, feedback, a roadmap and a changelog.";
@@ -23,5 +24,5 @@ export function generateMetadata(): Metadata {
 }
 
 export default function AppPagesLayout({ children }: LayoutProps<"/app">) {
-  return children;
+  return <TrpcProvider>{children}</TrpcProvider>;
 }

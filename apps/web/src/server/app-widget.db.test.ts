@@ -3,7 +3,7 @@ import { prisma } from "@tuti/db";
 import { decodeJwt, jwtVerify } from "jose";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { generateSsoSecret } from "@/lib/sso";
+import { generateSsoSecret } from "@/server/auth/sso";
 import { actAs, createProject, signUp, withoutEmail } from "@/test/helpers";
 
 import { appWidgetToken } from "./app-widget";

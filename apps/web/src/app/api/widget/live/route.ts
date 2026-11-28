@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 
-import { visitorHash } from "@/lib/visitor-session";
-import { widgetTokenUser } from "@/lib/widget-session";
+import { visitorHash } from "@/server/auth/visitor-session";
+import { widgetTokenUser } from "@/server/auth/widget-session";
 import { inboxStream } from "@/server/live";
 import { getSession } from "@/server/session";
 import { hears, widgetPerson } from "@/server/widget-person";

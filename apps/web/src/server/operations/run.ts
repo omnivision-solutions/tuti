@@ -4,7 +4,7 @@ import type { z } from "zod";
 
 import { canActIn, getAdminProject, getMembership, getOwnerProject } from "../membership";
 import { actsIn, getSession } from "../session";
-import { type Actor, type Operation, OperationError } from "./define";
+import { type Actor, legacyRun, type Operation, OperationError } from "./define";
 
 type Context = { actor: Actor; projectId: string };
 
@@ -18,7 +18,7 @@ export async function call<I extends z.ZodType, O>(
   if (!parsed.success) {
     throw new OperationError(400, "invalid_input", parsed.error.issues[0]?.message ?? "Invalid input");
   }
-  return operation.run(context, parsed.data);
+  return legacyRun(operation, context, parsed.data);
 }
 
 /**

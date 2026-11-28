@@ -9,8 +9,8 @@ import { z } from "zod";
 
 import { requestTarget } from "@/server/custom-domains";
 import { upsertProjectUser } from "@/server/project-users";
-import { MAX_READER_GROUPS, readerGroup } from "./reader-groups";
-import { safeRedirectPath } from "./redirects";
+import { MAX_READER_GROUPS, readerGroup } from "@/lib/reader-groups";
+import { safeRedirectPath } from "@/lib/redirects";
 import { propertyChanges } from "@tuti/shared/user-properties";
 import { baseFrom, withBase } from "@/lib/portal-base";
 

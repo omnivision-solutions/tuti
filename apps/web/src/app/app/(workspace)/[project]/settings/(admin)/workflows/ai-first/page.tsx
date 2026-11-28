@@ -3,8 +3,8 @@ import { notFound } from "next/navigation";
 
 import { AiFirstSettings } from "@/components/inbox/ai-first-settings";
 import { SettingsPane } from "@/components/settings-card";
-import { getAdminProject } from "@/server/membership";
-import { aiFirstSettings, MAX_AI_NAME } from "@/server/operations/ai-first";
+import { MAX_AI_NAME } from "@/server/operations/ai-first";
+import { serverCaller } from "@/server/trpc/server";
 
 export const metadata: Metadata = { title: "AI answers first · Workflows · Settings" };
 
@@ -14,11 +14,9 @@ export const metadata: Metadata = { title: "AI answers first · Workflows · Set
  */
 export default async function AiFirstPage(props: PageProps<"/app/[project]/settings/workflows/ai-first">) {
   const { project: slug } = await props.params;
-  const project = await getAdminProject(slug);
-  if (!project) {
-    notFound();
-  }
-  const settings = await aiFirstSettings(project.id);
+  const trpc = await serverCaller();
+  // Owners and admins only (aiFirst.get's access): anyone else gets a 404.
+  const [settings, project] = await Promise.all([trpc.aiFirst.get({ project: slug }), trpc.project.get({ project: slug })]);
   if (settings.offFor.includes("no_ai_answers")) {
     notFound();
   }
