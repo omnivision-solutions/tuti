@@ -59,18 +59,33 @@ export async function imageUploaded(input: JobInput<"imageUploaded">, log: JobLo
     for (const f of files) {
       await storage.put(f.key, f.body, f.type);
     }
-    await storage.delete(original);
     const size = files.reduce((sum, f) => sum + f.body.byteLength, 0);
-    await prisma.media.update({
-      where: { id: media.id },
+    const ready = await prisma.media.updateMany({
+      where: { id: media.id, status: "PROCESSING" },
       data: { status: "READY", width: info.width, height: info.height, size },
     });
+    if (ready.count === 0) {
+      const current = await prisma.media.findUnique({ where: { id: media.id }, select: { status: true } });
+      if (current?.status !== "READY") {
+        for (const f of files) {
+          await storage.delete(f.key).catch(() => {});
+        }
+      }
+      log.warn(`media ${media.id} is no longer processing (status=${current?.status ?? "missing"}), skipping`);
+      return { skipped: true };
+    }
+    await storage.delete(original).catch(() => {});
     log.info(`media ${media.id}: ${info.width}x${info.height}, ${files.length} files, ${size} bytes`);
     return { ready: true, width: info.width, height: info.height, files: files.length };
   } catch (error) {
     // Not an image we take (or broken): nothing is kept, and it stops counting against the quota.
-    await storage.delete(original);
-    await prisma.media.update({ where: { id: media.id }, data: { status: "FAILED", size: 0 } });
+    const failed = await prisma.media.updateMany({
+      where: { id: media.id, status: "PROCESSING" },
+      data: { status: "FAILED", size: 0 },
+    });
+    if (failed.count > 0) {
+      await storage.delete(original).catch(() => {});
+    }
     if (error instanceof RefusedImage || isUnreadableImage(error)) {
       log.warn(`media ${media.id} refused: ${(error as Error).message}`);
       return { ready: false };
