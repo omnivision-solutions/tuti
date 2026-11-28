@@ -275,6 +275,10 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "spam.get": () => ({}),
   "spam.try": () => ({ sender: "e2e-matrix-kim@example.com", subject: "Facebook Admin", text: "Your page will be disabled." }),
   "spam.update": () => ({ addRules: [{ field: "subject_or_body", matcher: "contains", value: "facebook admin" }], block: ["spam.example"], allow: ["e2e-matrix-forms@example.com"] }),
+  "sso.disable": () => ({}),
+  "sso.get": () => ({}),
+  "sso.rotate": () => ({}),
+  "sso.update": () => ({ signInUrl: "https://app.example.com/login" }),
   "subscriptions.set": () => ({ number: 1, subscribed: true }),
   "support.checkEmailDomain": () => ({}),
   // Like widget.update: admins only in the app (Settings → Inbox and email).

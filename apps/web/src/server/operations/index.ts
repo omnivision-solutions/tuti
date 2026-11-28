@@ -277,6 +277,12 @@ import {
   updateSpamSettings,
 } from "./spam";
 import {
+  disableSso,
+  getSso,
+  rotateSsoSecret,
+  updateSso,
+} from "./sso";
+import {
   checkEmailDomainOperation,
   getSupportSettings,
   removeEmailDomain,
@@ -567,6 +573,10 @@ export const all = [
   createUpload,
   finishUpload,
   getUploadStatus,
+  getSso,
+  rotateSsoSecret,
+  disableSso,
+  updateSso,
 ] as const;
 
 /** Every operation, each a tRPC procedure (server/trpc/router.ts). */

@@ -2,6 +2,7 @@
 
 import { TriangleAlertIcon } from "lucide-react";
 import { useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { AgentPrompt } from "@/components/agent-prompt";
@@ -25,7 +26,7 @@ import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { disableSso, rotateSsoSecret, setSsoSignInUrl } from "@/server/sso-settings";
+import { errorMessage, useTRPCClient } from "@/components/trpc";
 
 /**
  * What a coding agent needs to add the portal's sign-in to the team's app. No secret in it: it's pasted into other
@@ -65,6 +66,16 @@ export function SsoSettings({
   signInUrl: string | null;
 }) {
   const [pending, startTransition] = useTransition();
+  const trpc = useTRPCClient();
+  const router = useRouter();
+  // On or off as saved, as soon as a save is through (the page's own `enabled` comes with its refresh, a moment later,
+  // and a click meanwhile would make another key); the page's again whenever it brings a new one.
+  const [on, setOn] = useState(enabled);
+  const [pageEnabled, setPageEnabled] = useState(enabled);
+  if (enabled !== pageEnabled) {
+    setPageEnabled(enabled);
+    setOn(enabled);
+  }
   const [secret, setSecret] = useState<string>();
   const [error, setError] = useState<string>();
   const [rotating, setRotating] = useState(false);
@@ -83,22 +94,28 @@ export function SsoSettings({
 
   const rotate = () => {
     startTransition(async () => {
-      const result = await rotateSsoSecret(projectSlug);
+      // One at a time: the switch and Replace key are off while either saves, and show what's saved once it is.
+      const result: { error?: string; secret?: string } = await trpc.sso.rotate.mutate({ project: projectSlug }).catch((caught: unknown) => ({ error: errorMessage(caught) }));
       setError(result.error);
       setSecret(result.secret);
       if (result.secret) {
-        toast.success(enabled ? "Secret key replaced" : "Single sign-on is on");
+        setOn(true);
+        toast.success(on ? "Secret key replaced" : "Single sign-on is on");
+        // The switch shows what the page read.
+        router.refresh();
       }
     });
   };
 
   const disable = () => {
     startTransition(async () => {
-      const result = await disableSso(projectSlug);
+      const result: { error?: string } = await trpc.sso.disable.mutate({ project: projectSlug }).catch((caught: unknown) => ({ error: errorMessage(caught) }));
       setError(result.error);
       setSecret(undefined);
       if (!result.error) {
+        setOn(false);
         toast.success("Single sign-on is off");
+        router.refresh();
       }
     });
   };
@@ -129,7 +146,7 @@ res.redirect(\`${ssoUrl}?token=\${token}&redirect=\${back}\`);`;
           {/* Not `disabled` while it saves: that would drop the keyboard's focus. Turning it off asks first. */}
           <Switch
             id="sso-enabled"
-            checked={enabled}
+            checked={on}
             aria-disabled={pending || undefined}
             aria-describedby="sso-enabled-description"
             className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
@@ -137,7 +154,7 @@ res.redirect(\`${ssoUrl}?token=\${token}&redirect=\${back}\`);`;
               if (pending) {
                 return;
               }
-              if (enabled) {
+              if (on) {
                 setDisabling(true);
               } else {
                 rotate();
@@ -220,7 +237,7 @@ res.redirect(\`${ssoUrl}?token=\${token}&redirect=\${back}\`);`;
 
       <SettingsCard title="Or set it up yourself">
         {/* Only once SSO is on: entered before the key exists, turning SSO on would send portal sign-ins to a page that can't sign tokens yet. */}
-        {enabled && <SignInPageRow projectSlug={projectSlug} ssoUrl={ssoUrl} signInUrl={signInUrl} />}
+        {on && <SignInPageRow projectSlug={projectSlug} ssoUrl={ssoUrl} signInUrl={signInUrl} />}
         <SettingRow label="Return address" description="Your app sends people back here, with a token saying who they are.">
           <div className="flex min-w-0 items-center gap-1 @min-[34rem]/settings:max-w-96">
             <code className="min-w-0 flex-1 font-mono text-xs break-all text-muted-foreground">{ssoUrl}</code>
@@ -229,7 +246,7 @@ res.redirect(\`${ssoUrl}?token=\${token}&redirect=\${back}\`);`;
         </SettingRow>
       </SettingsCard>
 
-      {enabled && (
+      {on && (
         <SettingsCard>
           <SettingRow label="Replace secret key" description="The current key stops working at once." inline>
             <Button variant="outline" disabled={pending} focusableWhenDisabled onClick={() => setRotating(true)}>
@@ -252,13 +269,18 @@ res.redirect(\`${ssoUrl}?token=\${token}&redirect=\${back}\`);`;
 
 /** The app's own sign-in page (empty removes it), saved by the page's "Save changes". */
 function SignInPageRow({ projectSlug, ssoUrl, signInUrl }: { projectSlug: string; ssoUrl: string; signInUrl: string | null }) {
+  const trpc = useTRPCClient();
+  const router = useRouter();
   const { state, form } = useCustomizeForm({
     save: async (_prev, formData) => {
-      const result = await setSsoSignInUrl(projectSlug, formData);
-      if (!result.error) {
-        toast.success("Sign-in page saved");
+      try {
+        await trpc.sso.update.mutate({ project: projectSlug, signInUrl: String(formData.get("signInUrl") ?? "") });
+      } catch (error) {
+        return { error: errorMessage(error) };
       }
-      return result;
+      toast.success("Sign-in page saved");
+      router.refresh();
+      return {};
     },
   });
   return (
