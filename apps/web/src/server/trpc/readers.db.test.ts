@@ -125,6 +125,15 @@ test("the widget's person: someone the site signed in acts as themselves; a visi
   expect(await prisma.vote.count({ where: { post: { projectId: project.id } } })).toBe(2);
 });
 
+test("the widget's person acts as themselves, never as the team: a teammate by the widget's token can't run the team's procedures", async () => {
+  const teammate = { authorization: `Widget ${widgetToken(project.id, owner.id)}` };
+  // The owner, by the widget: their team's settings and Inbox stay closed (a portal's or the widget's session is a reader's).
+  expect((await trpc("settings.access", {}, teammate)).status).toBe(403);
+  expect((await trpc("project.get", {}, teammate)).status).toBe(403);
+  // What anyone signed in may do, they do as themselves.
+  expect((await trpc("portal.access", {}, teammate)).status).toBe(200);
+});
+
 test("a proxy's Authorization on the portal's requests is never the widget's person: the cookie session still is", async () => {
   const number = await post();
   const reader = await signUp("Rae Reader");
