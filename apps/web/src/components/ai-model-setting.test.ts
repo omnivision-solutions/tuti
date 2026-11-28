@@ -22,7 +22,11 @@ vi.mock("@/components/trpc", async (importOriginal) => {
 // Rendered on its own, outside the app router: a save refreshes the page.
 vi.mock("next/navigation", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/navigation")>()), useRouter: () => ({ refresh: () => {} }) }));
 
+vi.mock("@/server/github", () => ({}));
+
 const { AiModelSetting } = await import("./ai-model-setting");
+const { AutopilotChecksSwitch } = await import("./autopilot-settings");
+const { InOrderProvider } = await import("@/components/trpc");
 
 const upgrade = (title: string) => ({ title, billingHref: "/app/acme/settings/billing", note: null });
 const props: AiModelSettingProps = {
@@ -231,4 +235,46 @@ test("a role switched off (Autopilot's Checks) is said to be off under Custom, w
   expect(boxes.map((input) => root.querySelector(`label[for="${input.id}"]`)?.textContent)).toEqual(["Decides", "Writes"]);
   expect(boxes.map((input) => input.value)).toEqual(["", ""]);
   expect([...root.querySelectorAll("p")].map((line) => line.textContent)).toContain("ChecksOff");
+});
+
+test("on Settings → Autopilot, a Checks model typed then the Checks switch turned off land in that order: off is what's saved", async () => {
+  // Both on one page, as Settings → Autopilot has them: the AI model setting (Custom, Checks' box) and the Checks switch.
+  const root = document.createElement("div");
+  document.body.append(root);
+  await act(async () =>
+    createRoot(root).render(
+      h(
+        InOrderProvider,
+        null,
+        h(AiModelSetting, {
+          ...props,
+          group: "code_changes",
+          saved: "custom",
+          used: "custom",
+          levels: props.levels.map((level) => ({ ...level, upgrade: null })),
+          summary: "Decides Claude Haiku 5.5 · Checks Claude Sonnet 5.5 · Writes Claude Haiku 5.5",
+          roles: [
+            { role: "code_changes_decide", label: "Decides", model: "", default: "anthropic/claude-haiku-5.5", used: "anthropic/claude-haiku-5.5", agent: true },
+            { role: "code_changes_check", label: "Checks", model: "", default: "anthropic/claude-sonnet-5.5", used: "anthropic/claude-sonnet-5.5", agent: true },
+            { role: "code_changes", label: "Writes", model: "", default: "anthropic/claude-haiku-5.5", used: "anthropic/claude-haiku-5.5", agent: true },
+          ],
+        }),
+        h(AutopilotChecksSwitch, { projectSlug: "acme", on: true, price: null }),
+      ),
+    ),
+  );
+  const checksBox = [...root.querySelectorAll<HTMLInputElement>("input:not(#autopilot-checks)")][1]!;
+  let modelSaved!: () => void;
+  saveAiModel.mockImplementationOnce(() => new Promise((resolve) => (modelSaved = () => resolve({}))));
+  // The model typed, saved on leaving its box: the click on the switch is what leaves it.
+  await type(checksBox, "acme/tiny");
+  await leave(checksBox);
+  await act(async () => root.querySelector<HTMLInputElement>("#autopilot-checks")!.click());
+  // The switch's save waits for the model's, which resolves last here: "off" is sent after it, so it's what's saved.
+  expect(saveAiModel.mock.calls).toEqual([["acme", { code_changes_check: "acme/tiny" }]]);
+  await act(async () => modelSaved());
+  expect(saveAiModel.mock.calls).toEqual([
+    ["acme", { code_changes_check: "acme/tiny" }],
+    ["acme", { code_changes_check: "off" }],
+  ]);
 });

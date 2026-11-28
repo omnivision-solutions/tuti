@@ -78,6 +78,12 @@ export function actAs(user: TestUser | null) {
   request.cookie = user?.cookie ?? "";
 }
 
+/** A tRPC caller as the request's own session (actAs, onPortal), as a page or the browser calls the router. */
+export async function callerNow() {
+  const [{ createCaller }, { sessionContext }, { getSession }] = await Promise.all([import("@/server/trpc/server"), import("@/server/trpc/context"), import("@/server/session")]);
+  return createCaller(sessionContext(await getSession()));
+}
+
 /**
  * The uploads.* procedures (server/operations/uploads.ts) as the request's own session calls them (actAs, onPortal), with
  * a refusal as `{ error }`, its message: what the app shows. finish and status name `slug`'s project, as the app does.

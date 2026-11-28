@@ -22,7 +22,6 @@ import { TRPCError } from "@trpc/server";
 import type { OperationName } from "./operations";
 import { request } from "@/test/next-headers";
 
-import * as aiModels from "./ai-models";
 import * as apiKeys from "./api-keys";
 import * as articleVersions from "./article-versions";
 import { call as callOperation } from "./operations/run";
@@ -91,7 +90,6 @@ const modules = {
   "code-changes": codeChanges,
   "code-changes-tuning": codeChangesTuning,
   credits,
-  "ai-models": aiModels,
   "api-keys": apiKeys,
   "api-references": apiReferences,
   "app-search": appSearch,
@@ -204,9 +202,6 @@ const matrix: Matrix = {
     manageSubscription: { allowed: "ADMIN", call: (slug) => credits.manageSubscription(slug) },
     // Off on the free plan: nothing to remove (adding it is in plans.db.test.ts).
     setBadge: { allowed: "ADMIN", call: (slug) => credits.setBadge(slug, false) },
-  },
-  "ai-models": {
-    saveAiModel: { allowed: "ADMIN", call: (slug) => aiModels.saveAiModel(slug, { levels: { changelog: "balanced" } }) },
   },
   // Owners only, like Autopilot's other settings (plans are off here, so every project has it).
   "code-changes-tuning": {

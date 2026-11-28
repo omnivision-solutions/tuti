@@ -55,7 +55,10 @@ test("an owner sets Autopilot's AI model and switches Checks off and on, the two
   const checks = owner.getByRole("switch", { name: "Check its own edits", exact: true });
   await expect(checks).toBeChecked();
   await checks.focus();
+  // Saved through tRPC (aiModels.update), not a server action.
+  const checksSaved = owner.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/api/trpc/aiModels.update"));
   await owner.keyboard.press("Space");
+  await checksSaved;
   await expect(owner.getByText("Checks: off")).toBeVisible();
   await expect(checks).not.toBeChecked();
   await expect(checks).toBeFocused();
