@@ -269,7 +269,15 @@ export const finishUpload = defineOperation({
       return {};
     }
 
-    await prisma.media.update({ where: { id: media.id }, data: { status: "PROCESSING" } });
+    // Claimed, as files and videos are: of two finishes at once only one queues the image job, and neither undoes the
+    // other's outcome. The other is done if that one's claim stands, else told what went wrong.
+    if ((await settle({ status: "PROCESSING" })).count === 0) {
+      const now = await prisma.media.findUnique({ where: { id: media.id }, select: { status: true } });
+      if (now?.status === "FAILED") {
+        throw new OperationError(400, "upload_failed", "The upload didn't match the file. Try again.");
+      }
+      return {};
+    }
     try {
       await enqueue("imageUploaded", { mediaId: media.id });
     } catch (error) {

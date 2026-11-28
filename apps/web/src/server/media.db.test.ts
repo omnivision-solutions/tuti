@@ -6,6 +6,14 @@ import { configFile, type S3Fake, startS3Fake } from "@tuti/testkit";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
+// The jobs as they are, each enqueue counted (two finishes at once queue one image job).
+const jobs = vi.hoisted(() => ({ enqueue: vi.fn() }));
+vi.mock("@tuti/jobs", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@tuti/jobs")>();
+  jobs.enqueue.mockImplementation(real.enqueue);
+  return { ...real, enqueue: jobs.enqueue };
+});
+
 import { actAs, uploadsAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
@@ -217,6 +225,20 @@ describe("finishing", () => {
     expect(await finishUpload(created.mediaId)).toEqual({ error: "The upload didn't match the file. Try again." });
     expect(s3.objects.has(originalKey(created.mediaId))).toBe(false);
     expect(await uploadStatus(created.mediaId)).toEqual({ status: "FAILED" });
+  });
+
+  test("two finishes at once process the image once, and neither undoes the other", async () => {
+    const file = await photo(100, 100);
+    const created = (await createUpload(project.slug, { type: "image/jpeg", size: file.length })) as { mediaId: string; uploadUrl: string };
+    await fetch(created.uploadUrl, { method: "PUT", body: new Uint8Array(file) });
+    jobs.enqueue.mockClear();
+    const results = await Promise.all([finishUpload(created.mediaId), finishUpload(created.mediaId)]);
+    // The second finds it claimed (done) or already past waiting (not found), never an error of its own.
+    for (const result of results) {
+      expect([{}, { error: "Upload not found" }]).toContainEqual(result);
+    }
+    expect(jobs.enqueue.mock.calls.filter(([name]) => name === "imageUploaded")).toEqual([["imageUploaded", { mediaId: created.mediaId }]]);
+    expect(await uploadStatus(created.mediaId)).toMatchObject({ status: "READY" });
   });
 
   test("only the uploader can finish an upload or see its status", async () => {
