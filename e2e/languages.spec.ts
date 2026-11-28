@@ -1291,7 +1291,12 @@ test("the widget's Help center and Messages in German at /de/widget: browsing, a
   const api = await apiFor(team, slug);
   await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
   await api("/collections", { name: "Basics" });
-  const intro = await api("/articles", { title: "Getting started", body: "Invite your team from the Team page.", collection: "basics" });
+  const line = (type: string, text: string, attrs?: object) => ({ type, ...(attrs && { attrs }), content: [{ type: "text", text }] });
+  const introContent = {
+    type: "doc",
+    content: [{ type: "tableOfContents" }, line("heading", "Invite", { level: 2 }), line("paragraph", "Invite your team from the Team page."), line("heading", "Roles", { level: 2 })],
+  };
+  const intro = await api("/articles", { title: "Getting started", content: introContent, collection: "basics" });
   await api(`/articles/${intro.slug}/publish`, {});
   const loose = await api("/articles", { title: "Release notes", body: "What changed." });
   await api(`/articles/${loose.slug}/publish`, {});
@@ -1323,6 +1328,8 @@ test("the widget's Help center and Messages in German at /de/widget: browsing, a
   await visitor.getByRole("link", { name: "Getting started" }).click();
   await expect(visitor.getByRole("heading", { level: 1, name: "Getting started" })).toHaveAttribute("lang", "en");
   await expect(visitor.getByText("Invite your team from the Team page.").locator("xpath=ancestor::*[@lang][1]")).toHaveAttribute("lang", "en");
+  // A table of contents in it: its heading the panel's words, in German.
+  await expect(visitor.getByRole("navigation", { name: "In diesem Artikel" })).toHaveAttribute("lang", "de");
   // Not in German yet: said in German.
   await expect(visitor.getByText("Diese Seite gibt es noch nicht auf Deutsch: Sie wird in ihrer Originalsprache angezeigt.")).toBeVisible();
   await expect(visitor.getByRole("link", { name: "In neuem Tab öffnen" })).toHaveAttribute("href", /^\/de\/docs\//);
@@ -1418,6 +1425,9 @@ test("an article's own words in German at /de/docs: its actions, reading time, s
   await expect(contents.getByRole("link", { name: "Install" }).locator("xpath=ancestor::*[@lang][1]")).toHaveAttribute("lang", "en");
   await expect(main.getByRole("button", { name: "Code kopieren" })).toHaveText("Kopieren");
   await expect(main.getByRole("button", { name: "Code kopieren" })).toHaveAttribute("lang", "de");
+  await reader.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await main.getByRole("button", { name: "Code kopieren" }).click();
+  await expect(reader.locator("[data-sonner-toast]", { hasText: "Kopiert" })).toBeVisible();
   // The way on, and the answer to Was this helpful.
   await expect(main.getByRole("navigation", { name: "Zurück und weiter" }).getByRole("link", { name: /Weiter/ })).toContainText("Billing");
   await expect(main.getByRole("region", { name: "Ähnliche Artikel" }).getByRole("link", { name: "Teams" })).toBeVisible();

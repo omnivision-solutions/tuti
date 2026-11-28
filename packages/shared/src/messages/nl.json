@@ -529,7 +529,8 @@
     "copy": "Kopiëren",
     "copyCode": "Code kopiëren",
     "inThisArticle": "In dit artikel",
-    "video": "Video"
+    "video": "Video",
+    "copied": "Gekopieerd"
   },
   "emails": {
     "signInTo": "Inloggen bij {name}",

@@ -529,7 +529,8 @@
     "copy": "コピー",
     "copyCode": "コードをコピー",
     "inThisArticle": "この記事の内容",
-    "video": "動画"
+    "video": "動画",
+    "copied": "コピーしました"
   },
   "emails": {
     "signInTo": "{name} にログイン",

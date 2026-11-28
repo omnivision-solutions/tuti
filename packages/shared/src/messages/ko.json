@@ -529,7 +529,8 @@
     "copy": "복사",
     "copyCode": "코드 복사",
     "inThisArticle": "이 문서의 내용",
-    "video": "동영상"
+    "video": "동영상",
+    "copied": "복사했습니다"
   },
   "emails": {
     "signInTo": "{name}에 로그인",

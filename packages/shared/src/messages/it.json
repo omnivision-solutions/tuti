@@ -529,7 +529,8 @@
     "copy": "Copia",
     "copyCode": "Copia codice",
     "inThisArticle": "In questo articolo",
-    "video": "Video"
+    "video": "Video",
+    "copied": "Copiato"
   },
   "emails": {
     "signInTo": "Accedi a {name}",
