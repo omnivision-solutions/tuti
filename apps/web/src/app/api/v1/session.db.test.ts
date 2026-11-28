@@ -6,8 +6,7 @@ import { appUrl } from "@/lib/hosts";
 import { createApiKey } from "@/server/api-keys";
 import { createConversation } from "@/server/operations/conversations";
 import { call } from "@/server/operations/run";
-import { renameProject } from "@/server/project-settings";
-import { actAs, addMember, createProject, onPortal, signUp, type TestUser, withoutEmail } from "@/test/helpers";
+import { actAs, addMember, callerAs, createProject, onPortal, signUp, type TestUser, withoutEmail } from "@/test/helpers";
 import { request as browser } from "@/test/next-headers";
 
 import { GET, PATCH, POST } from "./[...path]/route";
@@ -163,19 +162,15 @@ test("a key works as before: it decides the project, whatever the header says", 
   expect(await api("/conversations", {})).toMatchObject({ status: 401, body: { error: { message: "Send a project API key: Authorization: Bearer tuti_…" } } });
 });
 
-test("a session acts with its teammate's role, refused where the web app's action refuses them", async () => {
+test("a session acts with its teammate's role, refused where the web app refuses them", async () => {
   const member = await addMember(project.id, "MEMBER");
   const admin = await addMember(project.id, "ADMIN");
-  const rename = (name: string) => {
-    const form = new FormData();
-    form.set("name", name);
-    return renameProject(project.slug, {}, form);
-  };
 
   // A member: the settings are owners' and admins', in the app and here.
-  actAs(member);
-  expect(await rename("Member's name")).toEqual({ error: "Only project owners and admins can rename the project" });
-  actAs(null);
+  await expect((await callerAs(member)).project.update({ project: project.slug, name: "Member's name" })).rejects.toMatchObject({
+    code: "FORBIDDEN",
+    message: "Only project owners and admins can use project settings",
+  });
   expect(await api("/project", { token: tokenOf(member), method: "PATCH", body: { name: "Member's name" } })).toMatchObject({
     status: 403,
     body: { error: { code: "forbidden", message: "Only project owners and admins can use project settings" } },

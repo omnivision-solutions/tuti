@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useLayoutEffect, useRef } from "react";
 import { toast } from "sonner";
 
@@ -7,10 +8,12 @@ import { useCustomizeForm } from "@/components/customize-shell";
 import { SettingRow } from "@/components/settings-card";
 import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { renameProject } from "@/server/project-settings";
+import { errorMessage, useTRPCClient } from "@/components/trpc";
 
 /** Settings → General's name row (project.update), saved by the page's "Save changes". */
 export function ProjectNameForm({ projectSlug, name }: { projectSlug: string; name: string }) {
+  const trpc = useTRPCClient();
+  const router = useRouter();
   // Renamed elsewhere meanwhile (another tab), the field follows where it isn't edited here (before the form compares
   // with what's saved, in useCustomizeForm's effect). Not to this tab's own save (the next name to come in): what's
   // typed while it ran stays.
@@ -26,13 +29,17 @@ export function ProjectNameForm({ projectSlug, name }: { projectSlug: string; na
   }, [name]);
   const { state, form } = useCustomizeForm({
     saved: [["name", name]],
-    save: async (prev, formData) => {
+    save: async (_prev, formData) => {
       sent.current = String(formData.get("name"));
-      const result = await renameProject(projectSlug, prev, formData);
-      if (!result.error) {
-        toast.success("Project renamed");
+      try {
+        await trpc.project.update.mutate({ project: projectSlug, name: sent.current });
+      } catch (error) {
+        return { error: errorMessage(error) };
       }
-      return result;
+      toast.success("Project renamed");
+      // The name is in the sidebar's project switcher too.
+      router.refresh();
+      return {};
     },
   });
   return (

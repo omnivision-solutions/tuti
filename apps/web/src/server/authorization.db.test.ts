@@ -61,7 +61,6 @@ import * as passwordReset from "./password-reset";
 import * as planLicenses from "./plan-licenses";
 import * as portalSettings from "./portal-settings";
 import * as posts from "./posts";
-import * as projectSettings from "./project-settings";
 import * as projects from "./projects";
 import * as readerLanguage from "./reader-language";
 import * as rewrite from "./rewrite";
@@ -124,7 +123,6 @@ const modules = {
   "portal-handoff": portalHandoff,
   "portal-settings": portalSettings,
   posts,
-  "project-settings": projectSettings,
   projects,
   "reader-language": readerLanguage,
   rewrite,
@@ -741,9 +739,6 @@ const matrix: Matrix = {
       call: (_slug, f) => posts.addComment({}, form({ postId: f.postId, body: "Me too" })),
     },
     setCommentLike: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => posts.setCommentLike(f.commentId, true) },
-  },
-  "project-settings": {
-    renameProject: { allowed: "ADMIN", call: (slug) => projectSettings.renameProject(slug, {}, form({ name: "Renamed by the matrix" })) },
   },
   projects: {
     createProject: {
@@ -1478,12 +1473,15 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   "changelog.update": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.changelog.update({ project: slug, number: 1, title: "Renamed by the matrix" }) },
   // Owners only (plans are off here, so every project has Advanced tuning).
   "codeChangesTuning.update": { allowed: "OWNER", scope: "write", call: (caller, slug) => caller.codeChangesTuning.update({ project: slug, "decide.rounds": 6 }) },
+  // Settings' gate: each settings page asks it.
+  "settings.access": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.settings.access({ project: slug }) },
   // The team's names and roles, and the project's own setup: the team's (a key counts as the team), never anyone signed in.
   // The Inbox's list pane, and a teammate's own "Email me new conversations" (a key: its creator's).
   "inbox.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.list({ project: slug, q: "Post", overview: true }) },
   "inbox.newConversationEmails": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.inbox.newConversationEmails({ project: slug, on: false }) },
   "team.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.team.list({ project: slug }) },
   "project.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.project.get({ project: slug }) },
+  "project.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.project.update({ project: slug, name: "Renamed by the matrix" }) },
   "votes.set": { allowed: "signed in", refusesSsoUsers: true, scope: "write", call: (caller, slug) => caller.votes.set({ project: slug, number: 1, voted: true }) },
 };
 

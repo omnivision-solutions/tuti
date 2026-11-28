@@ -42,6 +42,20 @@ export const getProject = defineOperation({
   },
 });
 
+/** Settings' gate, for each settings page as it moves onto the router: nothing to read, refused to anyone but owners and admins. */
+export const getSettingsAccess = defineOperation({
+  name: "settings.access",
+  title: "Open settings",
+  summary: "Whether the caller may open the project's settings: owners and admins.",
+  method: "GET",
+  internal: true,
+  scope: "read",
+  access: "admin",
+  input: z.object({}),
+  output: z.object({}),
+  run: async () => ({}),
+});
+
 export const updateProject = defineOperation({
   name: "project.update",
   title: "Update the project",

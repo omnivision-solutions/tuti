@@ -355,10 +355,9 @@ test("an owner renames the project in Settings → General, and the app and its 
   // A change typed while a save runs stays in the field, still to save.
   let releaseSave = () => {};
   const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
-  await olive.route(`**/app/${slug}/settings/general`, async (route) => {
-    if (route.request().method() === "POST") {
-      await saveHeld;
-    }
+  const renames = (url: URL) => url.pathname.endsWith("/api/trpc/project.update");
+  await olive.route(renames, async (route) => {
+    await saveHeld;
     await route.continue();
   });
   await olive.getByLabel("Project name").fill("Acme Docs");
@@ -369,7 +368,7 @@ test("an owner renames the project in Settings → General, and the app and its 
   await expect(olive.getByRole("button", { name: /Acme Docs/ }).first()).toBeVisible();
   await expect(olive.getByLabel("Project name")).toHaveValue("Acme Help");
   await expect(olive.getByRole("button", { name: "Save changes" })).toBeEnabled();
-  await olive.unroute(`**/app/${slug}/settings/general`);
+  await olive.unroute(renames);
   await olive.getByRole("button", { name: "Save changes" }).click();
   await expect(olive.getByRole("button", { name: /Acme Help/ }).first()).toBeVisible();
   await expect(olive.getByRole("button", { name: "Save changes" })).toBeDisabled();
