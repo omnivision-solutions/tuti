@@ -628,12 +628,6 @@ const matrix: Matrix = {
     removeLanguage: { allowed: "ADMIN", call: (slug) => languages.removeLanguage(slug, "de") },
   },
   groups: {
-    saveGroup: { allowed: "ADMIN", call: (slug) => groups.saveGroup(slug, null, {}, form({ name: "Enterprise", conditions: JSON.stringify(inGroupNamed("enterprise")) })) },
-    deleteGroup: { allowed: "ADMIN", call: (slug) => groups.deleteGroup(slug, "beta") },
-    // Names the project's SSO users, like Settings → Groups.
-    previewGroup: { allowed: "ADMIN", call: (slug) => groups.previewGroup(slug, [{ property: "plan", op: "is", value: "pro" }]) },
-    // The values the project's SSO users have, like the preview.
-    suggestValues: { allowed: "ADMIN", call: (slug) => groups.suggestValues(slug, "plan") },
     setUserColumns: { allowed: "ADMIN", call: (slug) => groups.setUserColumns(slug, ["company", "mrr"]) },
     setPropertyFormats: { allowed: "ADMIN", call: (slug) => groups.setPropertyFormats(slug, { mrr: { label: "MRR", format: "money" } }) },
     removeChangelogSubscriber: { allowed: "ADMIN", call: (slug) => groups.removeChangelogSubscriber(slug, "e2e-matrix-subscriber@example.com") },
@@ -1467,6 +1461,21 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   // finishes nothing, for whoever may.
   "githubConnect.finish": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.githubConnect.finish({ project: slug, state: "not-a-state" }) },
   "githubConnect.get": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.githubConnect.get({ project: slug }) },
+  "groups.create": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.groups.create({ project: slug, name: "Enterprise", conditions: inGroupNamed("enterprise") }) },
+  // The fixture's Beta, by its key; put back before the key's call, after the allowed one deleted it.
+  "groups.delete": {
+    allowed: "ADMIN",
+    scope: "write",
+    takesIds: true,
+    seed: (f) => prisma.readerGroup.upsert({ where: { projectId_key: { projectId: f.projectId, key: "beta" } }, create: { projectId: f.projectId, key: "beta", name: "Beta", conditions: inGroupNamed("beta") }, update: {} }),
+    call: (caller, slug) => caller.groups.delete({ project: slug, group: "beta" }),
+  },
+  "groups.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.groups.list({ project: slug }) },
+  // Names the project's SSO users, like Settings → Groups.
+  "groups.preview": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.groups.preview({ project: slug, conditions: [{ property: "plan", op: "is", value: "pro" }] }) },
+  "groups.update": { allowed: "ADMIN", scope: "write", takesIds: true, call: (caller, slug) => caller.groups.update({ project: slug, group: "beta", name: "Beta testers" }) },
+  // The values the project's SSO users have, like the preview.
+  "groups.values": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.groups.values({ project: slug, property: "plan" }) },
   // The Inbox's conversation page: what it reads, and its buttons (status, assignee, snooze, spam, priority, take over and
   // hand back are all conversations.update), Summarize, Try again on a translation, and marking it read.
   "inbox.conversation": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.conversation({ project: slug, number: 1 }) },
@@ -1487,6 +1496,7 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   // Settings' gate: each settings page asks it.
   "settings.access": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.settings.access({ project: slug }) },
   "settings.asking": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.settings.asking({ project: slug }) },
+  "settings.groups": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.settings.groups({ project: slug }) },
   "spam.get": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.spam.get({ project: slug }) },
   "spam.try": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.spam.try({ project: slug, name: "Kim", sender: "e2e-matrix-kim@example.com", subject: "Hi", text: "Hello" }) },
   // Removing a rule by its id: the fixture's, put back before each call that may remove it.

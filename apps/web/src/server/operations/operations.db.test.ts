@@ -201,7 +201,9 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "groups.create": () => ({ name: "Enterprise", conditions: [{ property: "plan", op: "is_any_of", value: ["enterprise", "custom"] }] }),
   "groups.delete": () => ({ group: "beta" }),
   "groups.list": () => ({}),
+  "groups.preview": () => ({ conditions: [{ property: "plan", op: "is", value: "pro" }] }),
   "groups.update": () => ({ group: "beta", name: "Beta testers", conditions: [{ property: "beta", op: "is", value: "true" }] }),
+  "groups.values": () => ({ property: "plan" }),
   "images.generate": () => ({ prompt: "A lighthouse", width: 320, height: 200 }),
   "imports.get": () => ({}),
   // People only: every key is refused (below).
@@ -262,6 +264,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "screenshots.take": () => ({ shots: [{ show: "The dashboard" }] }),
   "settings.access": () => ({}),
   "settings.asking": () => ({}),
+  "settings.groups": () => ({}),
   "site.get": () => ({}),
   "site.remove": () => ({}),
   // Like domain.set: admins only in the app.

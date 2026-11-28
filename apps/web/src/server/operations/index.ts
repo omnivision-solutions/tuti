@@ -172,7 +172,10 @@ import {
   createGroup,
   deleteGroup,
   getAskingSettings,
+  getGroupsSettings,
   listGroups,
+  previewGroup,
+  suggestGroupValues,
   updateGroup,
 } from "./groups";
 import { generateImageOperation } from "./images";
@@ -467,6 +470,9 @@ export const all = [
   updateGroup,
   deleteGroup,
   getAskingSettings,
+  getGroupsSettings,
+  previewGroup,
+  suggestGroupValues,
   listUsers,
   listCompanies,
   getUser,

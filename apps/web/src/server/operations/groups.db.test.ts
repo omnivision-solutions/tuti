@@ -4,14 +4,16 @@ import { prisma } from "@tuti/db";
 import { beforeEach, expect, test } from "vitest";
 import type { z } from "zod";
 
+import type { groupConditions as groupConditionsSchema } from "@tuti/shared/group-conditions";
+
 import { lastingMediaUrl, savedPicture } from "@tuti/shared/media-links";
 import type { Properties } from "@tuti/shared/user-properties";
-import { actAs, addMember, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addMember, callerAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 
-import { deleteGroup as deleteGroupAction, previewGroup, saveGroup, setPropertyFormats, suggestValues } from "../groups";
+import { setPropertyFormats } from "../groups";
 import { syncUsers } from "../project-users";
 import { createCollection, updateCollection } from "./docs";
-import { createGroup, deleteGroup, listGroups, propertiesInUse, propertyNames, updateGroup } from "./groups";
+import { createGroup, deleteGroup, listGroups, previewGroup, propertiesInUse, propertyNames, updateGroup } from "./groups";
 import { updateProject, updatePropertyFormats } from "./more";
 import { call } from "./run";
 
@@ -36,14 +38,6 @@ async function ssoReader(name: string, properties: Properties = {}, projectId = 
   const user = await signUp(name);
   await prisma.ssoIdentity.create({ data: { projectId, externalId: crypto.randomUUID(), userId: user.id, properties } });
 }
-
-const form = (fields: Record<string, string>) => {
-  const data = new FormData();
-  for (const [name, value] of Object.entries(fields)) {
-    data.set(name, value);
-  }
-  return data;
-};
 
 const plan = (value: string) => [{ property: "plan", op: "is" as const, value }];
 
@@ -189,25 +183,28 @@ test("changing a group's conditions keeps the collections that are for it", asyn
 });
 
 test("in the app: owners and admins only", async () => {
-  const denied = { error: "Only project owners and admins can change the groups" };
-  const conditions = JSON.stringify(plan("pro"));
-  actAs(await addMember(project.id, "MEMBER"));
-  expect(await saveGroup(project.slug, null, {}, form({ name: "Enterprise", conditions }))).toEqual(denied);
-  expect(await previewGroup(project.slug, plan("pro"))).toEqual(denied);
-  actAs(await signUp("Outsider"));
-  expect(await saveGroup(project.slug, null, {}, form({ name: "Enterprise", conditions }))).toEqual(denied);
+  const conditions = plan("pro");
+  const member = await callerAs(await addMember(project.id, "MEMBER"));
+  await expect(member.groups.create({ project: project.slug, name: "Enterprise", conditions })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  await expect(member.groups.preview({ project: project.slug, conditions })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  const outsider = await callerAs(await signUp("Outsider"));
+  await expect(outsider.groups.create({ project: project.slug, name: "Enterprise", conditions })).rejects.toMatchObject({ code: "NOT_FOUND" });
   expect(await list()).toEqual([]);
 
-  actAs(await addMember(project.id, "ADMIN"));
-  expect(await saveGroup(project.slug, null, {}, form({ name: "Pro", conditions: "[]" }))).toEqual({ error: "A group needs a condition" });
-  expect(await saveGroup(project.slug, null, {}, form({ name: "Pro", conditions: "not json" }))).toMatchObject({ error: expect.any(String) });
-  expect(await saveGroup(project.slug, null, {}, form({ name: "Pro", conditions, description: "" }))).toEqual({});
-  expect(await saveGroup(project.slug, "pro", {}, form({ name: "Pro plan", conditions: JSON.stringify(plan("gold")), description: "Paying" }))).toEqual({});
+  // As Settings → Groups' dialog saves them.
+  const admin = await callerAs(await addMember(project.id, "ADMIN"));
+  const save = (input: { group?: string; name: string; conditions: z.input<typeof groupConditionsSchema>; description?: string; match?: "all" | "any" }) =>
+    input.group ? admin.groups.update({ project: project.slug, ...input, group: input.group }) : admin.groups.create({ project: project.slug, ...input });
+  await expect(save({ name: "Pro", conditions: [] })).rejects.toMatchObject({ code: "BAD_REQUEST", message: "A group needs a condition" });
+  // Conditions that don't read (the dialog sends null) are refused too.
+  await expect(save({ name: "Pro", conditions: null as never })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  await save({ name: "Pro", conditions, description: "" });
+  await save({ group: "pro", name: "Pro plan", conditions: plan("gold"), description: "Paying" });
   expect(await list()).toEqual([{ key: "pro", name: "Pro plan", description: "Paying", conditions: plan("gold"), match: "all", readers: 0, sample: [] }]);
-  const either = JSON.stringify([...plan("gold"), ...plan("pro")]);
-  expect(await saveGroup(project.slug, "pro", {}, form({ name: "Pro plan", conditions: either, match: "any" }))).toEqual({});
+  const either = [...plan("gold"), ...plan("pro")];
+  await save({ group: "pro", name: "Pro plan", conditions: either, match: "any" });
   expect(await list()).toMatchObject([{ key: "pro", conditions: [...plan("gold"), ...plan("pro")], match: "any" }]);
-  expect(await deleteGroupAction(project.slug, "pro")).toEqual({});
+  await admin.groups.delete({ project: project.slug, group: "pro" });
   expect(await list()).toEqual([]);
 });
 
@@ -217,10 +214,11 @@ test("the dialog's preview: who a group with these conditions would have now, th
   await ssoReader("Cy", { plan: "free" });
   await ssoReader("Dee", { plan: "pro" });
   await ssoReader("Eve", { plan: "pro" });
-  actAs(owner);
-  const names = async (conditions: Parameters<typeof previewGroup>[1]) => {
-    const result = await previewGroup(project.slug, conditions);
-    return "error" in result ? result : { readers: result.readers, users: result.users.map((user) => user.name) };
+  const caller = await callerAs(owner);
+  const preview = (conditions: z.input<typeof groupConditionsSchema>, match: "all" | "any" = "all") => caller.groups.preview({ project: project.slug, conditions, match });
+  const names = async (conditions: z.input<typeof groupConditionsSchema>) => {
+    const result = await preview(conditions);
+    return { readers: result.readers, users: result.users.map((user) => user.name) };
   };
   expect(await names(plan("pro"))).toEqual({ readers: 4, users: ["Ada", "Bea", "Dee", "Eve"] });
   expect(await names([...inGroupNamed("enterprise"), { property: "plan", op: "is_set" }])).toEqual({ readers: 1, users: ["Ada"] });
@@ -229,18 +227,29 @@ test("the dialog's preview: who a group with these conditions would have now, th
   // Any one of them, rather than all.
   const either = [{ property: "plan", op: "is", value: "free" }, { property: "seats", op: "is_set" }] as const;
   expect(await names([...either])).toEqual({ readers: 0, users: [] });
-  expect(await previewGroup(project.slug, [...either], "any")).toMatchObject({ readers: 2, users: [{ name: "Bea" }, { name: "Cy" }] });
+  expect(await preview([...either], "any")).toMatchObject({ readers: 2, users: [{ name: "Bea" }, { name: "Cy" }] });
   // At most 50 of them.
   await syncUsers(project.id, Array.from({ length: 51 }, (_, i) => ({ externalId: `bulk-${i}`, name: `Bulk ${i}`, properties: { plan: "bulk" } })));
-  const bulk = await previewGroup(project.slug, plan("bulk"));
-  expect("users" in bulk && [bulk.readers, bulk.users.length]).toEqual([51, 50]);
+  const bulk = await preview(plan("bulk"));
+  expect([bulk.readers, bulk.users.length]).toEqual([51, 50]);
   // Each with their id in the app, email and avatar.
-  expect((await previewGroup(project.slug, plan("free"))) as unknown).toEqual({ readers: 1, users: [{ id: expect.any(String), name: "Cy", email: null, avatar: null }] });
+  expect(await preview(plan("free"))).toEqual({ readers: 1, users: [{ id: expect.any(String), name: "Cy", email: null, avatar: null }] });
   // An uploaded avatar, saved without host or path, as a link (read past the client).
   const cy = await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, user: { name: "Cy" } }, select: { userId: true } });
   await prisma.user.update({ where: { id: cy.userId }, data: { image: savedPicture("m/cyface/96.webp") } });
-  expect(await previewGroup(project.slug, plan("free"))).toMatchObject({ users: [{ avatar: lastingMediaUrl("m/cyface/96.webp") }] });
-  expect(await previewGroup(project.slug, [{ property: "plan", op: "is", value: "" }])).toEqual({ error: "A condition needs a value" });
+  expect(await preview(plan("free"))).toMatchObject({ users: [{ avatar: lastingMediaUrl("m/cyface/96.webp") }] });
+  await expect(preview([{ property: "plan", op: "is", value: "" }])).rejects.toMatchObject({ code: "BAD_REQUEST", message: "A condition needs a value" });
+});
+
+test("a group as large as one can be previews: its conditions go in the request's body, not a URL that can't carry them", async () => {
+  // Ten conditions of fifty 200-character values: about 100 KB of conditions, past any URL's limit.
+  const conditions = Array.from({ length: 10 }, (_, i) => ({
+    property: `p${i}`,
+    op: "is_any_of" as const,
+    value: Array.from({ length: 50 }, (_, j) => `${i}-${j}-`.padEnd(200, "x")),
+  }));
+  expect(await (await callerAs(owner)).groups.preview({ project: project.slug, conditions })).toEqual({ readers: 0, users: [] });
+  expect(previewGroup.method).toBe("POST");
 });
 
 test("the dialog's suggested values: what the project's users have for a property, the most common first, as conditions compare them", async () => {
@@ -250,8 +259,8 @@ test("the dialog's suggested values: what the project's users have for a propert
   await ssoReader("Dee", { plan: "enterprise" });
   // Another project's users have their own.
   await ssoReader("Gus", { plan: "gold" }, (await createProject(owner)).id);
-  actAs(owner);
-  const values = async (property: string) => suggestValues(project.slug, property);
+  const caller = await callerAs(owner);
+  const values = (property: string) => caller.groups.values({ project: project.slug, property });
   // The most common first, then A to Z.
   expect(await values("plan")).toEqual({ values: ["pro", "enterprise", "free"] });
   // Numbers and booleans as text; a list's items each.
@@ -265,11 +274,10 @@ test("the dialog's suggested values: what the project's users have for a propert
   expect(await values("toString")).toEqual({ values: [] });
   // At most 50.
   await syncUsers(project.id, Array.from({ length: 60 }, (_, i) => ({ externalId: `bulk-${i}`, name: `Bulk ${i}`, properties: { code: `c${i}` } })));
-  expect((await values("code")) as { values: string[] }).toMatchObject({ values: expect.arrayContaining(["c0"]) });
-  expect(((await values("code")) as { values: string[] }).values).toHaveLength(50);
+  expect(await values("code")).toMatchObject({ values: expect.arrayContaining(["c0"]) });
+  expect((await values("code")).values).toHaveLength(50);
   // Only owners and admins, like the preview.
-  actAs(await addMember(project.id, "MEMBER"));
-  expect(await values("plan")).toEqual({ error: "Only project owners and admins can change the groups" });
+  await expect((await callerAs(await addMember(project.id, "MEMBER"))).groups.values({ project: project.slug, property: "plan" })).rejects.toMatchObject({ code: "FORBIDDEN" });
 });
 
 /** Back to before 20261023160000_groups_from_properties: without the triggers that keep the old columns in step. */
