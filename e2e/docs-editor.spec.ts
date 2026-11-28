@@ -547,17 +547,11 @@ test("table and code context controls remain reachable on small laptops and phon
     const formatting = team.getByRole("toolbar", { name: "Formatting", exact: true });
     await article.click();
     await expect(article).toBeFocused();
-    await team.keyboard.press("ControlOrMeta+Home");
-    // Wait for ProseMirror to consume Home's native selectionchange before extending it:
-    // its delayed focus correction can otherwise restore the old caret over the new selection.
-    await expect.poll(() => article.evaluate((element) => {
-      const { selection } = (element as unknown as { editor: { state: { selection: { from: number; empty: boolean } } } }).editor.state;
-      return selection.from === 1 && selection.empty;
-    })).toBe(true);
-    await team.keyboard.press("ControlOrMeta+Shift+ArrowRight");
-    await expect.poll(() => article.evaluate(() => window.getSelection()?.toString())).toBe("Owners");
+    // Selected with the editor's own Select all, not the browser's (a Ctrl+Home, Shift+arrows): ProseMirror, just after
+    // it takes the focus, puts back the caret it last read over a browser selection it hasn't read yet.
+    await article.press("ControlOrMeta+a");
     await expect(team.getByRole("toolbar", { name: "Text selection", exact: true })).toBeVisible();
-    await team.keyboard.press("ArrowRight");
+    // The table in its place (only in the editor: nothing's saved).
     await formatting.getByRole("button", { name: "Insert" }).click();
     await team.getByRole("menuitem", { name: "Table", exact: true }).click();
     await expect(formatting.getByRole("group", { name: "Table", exact: true })).toBeVisible();

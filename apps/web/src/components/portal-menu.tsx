@@ -7,7 +7,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { createContext, type MouseEvent, type ReactNode, useContext, useEffect, useState } from "react";
 
 import { usePortalHref, usePortalPath } from "@/components/portal-base";
-import { feedbackHref, PORTAL_PARTS } from "@/components/portal-nav";
+import { feedbackHref, PORTAL_PARTS, useNewChangelog } from "@/components/portal-nav";
 import { LanguageList } from "@/components/portal-language";
 import { PortalLogo, usePortalLook, useTeamLanguage } from "@/components/portal-look";
 import { Button } from "@/components/ui/button";
@@ -88,6 +88,7 @@ export function PortalMenu({
   const lang = useLocale();
   const [open, setOpen] = useState(false);
   const path = usePortalPath();
+  const isNew = useNewChangelog(newChangelog);
   const at = usePortalHref();
   const { headerLinks } = usePortalLook();
   const page = useContext(PartContext)?.part ?? null;
@@ -168,7 +169,7 @@ export function PortalMenu({
                     )}
                   >
                     {t(key)}
-                    {key === "changelog" && newChangelog && !active && (
+                    {key === "changelog" && isNew && !active && (
                       <span className="ml-2 inline-block size-2 rounded-full bg-unread align-middle">
                         <span className="sr-only">{t("new")}</span>
                       </span>

@@ -12,6 +12,10 @@ import { actAs, createProject, signUp } from "@/test/helpers";
 import { markChangelogSeen } from "./changelog-seen";
 import { hasUnseenAnnouncement } from "./operations/changelog-seen";
 
+// The page reloading after an action (refresh), watched.
+const page = vi.hoisted(() => ({ refresh: vi.fn() }));
+vi.mock("next/cache", () => ({ refresh: page.refresh, revalidatePath: () => {} }));
+
 afterEach(() => vi.unstubAllEnvs());
 
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -128,8 +132,11 @@ test("on the portal, a signed-in user who views the changelog has seen it: the n
   const entry = await announce(5, 3);
   expect(await hasUnseenAnnouncement(project.id, ada.id, null)).toBe(true);
   actAs(ada);
+  page.refresh.mockClear();
   expect(await markChangelogSeen(project.slug, entry.publishedAt!.toISOString())).toEqual({});
   expect(await hasUnseenAnnouncement(project.id, ada.id, null)).toBe(false);
+  // Sent as the page loads, it doesn't reload the page: a reload while a slow device hydrates it doubles its head's tags.
+  expect(page.refresh).not.toHaveBeenCalled();
   // A newer announcement is new again.
   await announce(0, 4);
   expect(await hasUnseenAnnouncement(project.id, ada.id, null)).toBe(true);

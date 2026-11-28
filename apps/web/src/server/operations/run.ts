@@ -77,13 +77,15 @@ async function asUser(
 /**
  * For the app's server actions anyone may take in a project (posting, commenting):
  * the signed-in user must be allowed to act there (users from another project's
- * SSO aren't). `project` finds the project from the action's arguments.
+ * SSO aren't). `project` finds the project from the action's arguments. Done, the
+ * page refreshes, unless `refresh` is false (nothing on it changes).
  */
 export async function asAnyone(
   signedOut: string,
   notFound: string,
   project: () => Promise<{ id: string } | null>,
   fn: (context: Context) => Promise<unknown>,
+  { refresh: refreshes = true } = {},
 ): Promise<{ error?: string }> {
   const session = await getSession();
   if (!session) {
@@ -101,7 +103,9 @@ export async function asAnyone(
     }
     throw error;
   }
-  refresh();
+  if (refreshes) {
+    refresh();
+  }
   return {};
 }
 

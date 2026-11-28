@@ -4,8 +4,9 @@ import { LockIcon } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { CHANGELOG_SEEN } from "@/components/changelog-seen";
 import { DocsSearchBox } from "@/components/docs-search-box";
 import { usePortalHref, usePortalPath } from "@/components/portal-base";
 import { usePortalNotFound } from "@/components/portal-menu";
@@ -35,6 +36,25 @@ const onChangelogList = (path: string) => /^\/changelog(\/page\/\d+)?$/.test(pat
 
 type Board = { slug: string; name: string };
 
+/**
+ * Whether Changelog says "New": the layout's answer (`newChangelog`), until this visit records the changelog seen
+ * (ChangelogSeen), which doesn't refresh the page. A new answer from the layout (a refresh) counts again.
+ */
+export function useNewChangelog(newChangelog: boolean) {
+  const [seen, setSeen] = useState(false);
+  const [answer, setAnswer] = useState(newChangelog);
+  if (answer !== newChangelog) {
+    setAnswer(newChangelog);
+    setSeen(false);
+  }
+  useEffect(() => {
+    const recorded = () => setSeen(true);
+    window.addEventListener(CHANGELOG_SEEN, recorded);
+    return () => window.removeEventListener(CHANGELOG_SEEN, recorded);
+  }, []);
+  return newChangelog && !seen;
+}
+
 /** Where the header's Feedback goes: the boards' overview, or with one board, that board. */
 export const feedbackHref = (boards: Board[]) => (boards.length === 1 ? boardPath(boards[0]!) : "/feedback");
 
@@ -46,7 +66,8 @@ export const feedbackHref = (boards: Board[]) => (boards.length === 1 ? boardPat
 export function PortalParts({ boards, newChangelog = false }: { boards: Board[]; newChangelog?: boolean }) {
   const path = usePortalPath();
   const at = usePortalHref();
-  const nav = useScrollingRow(path, newChangelog);
+  const isNew = useNewChangelog(newChangelog);
+  const nav = useScrollingRow(path, isNew);
   const notFound = usePortalNotFound();
   const t = useTranslations("header");
   return (
@@ -83,7 +104,7 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
           >
             {t(key)}
             {/* Not on the changelog itself: being there is seeing it (recorded a moment later). */}
-            {key === "changelog" && newChangelog && !active && (
+            {key === "changelog" && isNew && !active && (
               <span className="ml-1.5 inline-block size-2 rounded-full bg-unread align-middle">
                 <span className="sr-only">{t("new")}</span>
               </span>

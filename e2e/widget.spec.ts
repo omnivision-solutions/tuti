@@ -7,7 +7,7 @@ import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
-import { apiFor, createApiKey, createProject, expectMoreView, openPersonDetails, newPerson, png, postFeedback, signInWithPassword, signUp } from "./helpers";
+import { apiFor, createApiKey, createProject, expectMoreView, openPersonDetails, newPerson, png, postFeedback, replaceText, signInWithPassword, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 import { latestEmailTo, linkIn } from "./mail";
 import { heldModelReply, modelRequests, nextDecision, nextModelReply, releaseModelReply } from "./model";
@@ -858,14 +858,6 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   await laptop.context().close();
 });
 
-/** Replaces an editor's text, again if it was added to instead (the editor still loading the comment as it was typed in). */
-async function replaceText(editor: Locator, text: string) {
-  await expect(async () => {
-    await editor.fill(text);
-    await expect(editor).toHaveText(text, { timeout: 1000 });
-  }).toPass();
-}
-
 test("someone a customer's site signs in comments on an update in the widget, edits and deletes their own; signed out, it says how to sign in", async ({ browser }, testInfo) => {
   test.setTimeout(120_000);
   const checkpoint = checkpoints(testInfo);
@@ -1040,7 +1032,7 @@ test("someone a customer's site signs in comments on an update in the widget, ed
   // An edit they'd left open goes too: what they typed isn't left for whoever's next.
   await own.getByRole("button", { name: "Edit your comment" }).click();
   await expect(comments.getByRole("textbox", { name: "Edit your comment" })).toHaveText("Works with all my calendars.");
-  await comments.getByRole("textbox", { name: "Edit your comment" }).fill("Half-typed when signed out");
+  await replaceText(comments.getByRole("textbox", { name: "Edit your comment" }), "Half-typed when signed out");
   await sam.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => null): void } }).Tuti.identify(() => null));
   await expect.poll(() => signingOut).toBe(true);
   await expect(comments.getByRole("textbox", { name: /comment/i })).toHaveCount(0);
@@ -1534,12 +1526,13 @@ test("someone signed in on the portal opens What's new in its widget: what's new
   await ada.goto(sitePage(`${slug}.localhost`, slug));
   await ada.getByRole("button", { name: "Feedback, new updates" }).click();
   const widget = ada.frameLocator('iframe[title="Feedback"]');
+  // Her visit is recorded on the server once What's new shows (`markChangelogSeen(slug, at)`). Still unread for the rest
+  // of this visit: that time is stored, not shown.
+  const recorded = ada.waitForResponse((response) => !!response.request().headers()["next-action"] && /^\["[^"]+","\d{4}-/.test(response.request().postData() ?? ""));
   await widget.getByRole("link", { name: /^What's new/ }).click();
   const unread = widget.getByRole("article", { name: "Calendar sync is here" }).getByText("Unread");
   await expect(unread).toBeAttached();
-  // Her visit is recorded on the server once What's new shows, which refreshes the panel: the list is rendered again
-  // with the time she has now seen up to. Still unread for the rest of this visit: that time is stored, not shown.
-  await expect(widget.locator("[data-seen]")).toHaveAttribute("data-seen", /^\d{4}-/);
+  await recorded;
   await expect(unread).toHaveCount(1);
   await checkpoint(ada, "widget-whats-new-portal-session");
   // She reacts as herself, and after a reload it's still hers.
@@ -1562,7 +1555,7 @@ test("someone signed in on the portal opens What's new in its widget: what's new
   await expect(comments.getByRole("listitem").filter({ hasText: "Thanks for reading!" }).getByRole("button", { name: /Edit|Delete/ })).toHaveCount(0);
   await hers.getByRole("button", { name: "Edit your comment" }).click();
   await expect(comments.getByRole("textbox", { name: "Edit your comment" })).toHaveText("Syncs my phone too.");
-  await comments.getByRole("textbox", { name: "Edit your comment" }).fill("Syncs my phone and tablet too.");
+  await replaceText(comments.getByRole("textbox", { name: "Edit your comment" }), "Syncs my phone and tablet too.");
   await comments.getByRole("button", { name: "Save" }).click();
   await expect(hers).toHaveCount(0);
   const edited = comments.getByRole("listitem").filter({ hasText: "Syncs my phone and tablet too." });

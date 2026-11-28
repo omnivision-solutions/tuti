@@ -261,3 +261,16 @@ export async function holdActions(page: Page) {
     await page.unroute("**/*", handler);
   };
 }
+
+/**
+ * Replaces a rich text editor's text once Edit has put the keyboard in it: before then, the caret the editor puts at the
+ * text's end as it starts would land on what's typed. Selected with the editor's own Select all, not the browser's
+ * (fill's): ProseMirror, just after it takes the focus, puts back the caret it last read over a browser selection it
+ * hasn't read yet.
+ */
+export async function replaceText(editor: Locator, text: string) {
+  await expect(editor).toBeFocused();
+  await editor.press("ControlOrMeta+a");
+  await editor.page().keyboard.insertText(text);
+  await expect(editor).toHaveText(text);
+}
