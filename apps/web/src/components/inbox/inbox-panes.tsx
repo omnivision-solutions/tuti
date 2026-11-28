@@ -21,7 +21,6 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { initial, longDuration, replyTime, shortDuration, timeAgo } from "@/lib/format";
 import { INBOX_VIEWS, type InboxView, MAX_SEARCH_LENGTH } from "@/server/operations/conversations";
-import { MAX_INBOX_PAGES } from "@/server/operations/inbox";
 import { serverCaller } from "@/server/trpc/server";
 
 /** The inbox's views (INBOX_VIEWS: what needs an answer first, then the rest; conversations.views lists the same), and what each says with nothing in it. */
@@ -58,7 +57,7 @@ export function inboxView(param: string | string[] | undefined): View {
 /** How many pages a `?page=` (or `?messages=`) asks for: 1 for none, or one that isn't a count. */
 export function inboxPages(param: string | string[] | undefined) {
   const pages = Number(param);
-  return Number.isSafeInteger(pages) && pages > 1 ? Math.min(pages, MAX_INBOX_PAGES) : 1;
+  return Number.isSafeInteger(pages) && pages > 1 ? pages : 1;
 }
 
 /** The search a `?q=` asks for: its text, as long as a search takes; "" for none. */

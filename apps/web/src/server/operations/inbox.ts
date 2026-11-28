@@ -23,9 +23,7 @@ import {
 import { defineOperation } from "./define";
 
 /** The list shows this many conversations, and this many more with each "Load more" (`?page=`). */
-export const INBOX_PER_PAGE = 100;
-/** The most pages one list loads. */
-export const MAX_INBOX_PAGES = 100;
+const INBOX_PER_PAGE = 100;
 
 const LISTED = {
   number: true,
@@ -64,7 +62,7 @@ export const getInboxList = defineOperation({
   input: z.object({
     view: z.enum(VIEW_NAMES).default("open"),
     q: z.string().trim().max(MAX_SEARCH_LENGTH).default(""),
-    pages: z.number().int().min(1).max(MAX_INBOX_PAGES).default(1),
+    pages: z.number().int().min(1).default(1),
     overview: z.boolean().default(false),
   }),
   output: z.object({
