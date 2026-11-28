@@ -3,7 +3,7 @@
 import type { PostStatus, PostVisibility } from "@tuti/db";
 import { ChevronDownIcon, ChevronUpIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { createContext, type ReactNode, use, useEffect, useRef, useState, useTransition } from "react";
+import { createContext, type ReactNode, type TransitionStartFunction, use, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { STICKY_PANE_HEADER } from "@/components/pane";
@@ -38,7 +38,7 @@ const Selection = createContext<{
   toggle: (post: Picked, on: boolean) => void;
   clear: () => void;
   pending: boolean;
-  startTransition: (run: () => Promise<void>) => void;
+  startTransition: TransitionStartFunction;
 } | null>(null);
 
 const useSelection = () => {
@@ -283,7 +283,9 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
         toast.error(`${posts.length - failed.length} of ${posts.length} done. ${failed.join(" ")}`);
       }
       clear();
-      router.refresh();
+      // In this action's transition (after an await, React's own updates aren't, unless started again): the bar stays
+      // busy till the list shows what was done.
+      startTransition(() => router.refresh());
     });
 
   const setStatus = (status: PostStatus) =>
