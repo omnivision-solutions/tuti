@@ -13,7 +13,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { safeRedirectPath } from "@/lib/redirects";
 import { splitLanguage } from "@/lib/language-addresses";
-import { canReadPortal, invitedReader } from "@/server/portal-access";
+import { canReadPortal, invitedReader } from "@/server/auth/portal-readers";
 import { getSession } from "@/server/session";
 import { portalLinks } from "@/server/portal-base";
 import { PRIVATE_PAGE } from "@/server/portal-metadata";

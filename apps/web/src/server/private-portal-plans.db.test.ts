@@ -11,7 +11,8 @@ import { createArticle } from "./operations/docs";
 import { createGroup, deleteGroup, updateGroup } from "./operations/groups";
 import { addPortalReaders, updatePortal } from "./operations/portal";
 import { call } from "./operations/run";
-import { canReadPortal, readerOf } from "./portal-access";
+import { readerOf } from "./portal-access";
+import { canReadPortal } from "@/server/auth/portal-readers";
 import { upsertProjectUser } from "./project-users";
 
 /**

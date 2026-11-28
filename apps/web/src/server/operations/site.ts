@@ -9,7 +9,7 @@ import { portalUrl } from "@/lib/hosts";
 import { ASSET_PATH } from "@/lib/portal-base";
 import { normalizeSiteUrl } from "@/lib/site-mounts";
 
-import { forgetCustomDomain } from "../custom-domains";
+import { CHECK_PATH, forgetCustomDomain } from "../custom-domains";
 import { defineOperation, OperationError } from "./define";
 import { lockOwnAddress } from "./own-address";
 import { requirePlan } from "./plan";
@@ -20,9 +20,6 @@ import { projectSlug } from "./read";
  * address, makes their site forward that path to the portal's Tuti address, path and all, and
  * checks it; once verified, the portal answers there with the path on every link (proxy.ts).
  */
-
-/** Where the site's check asks for the token, under the path (proxy.ts answers it). */
-export const CHECK_PATH = "/.well-known/tuti-site";
 
 type Mount = { origin: string; path: string; verificationToken: string; verifiedAt: Date | null };
 const mountSelect = { origin: true, path: true, verificationToken: true, verifiedAt: true } as const;
@@ -42,15 +39,6 @@ const siteView = (mount: Mount, slug: string) => ({
 export async function siteMountView(projectId: string) {
   const mount = await prisma.siteMount.findUnique({ where: { projectId }, select: mountSelect });
   return mount && siteView(mount, await projectSlug(projectId));
-}
-
-/**
- * What the portal's Tuti address answers at <path>/.well-known/tuti-site, for `slug`'s site mount at
- * `path` (verified or not); without `path`, at /_tuti/.well-known/tuti-site, for its mount wherever it is.
- */
-export async function siteCheckToken(slug: string, path?: string): Promise<string | null> {
-  const mount = await prisma.siteMount.findFirst({ where: { project: { slug }, ...(path && { path }) }, select: { verificationToken: true } });
-  return mount && `tuti-site=${mount.verificationToken}`;
 }
 
 /** The portal on the team's site, as siteView makes it. */

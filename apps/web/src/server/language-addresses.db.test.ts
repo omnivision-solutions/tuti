@@ -16,7 +16,7 @@ import { portalLanguages } from "./language-addresses";
 import { getLanguages, updateLanguages } from "./operations/languages";
 import { createRedirect } from "./operations/redirects";
 import { call } from "./operations/run";
-import { PREVIEW_READER_COOKIE } from "./portal-access";
+import { PREVIEW_READER_COOKIE } from "@/server/auth/portal-readers";
 import { portalHref, portalLinkBase, portalLinks } from "./portal-base";
 
 /** Language addresses (docs/plan.md, Languages: L3): /de/… on a portal with German live, read from the database. */

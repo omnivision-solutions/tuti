@@ -9,7 +9,8 @@ import { entryLanguageAsked, publishedEntries } from "@/server/changelog-queries
 import { portalAddress } from "@/server/custom-domains";
 import { type ApiReferencePage, apiReferencePage } from "@/server/api-reference-queries";
 import { articleCount, type DocsPage, docsHome, docsPage, type TabLanding } from "@/server/docs-queries";
-import { canReadPortal, currentPostViewer, currentReader, mayRead, slugReader } from "@/server/portal-access";
+import { currentPostViewer, currentReader, mayRead, slugReader } from "@/server/portal-access";
+import { canReadPortal } from "@/server/auth/portal-readers";
 import { portalSite } from "@/server/portal-metadata";
 import { canSeePost, seesBoard, visiblePosts } from "@/server/post-visibility";
 import { type ShareCard, shareCard } from "@/server/share-card";

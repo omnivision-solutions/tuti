@@ -91,10 +91,11 @@ const EXEMPT = [
   { files: /^src\/app\/api\/live\/route\.ts$/, imports: /^server\/(api-auth|live|session|trpc\/context)\.ts$/ },
   // Signing in itself, built from server/auth: Better Auth's handler and the hand-offs on both sides.
   { files: /^src\/app\/(api\/auth\/|portal\/\[project\]\/\(site\)\/(continue|sso)\/route\.ts$|app\/\(account-pages\)\/auth\/continue\/page\.tsx$)/, imports: /^server\/auth\// },
-  // proxy.ts: its gate in front of a private portal (the reader and team function) and its routing reads.
+  // proxy.ts: its gate in front of a private portal (the reader and team function, server/auth/portal-readers.ts) and
+  // its routing reads.
   {
     files: /^src\/proxy\.ts$/,
-    imports: /^server\/(custom-domains|docs-queries|portal-access|portal-redirects|language-addresses|auth\/preview-session|operations\/site)\.ts$/,
+    imports: /^server\/(custom-domains|docs-queries|portal-redirects|language-addresses|auth\/portal-readers|auth\/preview-session)\.ts$/,
   },
 ];
 

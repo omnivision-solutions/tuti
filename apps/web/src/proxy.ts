@@ -5,17 +5,16 @@ import { appUrl, portalUrl } from "@/lib/hosts";
 import { ASSET_PATH, BASE_HEADER, BASE_PATTERN, CUSTOMIZE, PREVIEW } from "@/lib/portal-base";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { isUsableSlug, SLUG_PATTERN } from "@/lib/project-slugs";
-import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
+import { CHECK_PATH, portalAddress, requestTarget, siteCheckToken, siteMount } from "@/server/custom-domains";
 import { isArticleSlug } from "@/server/docs-queries";
 import { destinationKey, redirectKey, redirectLocation } from "@/lib/portal-redirects";
 import { PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/server/auth/preview-session";
-import { PREVIEW_READER_COOKIE, portalVisitor, previewTokenFor, teamPreview } from "@/server/portal-access";
+import { PREVIEW_READER_COOKIE, portalVisitor, previewTokenFor, teamPreview } from "@/server/auth/portal-readers";
 import { redirectFor } from "@/server/portal-redirects";
 import { LANGUAGE, languagePrefix, ownAddress, preferredLanguage, prefixedTarget, splitLanguage, withLanguage } from "@/lib/language-addresses";
 import { LANGUAGE_COOKIE } from "@/lib/reader-language";
 import { apiReferenceSlugs, inDefaultLanguage, portalLanguages } from "@/server/language-addresses";
 import type { Language } from "@tuti/shared/languages";
-import { CHECK_PATH, siteCheckToken } from "@/server/operations/site";
 
 /**
  * Routes requests by host:
