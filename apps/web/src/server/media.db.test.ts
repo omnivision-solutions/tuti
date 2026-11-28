@@ -227,18 +227,63 @@ describe("finishing", () => {
     expect(await uploadStatus(created.mediaId)).toEqual({ status: "FAILED" });
   });
 
-  test("two finishes at once process the image once, and neither undoes the other", async () => {
+  // Both read the upload as waiting before either claims it: each held where storage is asked (HEAD) till the other is too.
+  test("two finishes at once process the image once", async () => {
     const file = await photo(100, 100);
     const created = (await createUpload(project.slug, { type: "image/jpeg", size: file.length })) as { mediaId: string; uploadUrl: string };
     await fetch(created.uploadUrl, { method: "PUT", body: new Uint8Array(file) });
+    let arrived = 0;
+    let bothIn!: () => void;
+    const together = new Promise<void>((resolve) => (bothIn = resolve));
+    s3.beforeHead = async (key) => {
+      if (key === originalKey(created.mediaId) && ++arrived === 2) {
+        bothIn();
+      }
+      await together;
+    };
     jobs.enqueue.mockClear();
     const results = await Promise.all([finishUpload(created.mediaId), finishUpload(created.mediaId)]);
-    // The second finds it claimed (done) or already past waiting (not found), never an error of its own.
-    for (const result of results) {
-      expect([{}, { error: "Upload not found" }]).toContainEqual(result);
-    }
+    s3.beforeHead = undefined;
+    expect(results).toEqual([{}, {}]);
     expect(jobs.enqueue.mock.calls.filter(([name]) => name === "imageUploaded")).toEqual([["imageUploaded", { mediaId: created.mediaId }]]);
     expect(await uploadStatus(created.mediaId)).toMatchObject({ status: "READY" });
+  });
+
+  test("a finish that lands after another found the upload wrong leaves it failed, and processes nothing", async () => {
+    const file = await photo(100, 100);
+    const created = (await createUpload(project.slug, { type: "image/jpeg", size: file.length })) as { mediaId: string; uploadUrl: string };
+    const key = originalKey(created.mediaId);
+    // Another size than declared: the first finish fails it.
+    await fetch(created.uploadUrl, { method: "PUT", body: new Uint8Array(Buffer.concat([file, file])) });
+    let arrived = 0;
+    let secondIn!: () => void;
+    let releaseSecond!: () => void;
+    const second = new Promise<void>((resolve) => (secondIn = resolve));
+    const released = new Promise<void>((resolve) => (releaseSecond = resolve));
+    s3.beforeHead = async (each) => {
+      if (each !== key) {
+        return;
+      }
+      if (++arrived === 1) {
+        await second;
+        return;
+      }
+      secondIn();
+      await released;
+    };
+    jobs.enqueue.mockClear();
+    const late = finishUpload(created.mediaId);
+    const first = finishUpload(created.mediaId);
+    const [one, other] = [first, late];
+    const done = await Promise.race([one.then(() => "first"), other.then(() => "late")]);
+    // Whichever asked storage first fails it; then the right file is there for the other, which read it as waiting.
+    expect(await (done === "first" ? one : other)).toEqual({ error: "The upload didn't match the file. Try again." });
+    s3.objects.set(key, { body: file, contentType: "image/jpeg" });
+    releaseSecond();
+    expect(await (done === "first" ? other : one)).toEqual({ error: "The upload didn't match the file. Try again." });
+    s3.beforeHead = undefined;
+    expect(await uploadStatus(created.mediaId)).toEqual({ status: "FAILED" });
+    expect(jobs.enqueue.mock.calls.filter(([name]) => name === "imageUploaded")).toEqual([]);
   });
 
   test("only the uploader can finish an upload or see its status", async () => {
