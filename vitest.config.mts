@@ -8,7 +8,7 @@ const liveTests = sources.map((pattern) => pattern.replace(".test.ts", ".live.te
 const unitTests = [...sources, "vitest.setup.test.ts", ".claude/skills/*/*.test.ts", ".github/scripts/*.test.ts", "infra/*/*.test.ts"];
 // Unit files share workers (isolate: false), which cuts the unit tests' time by about a third; a file that mocks a module gets a worker
 // of its own, or its mocks would stand in for the real module in the files after it.
-const mockingTests = globSync(unitTests, { exclude: [...dbTests, ...liveTests] }).filter((file) => /\bvi\.(mock|doMock)\(/.test(readFileSync(file, "utf8")));
+const mockingTests = globSync(unitTests, { exclude: [...dbTests, ...liveTests] }).filter((file) => /\bvi\s*\.\s*(mock|doMock)\b/.test(readFileSync(file, "utf8")));
 const unit = { setupFiles: ["./vitest.setup.ts", "./apps/web/src/test/next-intl-english.ts"] };
 
 export default defineConfig({
