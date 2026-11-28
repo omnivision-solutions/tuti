@@ -69,6 +69,10 @@ test("an upload's failure here is said in the page's language; the server's word
   vi.mocked(uploadImage).mockResolvedValueOnce({ error: "screen.png couldn't be used as an image", reason: "unusable" });
   await pick(form, png());
   await vi.waitFor(() => expect(alert(form)?.textContent).toBe("screen.png konnte nicht als Bild verwendet werden"));
+  vi.mocked(uploadImage).mockResolvedValueOnce({ error: "The image is taking too long. Try again.", reason: "tooLong" });
+  await pick(form, png());
+  await vi.waitFor(() => expect(alert(form)?.textContent).toBe(de.imageTooLong));
+  expect(alert(form)!.hasAttribute("lang")).toBe(false);
   vi.mocked(uploadImage).mockResolvedValueOnce({ error: "Images can be up to 10 MB." });
   await pick(form, png());
   await vi.waitFor(() => expect(alert(form)?.textContent).toBe("Images can be up to 10 MB."));
