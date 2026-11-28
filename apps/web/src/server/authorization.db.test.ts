@@ -65,7 +65,6 @@ import * as readerLanguage from "./reader-language";
 import * as rewrite from "./rewrite";
 import * as screenshots from "./screenshots";
 import * as signInLink from "./sign-in-link";
-import * as spamSettings from "./spam-settings";
 import * as similarPosts from "./similar-posts";
 import * as ssoSettings from "./sso-settings";
 import * as team from "./team";
@@ -128,7 +127,6 @@ const modules = {
   screenshots,
   "similar-posts": similarPosts,
   "sign-in-link": signInLink,
-  "spam-settings": spamSettings,
   "sso-settings": ssoSettings,
   team,
   webhooks,
@@ -750,14 +748,6 @@ const matrix: Matrix = {
       allowed: "public",
       call: () => passwordReset.setNewPassword(form({ token: "not-a-token", password: "a-new-password", confirm: "a-new-password" })),
     },
-  },
-  "spam-settings": {
-    addSpamRule: { allowed: "ADMIN", call: (slug) => spamSettings.addSpamRule(slug, { field: "subject_or_body", matcher: "contains", value: "facebook admin" }) },
-    removeSpamRule: { allowed: "ADMIN", takesIds: true, call: (slug, f) => spamSettings.removeSpamRule(slug, f.spamRuleId) },
-    allowSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.allowSpamSender(slug, "forms.example") },
-    removeSpamSender: { allowed: "ADMIN", call: (slug) => spamSettings.removeSpamSender(slug, "forms.example") },
-    setSpamGuidance: { allowed: "ADMIN", call: (slug) => spamSettings.setSpamGuidance(slug, "SEO pitches are spam") },
-    trySpam: { allowed: "ADMIN", call: (slug) => spamSettings.trySpam(slug, { from: "Kim <e2e-matrix-kim@example.com>", subject: "Hi", text: "Hello" }) },
   },
   "sso-settings": {
     rotateSsoSecret: { allowed: "ADMIN", call: (slug) => ssoSettings.rotateSsoSecret(slug) },
@@ -1501,6 +1491,10 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   "live.inbox": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.live.inbox({ project: slug }) },
   // What an Autopilot email's button acts on (the act route).
   "codeChanges.button": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.codeChanges.button({ project: slug, id: "none", actions: [] }) },
+  "spam.get": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.spam.get({ project: slug }) },
+  "spam.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.spam.update({ project: slug, addRules: [{ field: "subject_or_body", matcher: "contains", value: "facebook admin" }] }) },
+  "spam.try": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.spam.try({ project: slug, name: "Kim", sender: "e2e-matrix-kim@example.com", subject: "Hi", text: "Hello" }) },
+  "support.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.support.get({ project: slug }) },
   "team.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.team.list({ project: slug }) },
   "project.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.project.get({ project: slug }) },
   "project.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.project.update({ project: slug, name: "Renamed by the matrix" }) },

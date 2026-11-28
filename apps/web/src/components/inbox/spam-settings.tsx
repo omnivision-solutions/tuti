@@ -2,6 +2,7 @@
 
 import { MoreHorizontalIcon } from "lucide-react";
 import { type ReactNode, useActionState, useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { useCustomizeForm } from "@/components/customize-shell";
@@ -13,7 +14,9 @@ import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { errorMessage, useTRPCClient } from "@/components/trpc";
 import { keepingFields } from "@/lib/forms";
+import { parseFrom } from "@/lib/email-from";
 import {
   describeSpamRule,
   SPAM_RULE_AUDIENCE_KEYS,
@@ -29,8 +32,29 @@ import {
   spamRuleValue,
 } from "@/lib/spam-rules";
 import type { FormState } from "@/server/form-state";
-import type { SpamRuleRow, SpamSettings as Settings } from "@/server/operations/spam";
-import { addSpamRule, allowSpamSender, removeSpamRule, removeSpamSender, setSpamGuidance, type SpamTry, trySpam } from "@/server/spam-settings";
+import type { InputOf } from "@/server/operations/define";
+import type { SpamRuleRow, SpamSettings as Settings, updateSpamSettings } from "@/server/operations/spam";
+
+/**
+ * Saves a change to the spam filter (spam.update) and refreshes the page, whose rules and list are what's saved; a
+ * refusal as `{ error }`, the server's words.
+ */
+function useSpamUpdate(projectSlug: string) {
+  const trpc = useTRPCClient();
+  const router = useRouter();
+  return async (input: Omit<InputOf<typeof updateSpamSettings>, "project">): Promise<FormState> => {
+    try {
+      await trpc.spam.update.mutate({ project: projectSlug, ...input });
+    } catch (error) {
+      return { error: errorMessage(error) };
+    }
+    router.refresh();
+    return {};
+  };
+}
+
+/** What Try a message says: the filter's verdict, or why it couldn't try. */
+type SpamTry = { error?: string; spam?: boolean; aiCheck?: boolean; why?: string };
 
 const SENDER = "kim@acme.example or acme.example";
 const aboutSender = (entry: string) => (entry.includes("@") ? null : "and its subdomains");
@@ -69,6 +93,7 @@ export function SpamSettings({
 }) {
   // Decided once per visit: removing the last entry leaves the card, with its empty line and the keyboard's focus in it.
   const [showAllowed] = useState(settings.allowed.length > 0);
+  const update = useSpamUpdate(projectSlug);
   return (
     <>
       <BlockRules projectSlug={projectSlug} rules={settings.rules} maxValue={maxValue} />
@@ -84,8 +109,8 @@ export function SpamSettings({
           entries={settings.allowed}
           about={aboutSender}
           as={asSender}
-          add={(entry) => allowSpamSender(projectSlug, entry)}
-          remove={(entry) => removeSpamSender(projectSlug, entry)}
+          add={(entry) => update({ allow: [entry] })}
+          remove={(entry) => update({ remove: [entry] })}
         />
       )}
       {/* Only where the server has a model for the filter (spamSettings): elsewhere nothing would read it. */}
@@ -101,13 +126,14 @@ function BlockRules({ projectSlug, rules, maxValue }: { projectSlug: string; rul
   const [field, setField] = useState<SpamRuleField>("sender_domain");
   const [matcher, setMatcher] = useState<SpamRuleMatcher>("is");
   const [appliesTo, setAppliesTo] = useState<SpamRuleAudience>("everyone");
+  const update = useSpamUpdate(projectSlug);
   const [state, action, pending] = useActionState<FormState, FormData>(async (_prev, formData) => {
     const rule = { field, matcher, appliesTo, value: spamRuleValue(field, String(formData.get("value") ?? "")) };
     // Said here: the server takes one that's there already as done, and "Added" would be wrong.
     if (rules.some((other) => spamRuleKey(other) === spamRuleKey(rule))) {
       return { error: "That rule is already there" };
     }
-    const result = await addSpamRule(projectSlug, rule);
+    const result = await update({ addRules: [rule] });
     if (!result.error) {
       toast.success("Rule added");
       form.current?.reset();
@@ -190,7 +216,7 @@ function BlockRules({ projectSlug, rules, maxValue }: { projectSlug: string; rul
                 </>
               }
               removed="Rule removed"
-              remove={() => removeSpamRule(projectSlug, rule.id)}
+              remove={() => update({ removeRules: [rule.id] })}
             />
           ))}
         </ul>
@@ -350,9 +376,10 @@ function Entry({ entry, shown, removed, remove }: { entry: string; shown: ReactN
  * while it's empty: then the AI isn't asked.
  */
 function Guidance({ projectSlug, guidance, max }: { projectSlug: string; guidance: string; max: number }) {
+  const update = useSpamUpdate(projectSlug);
   const { state, pending, form } = useCustomizeForm({
     save: async (_prev, formData) => {
-      const result = await setSpamGuidance(projectSlug, String(formData.get("guidance") ?? ""));
+      const result = await update({ guidance: String(formData.get("guidance") ?? "") });
       if (!result.error) {
         toast.success("Guidance saved");
       }
@@ -396,11 +423,22 @@ function Guidance({ projectSlug, guidance, max }: { projectSlug: string; guidanc
  * address; To starts as the project's support address. Nothing is saved.
  */
 function TryMessage({ projectSlug, supportAddress }: { projectSlug: string; supportAddress: string }) {
-  const [state, action, pending] = useActionState<SpamTry, FormData>(
-    (_prev, formData) =>
-      trySpam(projectSlug, { from: String(formData.get("from") ?? ""), to: String(formData.get("to") ?? ""), subject: String(formData.get("subject") ?? ""), text: String(formData.get("text") ?? "") }),
-    {},
-  );
+  const trpc = useTRPCClient();
+  const [state, action, pending] = useActionState<SpamTry, FormData>(async (_prev, formData) => {
+    const to = String(formData.get("to") ?? "").trim();
+    try {
+      const { spam, aiCheck, why } = await trpc.spam.try.mutate({
+        project: projectSlug,
+        ...parseFrom(String(formData.get("from") ?? "")),
+        to: to ? [to] : [],
+        subject: String(formData.get("subject") ?? ""),
+        text: String(formData.get("text") ?? ""),
+      });
+      return { spam, aiCheck, why };
+    } catch (error) {
+      return { error: errorMessage(error) };
+    }
+  }, {});
   return (
     <SettingsCard title="Try a message" description="Nothing is sent or saved.">
       <form {...keepingFields(action)} className="flex flex-col divide-y">
