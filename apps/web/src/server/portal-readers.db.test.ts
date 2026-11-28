@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -189,4 +189,15 @@ test("a new reader's email is in their language while the portal serves it (an a
   const toOther = await mailbox.latestTo(other);
   expect(toOther.subject).toBe(`Olive Owner gave you access to ${project.name}`);
   expect(toOther.text).toContain(`http://${project.slug}.localhost:3100/sign-in`);
+});
+
+test("looking up a new reader's language failing is a failed email, never a failed add", async () => {
+  const ada = address();
+  const lookup = vi.spyOn(prisma.user, "findMany").mockRejectedValueOnce(new Error("connection lost"));
+  try {
+    expect(await call(addPortalReaders, as(), { emails: [ada] })).toEqual({ added: [ada], emailed: 0 });
+  } finally {
+    lookup.mockRestore();
+  }
+  expect(sentTo(ada)).toEqual([]);
 });

@@ -219,20 +219,22 @@ export const addPortalReaders = defineOperation({
         where: { id: actor.kind === "user" ? actor.userId : actor.createdById },
         select: { name: true, email: true },
       });
-      // Each in their language: one they chose on a portal (an account with that address) while this portal serves it,
-      // else the portal's default; its sign-in page at that language's address.
-      const [language, people] = await Promise.all([
-        readerEmailLanguage(projectId),
-        prisma.user.findMany({ where: { email: { in: toEmail, mode: "insensitive" } }, select: { email: true, language: true } }),
-      ]);
-      const chosen = new Map(people.map((person) => [person.email.toLowerCase(), person.language]));
       // Inside each send: setting up the project's sender or reading its brand failing is a failed email, never a failed add.
       // Both awaited together, so a failing brand is handled even when the sender failed first.
-      const setup = Promise.all([projectSender(projectId, inviter?.email), emailBrand(projectId)]);
+      // Each in their language: one they chose on a portal (an account with that address) while this portal serves it,
+      // else the portal's default; its sign-in page at that language's address.
+      const setup = Promise.all([
+        projectSender(projectId, inviter?.email),
+        emailBrand(projectId),
+        readerEmailLanguage(projectId),
+        prisma.user
+          .findMany({ where: { email: { in: toEmail, mode: "insensitive" } }, select: { email: true, language: true } })
+          .then((people) => new Map(people.map((person) => [person.email.toLowerCase(), person.language]))),
+      ]);
       // Never fails the add: they're readers either way, and the team can tell them.
       const sent = await Promise.allSettled(
         toEmail.map(async (email) => {
-          const [sender, brand] = await setup;
+          const [sender, brand, language, chosen] = await setup;
           const words = language(chosen.get(email.toLowerCase()) ?? null);
           const url = `${address}${words.prefix}/sign-in`;
           return sendEmail({ to: email, ...sender, ...portalReaderEmail({ ...brand, inviterName: inviter?.name ?? project.name, email, url, language: words.language }) });
