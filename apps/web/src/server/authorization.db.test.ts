@@ -1468,6 +1468,8 @@ const linkFirstPost = async (fixture: Fixture) => {
 const procedures: { [N in OperationName]?: ProcedureCase } = {
   "aiFirst.get": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.aiFirst.get({ project: slug }) },
   "aiFirst.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.aiFirst.update({ project: slug, widget: false, email: true, name: "Ada" }) },
+  "branding.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.branding.get({ project: slug }) },
+  "branding.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.branding.update({ project: slug, seo: { title: "Matrix" } }) },
   "changelog.update": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.changelog.update({ project: slug, number: 1, title: "Renamed by the matrix" }) },
   // Owners only (plans are off here, so every project has Advanced tuning).
   "codeChangesTuning.update": { allowed: "OWNER", scope: "write", call: (caller, slug) => caller.codeChangesTuning.update({ project: slug, "decide.rounds": 6 }) },
