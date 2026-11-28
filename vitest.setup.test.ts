@@ -29,6 +29,7 @@ test("a file's environment, globals, fake timers and spies don't reach the next 
   await vitest.close();
   expect(files).toEqual([
     ["vitest-setup-fixtures/1-leaves.fixture.ts", "pass"],
+    ["vitest-setup-fixtures/1b-fails-to-load.fixture.ts", "fail"],
     ["vitest-setup-fixtures/2-checks.fixture.ts", "pass"],
   ]);
 });
