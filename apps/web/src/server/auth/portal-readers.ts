@@ -103,15 +103,16 @@ export async function mayReadPortal(where: { id: string } | { slug: string }, cr
 }
 
 /**
- * For proxy.ts: a request to a portal, with its cookies (`preview`: its PREVIEW_READER_COOKIE). A
- * public portal (or a missing one) needs no session.
+ * For proxy.ts: a request to a portal, with its reader cookies (`preview`: PREVIEW_READER_COOKIE; `widgetReader`:
+ * WIDGET_READER_COOKIE, which a browser sends only inside the widget's frame on the customer's site). A public portal
+ * (or a missing one) needs no session.
  */
-export async function portalVisitor(slug: string, headers: Headers, preview?: string): Promise<"public" | "allowed" | "refused"> {
+export async function portalVisitor(slug: string, headers: Headers, { preview, widgetReader }: { preview?: string; widgetReader?: string } = {}): Promise<"public" | "allowed" | "refused"> {
   const session = async () => {
     const found = await sessionFrom(headers);
     return found && { userId: found.user.id, boundTo: found.session.boundTo ?? "" };
   };
-  return mayReadPortal({ slug }, { session, preview });
+  return mayReadPortal({ slug }, { session, preview, widgetReader });
 }
 
 /**

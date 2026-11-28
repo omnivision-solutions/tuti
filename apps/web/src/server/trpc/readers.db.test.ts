@@ -91,6 +91,10 @@ test("for the same session and preview cookie, a private portal's page through t
   expect(await answers(reader.cookie)).toEqual({ proxy: true, trpc: true });
   expect(await answers(preview)).toEqual({ proxy: true, trpc: true });
   expect(await answers(`${outsider.cookie}; ${preview}`)).toEqual({ proxy: true, trpc: true });
+  // The widget's reader cookie (sent only inside its frame on the customer's site): its person, a reader or not.
+  const widgetReader = (user: TestUser) => `${WIDGET_READER_COOKIE}=${encodeURIComponent(widgetToken(project.id, user.id))}`;
+  expect(await answers(widgetReader(reader))).toEqual({ proxy: true, trpc: true });
+  expect(await answers(widgetReader(outsider))).toEqual({ proxy: false, trpc: false });
   // A preview of someone no longer on the team reads nothing.
   await prisma.teamMember.deleteMany({ where: { projectId: project.id, userId: owner.id } });
   expect(await answers(preview)).toEqual({ proxy: false, trpc: false });
