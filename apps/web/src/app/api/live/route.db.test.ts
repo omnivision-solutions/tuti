@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { log } from "@tuti/shared";
 import { beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 import { auth } from "@/server/auth/auth";
@@ -200,4 +201,24 @@ test("a new slug doesn't end an open stream: its keepalive checks the project it
   await vi.advanceTimersByTimeAsync(KEEPALIVE_MS);
   expect(await app.next()).toBe(": ping");
   expect(await web.next()).toBe(": ping");
+});
+
+test("a keepalive's check that fails (the database unreachable) keeps the stream open; a refusal ends it", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  onTestFinished(() => void vi.useRealTimers());
+  onTestFinished(() => void vi.restoreAllMocks());
+  vi.spyOn(log, "error").mockImplementation(() => {});
+  const member = await addMember(project.id, "MEMBER");
+  const stream = await open({ token: `Bearer ${tokenOf(member)}` });
+  expect(await stream.next()).toBe(ready);
+
+  // Reading their membership fails inside the router: not a refusal, so the stream stays.
+  vi.spyOn(prisma.teamMember, "findUnique").mockRejectedValueOnce(new Error("connection reset"));
+  await vi.advanceTimersByTimeAsync(KEEPALIVE_MS);
+  expect(await stream.next()).toBe(": ping");
+
+  // The router refuses them (off the team): it ends.
+  await prisma.teamMember.delete({ where: { id: member.memberId } });
+  await vi.advanceTimersByTimeAsync(KEEPALIVE_MS);
+  expect(await stream.next()).toBeNull();
 });

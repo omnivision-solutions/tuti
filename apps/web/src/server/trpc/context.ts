@@ -123,10 +123,12 @@ export const teammateContext = (teammate: Teammate, slug: string): TrpcContext =
  * procedure refuses them once they've left the team, and a new slug doesn't end the stream.
  */
 export async function stillContext(who: Extract<Who, { kind: "session" }>, project: { id: string; slug: string }): Promise<TrpcContext | null> {
-  const [signedIn, member] = await Promise.all([
-    prisma.session.count({ where: { id: who.sessionId, expiresAt: { gt: new Date() } } }),
-    prisma.teamMember.findUnique({ where: { projectId_userId: { projectId: project.id, userId: who.userId } }, select: { role: true } }),
-  ]);
-  const membership = member && { projectId: project.id, role: member.role };
-  return signedIn ? { who, sameSite: true, memberships: new Map([[project.slug, Promise.resolve(membership)]]) } : null;
+  if (!(await prisma.session.count({ where: { id: who.sessionId, expiresAt: { gt: new Date() } } }))) {
+    return null;
+  }
+  // Read when the procedure asks (projectOf), so a failure to read it is the procedure's, never a refusal.
+  const membership = prisma.teamMember
+    .findUnique({ where: { projectId_userId: { projectId: project.id, userId: who.userId } }, select: { role: true } })
+    .then((member) => member && { projectId: project.id, role: member.role });
+  return { who, sameSite: true, memberships: new Map([[project.slug, membership]]) };
 }
