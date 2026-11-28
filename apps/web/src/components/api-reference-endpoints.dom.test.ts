@@ -46,6 +46,17 @@ test("a group switched off stays off, its endpoints greyed, between its save's a
   expect(operation.getAttribute("aria-disabled")).toBeNull();
 });
 
+test("the first page after the save is what the switch shows, though a teammate switched it back meanwhile", async () => {
+  setApiReferenceShown.mockResolvedValue({});
+  const { group, render } = await endpoints([admin(true)]);
+  await act(async () => group.click());
+  await vi.waitFor(() => expect(setApiReferenceShown).toHaveBeenCalled());
+  await act(async () => {});
+  expect(group.checked).toBe(false);
+  await render([admin(true)]);
+  expect(group.checked).toBe(true);
+});
+
 test("a refused save puts the switch back as it was", async () => {
   setApiReferenceShown.mockResolvedValue({ error: "Couldn't save that. Try again." });
   const { group, operation } = await endpoints([admin(true)]);

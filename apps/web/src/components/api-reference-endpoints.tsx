@@ -255,17 +255,25 @@ export function ApiReferenceEndpoints({
   /** How many things the reader couldn't read. */
   unreadable: number;
 }) {
-  // Switches clicked, over what the page was given, until the page has them as saved. A save answers before the page it
-  // brings is drawn: dropped then, a switch would show the old page meanwhile (a group back on, its switches live).
-  const [clicked, setClicked] = useState<Record<string, { on: boolean; saved?: boolean }>>({});
+  // Switches clicked, over what the page was given, until a page drawn after their save. A save answers before the page
+  // it brings is drawn: dropped then, a switch would show the old page meanwhile (a group back on, its switches live).
+  // `page`: the page drawn as the save answered; the next one is as saved (or as a teammate changed it since).
+  const [clicked, setClicked] = useState<Record<string, { on: boolean; saved?: boolean; page?: Group[] }>>({});
   const [query, setQuery] = useState("");
   const onPage = new Map<string, boolean>([
     ...groups.map((group) => [`group ${group.key}`, group.onHelpCenter] as const),
     ...operations.map((operation) => [`operation ${operation.key}`, !operation.hidden] as const),
   ]);
-  const caughtUp = Object.keys(clicked).filter((id) => clicked[id]?.saved && (onPage.get(id) ?? clicked[id].on) === clicked[id].on);
-  if (caughtUp.length > 0) {
-    setClicked((now) => Object.fromEntries(Object.entries(now).filter(([id]) => !caughtUp.includes(id))));
+  const saved = Object.entries(clicked).filter(([, choice]) => choice.saved);
+  const caughtUp = saved.filter(([id, choice]) => (choice.page && choice.page !== groups) || (onPage.get(id) ?? choice.on) === choice.on).map(([id]) => id);
+  if (caughtUp.length > 0 || saved.some(([, choice]) => !choice.page)) {
+    setClicked((now) =>
+      Object.fromEntries(
+        Object.entries(now)
+          .filter(([id]) => !caughtUp.includes(id))
+          .map(([id, choice]) => [id, choice.saved && !choice.page ? { ...choice, page: groups } : choice]),
+      ),
+    );
   }
   const groupOn = (group: Group) => clicked[`group ${group.key}`]?.on ?? group.onHelpCenter;
   const offGroups = new Set(groups.filter((group) => !groupOn(group)).map((group) => group.key));
