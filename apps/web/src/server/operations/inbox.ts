@@ -8,6 +8,7 @@ import { isAdminRole } from "@/lib/roles";
 import { conversationReads } from "../conversation-reads";
 import { conversationCompanies } from "../inbox-companies";
 import { inboxStats } from "../inbox-stats";
+import { searchPosts } from "../post-lists";
 import {
   conversationPerson,
   conversationsMatching,
@@ -179,4 +180,20 @@ export const setNewConversationEmails = defineOperation({
     await prisma.teamMember.update({ where: { projectId_userId: { projectId, userId: teamMemberId(actor) } }, data: { emailNewConversations: on } });
     return { on };
   },
+});
+
+/** "Link a post…" beside a conversation: the project's posts for what's typed (searchPosts: a number, or words of the title). */
+export const findPostsToLink = defineOperation({
+  name: "inbox.findPosts",
+  title: "Find posts to link",
+  summary: "The project's posts matching what's typed in Link a post.",
+  method: "GET",
+  internal: true,
+  scope: "read",
+  access: "team",
+  input: z.object({ q: z.string().max(200).default("") }),
+  output: z.object({ posts: z.array(z.object({ id: z.string(), number: z.number().int(), title: z.string(), voteCount: z.number().int() })) }),
+  run: async ({ projectId }, { q }) => ({
+    posts: (await searchPosts(projectId, q)).map(({ id, number, title, voteCount }) => ({ id, number, title, voteCount })),
+  }),
 });

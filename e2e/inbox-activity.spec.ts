@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { expect, test } from "./fixtures";
-import { apiFor, createProject, signUp } from "./helpers";
+import { apiFor, createProject, signUp, trpcRequest } from "./helpers";
 
 // Wide enough for the details beside the conversation.
 test.use({ viewport: { width: 1440, height: 900 } });
@@ -52,7 +52,9 @@ test("a conversation's Activity: its workflows' run, an API key's and a teammate
   await expect(rows).toHaveCount(5);
 
   // The filters: what the team did, and what ran on its own.
+  const reading = trpcRequest(owner, "conversations.activity");
   await activity.getByRole("button", { name: "People" }).click();
+  await reading;
   await expect(activity.getByRole("button", { name: "People" })).toHaveAttribute("aria-pressed", "true");
   await expect(rows).toHaveCount(3);
   await expect(rows.filter({ hasText: "A conversation starts ran" })).toHaveCount(0);
@@ -94,7 +96,9 @@ test("a conversation's Activity: its workflows' run, an API key's and a teammate
   await owner.goto(`/app/${slug}/inbox/1`);
   await expect(rows).toHaveCount(20);
   await expect(rows.filter({ hasText: "A conversation starts ran" })).toHaveCount(0);
+  const earlier = trpcRequest(owner, "conversations.activity");
   await activity.getByRole("button", { name: "Show earlier" }).click();
+  await earlier;
   await expect(rows).toHaveCount(26);
   await expect(rows.nth(20)).toBeFocused();
   await expect(rows.last()).toContainText("A conversation starts ran");

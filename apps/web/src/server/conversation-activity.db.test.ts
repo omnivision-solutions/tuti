@@ -5,7 +5,6 @@ import { expect, test } from "vitest";
 
 import { actAs as signIn, callerAs, createProject, failTransaction, signUp, type TestUser } from "@/test/helpers";
 
-import { loadConversationActivity } from "./inbox";
 import { runWorkflows } from "./inbox-path";
 import { getConversationActivity } from "./operations/conversation-activity";
 import { OperationError } from "./operations/define";
@@ -273,7 +272,7 @@ test("newest first, a page at a time, the team's only; deleted with its conversa
 
   // Someone outside the team gets nothing.
   actAs(await signUp("Stranger"));
-  expect(await loadConversationActivity(project.slug, number, "all")).toHaveProperty("error");
+  await expect((await callerAs(acting)).conversations.activity({ project: project.slug, number })).rejects.toMatchObject({ code: "NOT_FOUND" });
 
   // A row of a kind this release can't read (a later one's) is left out.
   const conversation = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId, number } } });

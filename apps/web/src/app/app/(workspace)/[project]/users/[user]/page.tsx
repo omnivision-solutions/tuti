@@ -7,6 +7,7 @@ import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { initial } from "@/lib/format";
 import { getMembership } from "@/server/membership";
+import { personPanel } from "@/server/operations/conversation-person";
 import { userAccounts } from "@/server/operations/users";
 
 export const metadata: Metadata = { title: "User · Users" };
@@ -51,9 +52,9 @@ export default async function UserPage(props: PageProps<"/app/[project]/users/[u
             {/* Their profile beside what they did. Their app's address, as it asserted it; what they did with every
                 account that is them, as Users counts it. */}
             <PersonPanel
-              projectId={projectId}
               slug={slug}
-              person={{ userId: identity.userId, email: identity.email, emailVerified: true, accounts: await userAccounts(projectId, identity) }}
+              // Read here until Users moves onto the router (T9b).
+              details={await personPanel(projectId, { userId: identity.userId, email: identity.email, emailVerified: true, accounts: await userAccounts(projectId, identity) }, { all: true })}
               page
             />
           </div>

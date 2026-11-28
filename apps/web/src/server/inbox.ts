@@ -11,16 +11,12 @@ import type { FormState } from "./form-state";
 import { getMembership } from "./membership";
 import { OperationError } from "./operations";
 import {
-  linkConversationPost,
   listArticlesToInsert,
   replyToConversation,
   startReplyUpload,
   translateReply,
-  unlinkConversationPost,
 } from "./operations/conversations";
-import { ACTIVITY_FILTERS, type Activity, getConversationActivity } from "./operations/conversation-activity";
 import { asAdmin, asTeam, call } from "./operations/run";
-import { searchPosts } from "./post-lists";
 import { getSession } from "./session";
 import { supportDomain } from "./inbound";
 import { requirePlan } from "./operations/plan";
@@ -144,14 +140,6 @@ export async function uploadReplyAttachment(projectSlug: string, file: { filenam
 
 
 
-/** The posts "Link post…" offers for what's typed: any of the project's (searchPosts). */
-export async function findPostsToLink(projectSlug: string, q: string): Promise<{ error?: string; posts?: { id: string; number: number; title: string; voteCount: number }[] }> {
-  const [session, membership] = await Promise.all([getSession(), getMembership(projectSlug)]);
-  if (!session || !membership) {
-    return { error: "Only the project's team can link conversations to posts" };
-  }
-  return { posts: await searchPosts(membership.project.id, q) };
-}
 
 /** "Insert article" in a reply (conversations.articles): the articles matching what's typed that the conversation's person can be sent. */
 export async function findArticlesToInsert(
@@ -177,27 +165,7 @@ export async function findArticlesToInsert(
   }
 }
 
-/** The conversation's Activity (conversations.activity): "Show earlier", and its All, Workflows and People filters. */
-export async function loadConversationActivity(projectSlug: string, conversation: number, filter: string, before?: string, limit?: number): Promise<{ error?: string; activity?: Activity }> {
-  let activity: Activity | undefined;
-  const result = await asTeam(projectSlug, "Only the project's team can see a conversation's activity", async (context) => {
-    activity = await call(getConversationActivity, context, {
-      number: conversationNumber(conversation),
-      filter: ACTIVITY_FILTERS.includes(filter as never) ? (filter as (typeof ACTIVITY_FILTERS)[number]) : "all",
-      ...(typeof before === "string" && before && { before }),
-      ...(Number.isInteger(limit) && { limit: Math.min(Math.max(limit!, 1), 100) }),
-    });
-  });
-  return activity ? { activity } : result;
-}
 
-/** Links a conversation to a post it's about (by the post's number), or unlinks it. */
-export async function linkPostToConversation(projectSlug: string, conversation: number, post: number, linked: boolean): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can link conversations to posts", async (context) => {
-    const input = { number: conversationNumber(conversation), post: Number(post) };
-    return linked === true ? call(linkConversationPost, context, input) : call(unlinkConversationPost, context, input);
-  });
-}
 
 /** Settings → Inbox and email: turns the inbox on or off (owners and admins). */
 export async function setSupportInbox(projectSlug: string, on: boolean): Promise<FormState> {

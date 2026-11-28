@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useLayoutEffect, useRef } from "react";
 
 import { COMMAND_MENU_NAVIGATE } from "@/lib/command-menu-event";
+import { INBOX_REFRESH_COOKIE } from "@/lib/inbox-details";
 import { feedbackStep } from "@/lib/feedback-steps";
 import { pageShortcut } from "@/lib/shortcut-keys";
 
@@ -22,8 +23,24 @@ let opening = false;
 let rows: number[] = [];
 /** Navigations the team member started (a link, J or K, Back): one after an action started is theirs, not its move. */
 let picks = 0;
-/** The open conversation acted on, the list as it was as the action started, and `picks` then: the next render checks. */
-let acted: { number: number; from: number[]; picks: number } | null = null;
+/**
+ * The open conversation acted on, the list as it was as the action started, `picks` then, and its refresh's time
+ * (refreshAfterAction): the list's render of that refresh checks.
+ */
+let acted: { number: number; from: number[]; picks: number; after: number } | null = null;
+/** The latest refresh an action asked for (refreshAfterAction). */
+let lastRefresh = 0;
+
+/**
+ * The page refreshed after one of the Inbox's actions saved (through tRPC), numbered by time in a cookie its page renders
+ * back to the list: tRPC calls run side by side, unlike server actions, so a refresh asked for before this one (opening a
+ * conversation marks it read) can land after the action, with the list as it was before it.
+ */
+export function refreshAfterAction(router: { refresh: () => void }) {
+  lastRefresh = Math.max(Date.now(), lastRefresh + 1);
+  document.cookie = `${INBOX_REFRESH_COOKIE}=${lastRefresh}; path=/; samesite=lax`;
+  router.refresh();
+}
 /** The list on the page's: opens the next one once the open one (`number`) has left it (see actOn). */
 let moveOn: ((number: number, from: number[]) => void) | null = null;
 
@@ -52,7 +69,7 @@ export function actOn(number: number, done = false) {
       return;
     }
     if (gone || rows.includes(number)) {
-      acted = { number, from, picks: at };
+      acted = { number, from, picks: at, after: lastRefresh };
     } else {
       moveOn?.(number, from);
     }
@@ -74,8 +91,11 @@ export function ListKeys({
   className,
   children,
   "aria-label": label,
+  refreshed = 0,
 }: {
   place: string;
+  /** The latest action's refresh this render has (INBOX_REFRESH_COOKIE, as the page read it). */
+  refreshed?: number;
   open: number | null;
   /** The view's address with none open: where its numbers show. */
   none: string;
@@ -186,6 +206,10 @@ export function ListKeys({
   useEffect(() => {
     rows = rowNumbers(ref.current);
     const checking = acted;
+    // A render from before the action's refresh (asked for earlier, still on its way): its answer is still to come.
+    if (checking && refreshed < checking.after) {
+      return;
+    }
     acted = null;
     if (checking && checking.picks === picks && !rows.includes(checking.number)) {
       moveOn?.(checking.number, checking.from);

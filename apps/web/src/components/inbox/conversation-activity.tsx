@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { pillClass } from "@/components/filter-pills";
 import { Button } from "@/components/ui/button";
 import type { Activity, ActivityFilter } from "@/server/operations/conversation-activity";
-import { loadConversationActivity } from "@/server/inbox";
+import { errorMessage, useTRPCClient } from "@/components/trpc";
 
 import { DetailSection } from "./detail-section";
 
@@ -57,6 +57,7 @@ export function ConversationActivity({ projectSlug, number, count, first }: { pr
   // For All: the pages after `first`. For a filter: all its pages.
   const [pages, setPages] = useState<Activity[]>([]);
   const [pending, startTransition] = useTransition();
+  const trpc = useTRPCClient();
   // "Show earlier" pressed from the keyboard or a click: the row after this one (the last shown before) takes focus once
   // the earlier ones are in, rather than the page, as the button may be gone with the last of them.
   const focusAfter = useRef<string | null>(null);
@@ -64,9 +65,14 @@ export function ConversationActivity({ projectSlug, number, count, first }: { pr
 
   const load = (to: ActivityFilter, before?: string, focus?: string, limit?: number) =>
     startTransition(async () => {
-      const result = await loadConversationActivity(projectSlug, number, to, before, limit);
-      if (!result.activity) {
-        toast.error(result.error ?? "Couldn't load the activity");
+      const result = await trpc.conversations.activity
+        .query({ project: projectSlug, number, filter: to, ...(before && { before }), ...(limit !== undefined && { limit: Math.min(Math.max(limit, 1), 100) }) })
+        .then(
+          (activity) => ({ activity }),
+          (error: unknown) => ({ error: errorMessage(error, "Couldn't load the activity") }),
+        );
+      if (!("activity" in result)) {
+        toast.error(result.error);
         return;
       }
       const page = result.activity;

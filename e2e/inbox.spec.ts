@@ -295,8 +295,12 @@ test("conversations from the API land in the inbox, where the team replies, assi
   const linkedPosts = owner.getByRole("region", { name: "Linked posts" });
   await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("menuitem", { name: "Link a post…" }).click();
+  const searching = trpcRequest(owner, "inbox.findPosts");
   await owner.getByRole("dialog").getByRole("textbox", { name: "Search posts" }).fill("csv");
+  await searching;
+  const linking = trpcRequest(owner, "conversations.linkPost");
   await owner.getByRole("dialog").getByRole("button", { name: /Export reports to CSV/ }).click();
+  await linking;
   await expect(owner.getByText("Linked to #1")).toBeVisible();
   await expect(linkedPosts.getByRole("link", { name: "Export reports to CSV" })).toBeVisible();
   await checkpoint(owner, "conversation-linked-post");
@@ -311,14 +315,16 @@ test("conversations from the API land in the inbox, where the team replies, assi
   let releaseUnlink!: () => void;
   const unlinkHeld = new Promise<void>((resolve) => (releaseUnlink = resolve));
   await owner.route("**/*", async (route) => {
-    if (!route.request().headers()["next-action"]) {
+    if (!isSave(route.request())) {
       return route.fallback();
     }
     const response = await route.fetch();
     await unlinkHeld;
     await route.fulfill({ response });
   });
+  const unlinking = trpcRequest(owner, "conversations.unlinkPost");
   await linkedPosts.getByRole("button", { name: "Unlink “Export reports to CSV”" }).click();
+  await unlinking;
   await expect(linkedPosts.getByRole("button", { name: "Unlink “Export reports to CSV”" })).toBeDisabled();
   // It keeps the keyboard's focus while it waits.
   await expect(linkedPosts.getByRole("button", { name: "Unlink “Export reports to CSV”" })).toBeFocused();
@@ -332,7 +338,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(related.getByRole("button", { name: "Link “Export reports to CSV”" })).toBeFocused();
   await expect(related.getByRole("link", { name: "Export reports to CSV" })).toBeVisible();
   // A Link that fails says so and keeps the keyboard's focus, to try again.
-  await owner.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await owner.route("**/*", (route) => (isSave(route.request()) ? route.abort() : route.fallback()));
   await related.getByRole("button", { name: "Link “Export reports to CSV”" }).press("Enter");
   await expect(owner.getByText("Couldn't reach Tuti. Try again.")).toBeVisible();
   await expect(related.getByRole("button", { name: "Link “Export reports to CSV”" })).toBeEnabled();
@@ -555,7 +561,7 @@ test("unlinking a post moves the keyboard's focus to the next one's Unlink, and 
   const hold = async () => {
     const held = new Promise<void>((resolve) => (release = resolve));
     await owner.route("**/*", async (route) => {
-      if (!route.request().headers()["next-action"]) {
+      if (!isSave(route.request())) {
         return route.fallback();
       }
       const response = await route.fetch();

@@ -1,11 +1,20 @@
-import { prisma } from "@tuti/db";
+import { PostStatus, prisma } from "@tuti/db";
 import { historySince, visibleConversations } from "@tuti/jobs";
 import { z } from "zod";
 
 import { firstLine } from "@/lib/format";
 import { formatProperty, propertyHeadings, storedPropertyFormats } from "@/lib/property-formats";
 
-import { conversationNumber, conversationPerson, CONVERSATION_STATUSES, findConversation, latestMessages, toApiStatus } from "./conversations";
+import {
+  conversationNumber,
+  conversationPerson,
+  CONVERSATION_STATUSES,
+  findConversation,
+  type InboxView,
+  inInboxView,
+  latestMessages,
+  toApiStatus,
+} from "./conversations";
 import { defineOperation } from "./define";
 import { STATUSES as POST_STATUSES, toApiStatus as toPostStatus } from "./read";
 import { viewsOf } from "./users";
@@ -253,4 +262,69 @@ export const getConversationPerson = defineOperation({
       conversationCount: details.otherCount,
     };
   },
+});
+
+/**
+ * What the person panel shows (PersonPanel), as plain data: personDetails with its properties formatted, its groups
+ * named and each other conversation's latest line. `inbox`: beside a conversation in the Inbox, which of their other
+ * conversations are in its list (the view, or a search's results) for the teammate looking: those open beside it there.
+ * The Users page builds it here too until it reads through the router (T9b).
+ */
+export async function personPanel(
+  projectId: string,
+  person: Person,
+  { besides, all = false, inbox }: { besides?: number; all?: boolean; inbox?: { userId: string; view: InboxView; q: string } } = {},
+) {
+  const details = await personDetails(projectId, person, { besides, all });
+  const { user, view, formats, headings } = details;
+  const inView = inbox ? await inInboxView(projectId, inbox.userId, inbox.view, details.others.map((c) => c.id), inbox.q) : new Set<number>();
+  return {
+    account: !!user,
+    id: view?.id ?? null,
+    name: details.name,
+    email: details.shownEmail,
+    verified: details.verified,
+    blocked: details.blocked,
+    maybe: details.lookalike,
+    properties: Object.entries(view?.properties ?? {}).map(([key, value]) => ({ key, label: headings.get(key)!, text: formatProperty(formats, key, value) })),
+    groups: (view?.groups ?? []).map((key) => ({ key, name: details.groupNames.get(key) ?? key })),
+    posts: details.posts,
+    postCount: details.postCount,
+    votes: details.votes,
+    voteCount: details.voteCount,
+    conversations: details.others.map((c) => ({
+      number: c.number,
+      subject: c.subject,
+      status: c.status,
+      lastMessageAt: c.lastMessageAt,
+      line: firstLine(details.otherMessages.get(c.id)?.body ?? "") ?? null,
+      inView: inView.has(c.number),
+    })),
+    conversationCount: details.otherCount,
+  };
+}
+
+export type PersonPanelData = Awaited<ReturnType<typeof personPanel>>;
+
+const panelPost = z.object({ number: z.number().int(), title: z.string(), status: z.enum(Object.values(PostStatus) as [PostStatus, ...PostStatus[]]) });
+
+/** personPanel's output, for inbox.conversation's `person`. */
+export const personPanelOutput = z.object({
+  account: z.boolean(),
+  id: z.string().nullable(),
+  name: z.string().nullable(),
+  email: z.string().nullable(),
+  verified: z.boolean(),
+  blocked: z.boolean(),
+  maybe: z.object({ name: z.string(), id: z.string().nullable() }).nullable(),
+  properties: z.array(z.object({ key: z.string(), label: z.string(), text: z.string() })),
+  groups: z.array(z.object({ key: z.string(), name: z.string() })),
+  posts: z.array(panelPost),
+  postCount: z.number().int(),
+  votes: z.array(panelPost),
+  voteCount: z.number().int(),
+  conversations: z.array(
+    z.object({ number: z.number().int(), subject: z.string(), status: z.enum(["OPEN", "WAITING", "CLOSED"]), lastMessageAt: z.string(), line: z.string().nullable(), inView: z.boolean() }),
+  ),
+  conversationCount: z.number().int(),
 });

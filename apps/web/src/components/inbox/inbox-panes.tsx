@@ -1,6 +1,7 @@
 import { cn } from "cn";
 import Link from "next/link";
 import { ArrowRightIcon, CheckIcon, CircleCheckIcon, ClockIcon, HourglassIcon, InboxIcon, SearchIcon, ShieldAlertIcon, SparklesIcon, UserIcon, UserXIcon } from "lucide-react";
+import { cookies } from "next/headers";
 import type { ReactNode } from "react";
 
 import { ConversationMore } from "@/components/inbox/more-actions";
@@ -21,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { initial, longDuration, replyTime, shortDuration, timeAgo } from "@/lib/format";
 import { INBOX_VIEWS, type InboxView, MAX_SEARCH_LENGTH } from "@/server/operations/conversations";
+import { INBOX_REFRESH_COOKIE } from "@/lib/inbox-details";
 import { serverCaller } from "@/server/trpc/server";
 
 /** The inbox's views (INBOX_VIEWS: what needs an answer first, then the rest; conversations.views lists the same), and what each says with nothing in it. */
@@ -195,6 +197,7 @@ export async function InboxPanes({
               place={`${slug}:${q ? `search:${q}` : view}`}
               open={open}
               none={inboxHref(slug, view, null, pages, 1, q)}
+              refreshed={Number((await cookies()).get(INBOX_REFRESH_COOKIE)?.value) || 0}
               aria-label="Conversations"
               // Relative: what's placed absolutely in it (a label for screen readers) stays in it, not past the page's end.
               className="inbox-list-scroll relative min-h-0 flex-1 overflow-y-auto px-2 pt-3 pb-4.5"

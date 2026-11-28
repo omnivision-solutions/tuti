@@ -3,7 +3,7 @@ import { type Browser, expect, test } from "./fixtures";
 import pg from "pg";
 import { APP_URL } from "./env";
 import { checkpoints } from "./checkpoint";
-import { apiFor, createProject, signUp } from "./helpers";
+import { apiFor, createProject, isSave, signUp } from "./helpers";
 import { sesComplaint } from "./ses";
 
 async function inbox(browser: Browser) {
@@ -209,7 +209,7 @@ test("inline link trigger retains keyboard focus when dismissed while saving", a
   let release!: () => void;
   const held = new Promise<void>((resolve) => { release = resolve; });
   await owner.route("**/*", async (route) => {
-    if (!route.request().headers()["next-action"]) return route.fallback();
+    if (!isSave(route.request())) return route.fallback();
     await held;
     await route.abort();
   });
