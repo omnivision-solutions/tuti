@@ -118,15 +118,16 @@ export function fromOwnSite(headers: Headers): boolean {
  * The context for a request to /api/trpc. The mobile app's token only with CLIENT_HEADER, never from `Authorization`
  * alone: a self-hoster's proxy may add its own to the web app's requests, and a cookie call carrying one is still the
  * cookie session. The widget's person as widgetPersonOf reads them: someone the customer's site signed in first, then
- * the cookie session, then a signed-out visitor (as the widget's Messages has always ordered them).
+ * the cookie session, then a signed-out visitor (as the widget's Messages has always ordered them). `refresh: false`: the
+ * cookie session read without extending it (a stream's later checks: an open stream mustn't keep a session alive).
  */
-export async function requestContext(headers: Headers): Promise<TrpcContext> {
-  const context = await whoCalls(headers);
+export async function requestContext(headers: Headers, { refresh = true }: { refresh?: boolean } = {}): Promise<TrpcContext> {
+  const context = await whoCalls(headers, refresh);
   const said = headers.get(PAGE_LANGUAGE_HEADER) ?? "";
   return isLanguage(said) ? { ...context, pageLanguage: said } : context;
 }
 
-async function whoCalls(headers: Headers): Promise<TrpcContext> {
+async function whoCalls(headers: Headers, refresh: boolean): Promise<TrpcContext> {
   const memberships = new Map();
   const reader = readerCookies(headers);
   if (headers.get(CLIENT_HEADER)) {
@@ -145,7 +146,7 @@ async function whoCalls(headers: Headers): Promise<TrpcContext> {
   if (person?.kind === "Widget") {
     return { who: { kind: "widget", token: person.token }, reader, sameSite: fromOwnSite(headers), memberships };
   }
-  const session = await sessionFrom(headers);
+  const session = await sessionFrom(headers, { refresh });
   const who: Who = session
     ? { kind: "session", userId: session.user.id, sessionId: session.session.id, boundTo: session.session.boundTo ?? "", via: "cookie" }
     : person && { kind: "visitor", token: person.token };

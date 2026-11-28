@@ -19,19 +19,20 @@ export async function GET(request: Request) {
   }
   return inboxStream(request, {
     wants: (change) => hears(who, change),
-    // Still them: the same person, by the same token or session.
+    // Still them: the same person, by the same token or session (read without extending it: an open panel mustn't keep
+    // a session from ever ending).
     stillAllowed: async () => {
-      const now = await listening(request, slug);
+      const now = await listening(request, slug, { refresh: false });
       return !!now && now.userId === who.userId && now.visitorHash === who.visitorHash;
     },
   });
 }
 
 /** Who hears the project's Messages on this request (live.widget), or null where the router refuses them. */
-async function listening(request: Request, slug: string) {
+async function listening(request: Request, slug: string, read: { refresh?: boolean } = {}) {
   let context;
   try {
-    context = await requestContext(request.headers);
+    context = await requestContext(request.headers, read);
   } catch (error) {
     if (error instanceof ContextError) {
       return null;

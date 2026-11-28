@@ -123,3 +123,23 @@ test("on a private portal, as the panel itself: its readers hear, someone else t
   expect((await open({ authorization: `Widget ${widgetToken(project.id, stranger.id)}` })).status).toBe(401);
   expect((await open({ authorization: `Visitor ${newVisitor(project.id).token}` })).status).toBe(401);
 });
+
+test("the portal reader's stream checks their session at each keepalive without extending it, and ends once it expires", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  onTestFinished(() => void vi.useRealTimers());
+  const bo = await signUp("Bo");
+  await onPortal(bo, project);
+  const stream = await open({ cookie: bo.cookie });
+  expect(await stream.next()).toBe(ready);
+  // A day-old session, due for Better Auth's refresh: the keepalive reads it and leaves its expiry as it was.
+  const sessionOf = () => prisma.session.findFirstOrThrow({ where: { userId: bo.id }, select: { id: true, expiresAt: true } });
+  const dayOld = { expiresAt: new Date(Date.now() + 6 * 86_400_000), updatedAt: new Date(Date.now() - 2 * 86_400_000) };
+  await prisma.session.updateMany({ where: { userId: bo.id }, data: dayOld });
+  await vi.advanceTimersByTimeAsync(KEEPALIVE_MS);
+  expect(await stream.next()).toBe(": ping");
+  expect((await sessionOf()).expiresAt).toEqual(dayOld.expiresAt);
+  // Expired: the stream ends.
+  await prisma.session.updateMany({ where: { userId: bo.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+  await vi.advanceTimersByTimeAsync(KEEPALIVE_MS);
+  expect(await stream.next()).toBeNull();
+});
