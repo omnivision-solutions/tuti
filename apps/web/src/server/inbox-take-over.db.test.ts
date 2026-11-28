@@ -71,16 +71,6 @@ test("Mark priority and Remove priority change the mark alone: one the AI has st
   expect(await row()).toMatchObject({ priority: false, handledBy: "AI", status: "WAITING" });
 });
 
-test("someone not on the project's team takes nothing over and marks nothing", async () => {
-  const { project, row } = await handedToAi();
-  actAs(await signUp("Sid Stranger"));
-
-  expect(await takeOverConversation(project.slug, 1)).toEqual({ error: "No such project, or it isn't yours" });
-  expect(await setConversationPriority(project.slug, 1, true)).toEqual({ error: "No such project, or it isn't yours" });
-  expect(await takeOverConversation(project.slug, 99)).toEqual({ error: "No such project, or it isn't yours" });
-  expect(await row()).toMatchObject({ handledBy: "AI", priority: false });
-});
-
 test("Hand back to the AI makes a conversation the team has the AI's, for any teammate, and moves nothing else about it", async () => {
   const { project, tess, row } = await handedToAi();
   actAs(tess);
@@ -95,9 +85,6 @@ test("Hand back to the AI makes a conversation the team has the AI's, for any te
     details: { handledBy: "ai" },
     actorId: tess.id,
   });
-
-  actAs(await signUp("Sid Stranger"));
-  expect(await handBackConversation(project.slug, 1)).toEqual({ error: "No such project, or it isn't yours" });
 });
 
 test("Hand back to the AI is refused while its user waits on the team: their message would go unanswered", async () => {

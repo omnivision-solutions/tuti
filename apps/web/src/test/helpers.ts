@@ -279,3 +279,54 @@ export async function untilWaitingOnLock(count = 1) {
   }
   throw new Error("Nothing waited on a lock");
 }
+
+/** What a save through the router answers, as the app's forms show it: nothing, or the refusal's message. */
+async function asForm(save: () => Promise<unknown>): Promise<{ error?: string }> {
+  return save().then(
+    () => ({}),
+    (error: Error) => ({ error: error.message }),
+  );
+}
+
+/** The request's cookie session's caller (actAs), as a page's client calls /api/trpc. */
+async function cookieCallerNow() {
+  const [{ createCaller }, { sessionContext }, { getSession }] = await Promise.all([import("@/server/trpc/server"), import("@/server/trpc/context"), import("@/server/session")]);
+  return createCaller(sessionContext(await getSession()));
+}
+
+/**
+ * A post's comment as the post page's form sends it (comments.create through the router, as whoever actAs() signed in):
+ * its `postId`, `body`, `content`, `replyTo`, `internal` and `emailVoters` fields, as the form has them.
+ */
+export async function addComment(_prev: object, form: FormData): Promise<{ error?: string }> {
+  const value = (name: string) => {
+    const field = form.get(name);
+    return typeof field === "string" ? field : undefined;
+  };
+  const post = await prisma.post.findUnique({ where: { id: value("postId") ?? "" }, select: { number: true, project: { select: { slug: true } } } });
+  if (!post) {
+    return { error: "Post not found" };
+  }
+  const caller = await cookieCallerNow();
+  return asForm(() =>
+    caller.comments.create({
+      project: post.project.slug,
+      number: post.number,
+      content: value("content") || undefined,
+      body: value("body"),
+      ...(value("internal") === "on" && { internal: true }),
+      ...(value("emailVoters") === "on" && { emailVoters: true }),
+      replyTo: value("replyTo") || undefined,
+    }),
+  );
+}
+
+/** A comment's like as its button sends it (comments.like through the router, as whoever actAs() signed in). */
+export async function setCommentLike(commentId: string, liked: boolean): Promise<{ error?: string }> {
+  const comment = await prisma.comment.findUnique({ where: { id: commentId }, select: { post: { select: { number: true, project: { select: { slug: true } } } } } });
+  if (!comment) {
+    return { error: "Comment not found" };
+  }
+  const caller = await cookieCallerNow();
+  return asForm(() => caller.comments.like({ project: comment.post.project.slug, number: comment.post.number, id: commentId, liked }));
+}

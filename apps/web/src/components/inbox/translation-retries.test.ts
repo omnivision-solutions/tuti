@@ -48,3 +48,16 @@ test("Try again's Translating… shows on every message it re-queued, not only t
   expect(says("m1")).not.toContain("Translating…");
   expect(says("m2")).not.toContain("Translating…");
 });
+
+test("a re-queued message whose failure is still on the page shows the failure: a retry that fails again isn't hidden", async () => {
+  const element = document.createElement("div");
+  document.body.append(element);
+  const root = createRoot(element);
+  await page(root, { m1: "Out of credits" }, ["m1"]);
+  await act(async () => [...element.querySelectorAll("button")].find((button) => button.textContent === "Try again")!.click());
+  // Refreshed before the job ran, or after it failed again: the failure stays said.
+  await page(root, { m1: "Out of credits" }, ["m1"]);
+  const says = element.querySelector('[data-message="m1"]')!.textContent;
+  expect(says).toContain("Out of credits");
+  expect(says).not.toContain("Translating…");
+});

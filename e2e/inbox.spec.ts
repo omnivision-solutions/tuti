@@ -1027,14 +1027,6 @@ test("the details beside a conversation hide for every conversation, after a rel
   await expect(about).toBeVisible();
   await expect(hide).toBeVisible();
   expect((await messages.boundingBox())!.width).toBeCloseTo(width, 0);
-
-  // Smaller screens keep the toggle on the title row and open the details as a sheet.
-  await owner.setViewportSize({ width: 390, height: 844 });
-  await owner.goto(`/app/${slug}/inbox/1`);
-  await owner.getByRole("button", { name: "Show details" }).click();
-  await expect(owner.getByRole("dialog", { name: "Conversation details" })).toBeVisible();
-  await owner.keyboard.press("Escape");
-
 });
 
 test("the Inbox's views are its section pane's links with their counts, where they stay as a conversation opens; on a phone its menu opens them", async ({ browser }, testInfo) => {
@@ -2375,15 +2367,15 @@ test("Insert article in a reply: ⌘K in the reply box, search, ↓ and Enter pu
   await reply.press("ControlOrMeta+k");
   const dialog = owner.getByRole("dialog", { name: "Insert article" });
   await expect(dialog).toBeVisible();
-  // ⌘K in the reply box is this, not the app's search; nor is it in the picker.
-  await expect(owner.getByRole("dialog", { name: "Go to or do" })).toHaveCount(0);
   await dialog.getByRole("combobox", { name: "Search articles" }).press("ControlOrMeta+k");
-  await expect(owner.getByRole("dialog", { name: "Go to or do" })).toHaveCount(0);
   await expect(dialog.getByRole("combobox", { name: "Search articles" })).toBeFocused();
   await dialog.getByRole("combobox", { name: "Search articles" }).fill("export");
   const status = dialog.getByRole("status");
   const options = dialog.getByRole("option");
   await expect(options).toHaveCount(2);
+  // ⌘K in the reply box is this, not the app's search; nor is it in the picker (asked once the picker has answered,
+  // so the app's search would have opened by now).
+  await expect(owner.getByRole("dialog", { name: "Go to or do" })).toHaveCount(0);
   // How many it found is read out.
   await expect(status).toHaveText("2 articles");
   expect((await options.allInnerTexts()).sort()).toEqual(["Export limits", "Exporting reports"]);

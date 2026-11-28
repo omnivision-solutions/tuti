@@ -367,7 +367,7 @@ test("out of credits: the message keeps why, and the model isn't asked", async (
   expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id } })).toMatchObject({ teamText: null, translationError: "Out of credits" });
 });
 
-test("the app: Try again translates a failed message again; the composer previews a reply, sends it, and hears why one wasn't sent", async () => {
+test("the app: Try again translates a failed message again; the composer hears why a reply wasn't sent, then sends it as written", async () => {
   const { owner, project, conversation } = await german();
   actAs(owner);
   model.fail(500);
@@ -406,18 +406,9 @@ test("the app: Try again translates a failed message again; the composer preview
   expect(await retryTranslation(project.slug, 1)).toEqual({});
   expect(model.requests).toHaveLength(4);
 
-  // The preview under the composer, then sent as it is (the reply box's calls, through tRPC).
+  // The reply box's calls, through tRPC.
   const app = await callerAs(owner);
   const reply = (body: string, more: { translation?: string; language?: string; untranslated?: boolean } = {}) => app.conversations.reply({ project: project.slug, number: 1, body, ...more });
-  model.reply(translated("Danke! Eine Lösung ist unterwegs."));
-  const preview = await app.conversations.translateReply({ project: project.slug, number: 1, body: "Thanks! A fix is on its way." });
-  expect(preview).toMatchObject({ status: "translated", text: "Danke! Eine Lösung ist unterwegs.", language: "de" });
-  await reply("Thanks! A fix is on its way.", { translation: preview.text!, language: preview.language! });
-  expect(model.requests).toHaveLength(5);
-  expect(await prisma.conversationMessage.findFirstOrThrow({ where: { projectId: project.id, author: "TEAM" } })).toMatchObject({
-    body: "Danke! Eine Lösung ist unterwegs.",
-    teamText: "Thanks! A fix is on its way.",
-  });
 
   // A preview in a language that's no longer theirs: refused (translation_outdated), for a new preview.
   await expect(reply("Merci!", { translation: "Merci !", language: "fr" })).rejects.toMatchObject({ cause: { code: "translation_outdated" } });
@@ -431,7 +422,7 @@ test("the app: Try again translates a failed message again; the composer preview
   });
   expect(await app.inbox.language({ project: project.slug, number: 1 })).toEqual({ language: "de" });
   await reply("Anything else?", { untranslated: true });
-  expect(await prisma.conversationMessage.count({ where: { projectId: project.id, author: "TEAM" } })).toBe(2);
+  expect(await prisma.conversationMessage.count({ where: { projectId: project.id, author: "TEAM" } })).toBe(1);
 });
 
 test("Try again twice at once translates the message once", async () => {

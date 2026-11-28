@@ -120,10 +120,6 @@ test("conversations.articles offers the app what the reply box's Insert article 
   const slug = await write("Refunds");
   await write("Refunds hidden", { listing: "hidden" });
   const [byEmail, signedIn] = [await conversation(1, false), await conversation(2, true)];
-  for (const number of [byEmail, signedIn]) {
-    const { articles } = await call(listArticlesToInsert, as(), { number, q: "refunds" });
-    expect({ articles }).toEqual(await findArticlesToInsert(project.slug, number, "refunds"));
-  }
   expect((await call(listArticlesToInsert, as(), { number: byEmail, q: "refunds" })).articles).toEqual([
     { slug, title: "Refunds", url: expect.stringMatching(new RegExp(`/docs/${slug}$`)) },
   ]);

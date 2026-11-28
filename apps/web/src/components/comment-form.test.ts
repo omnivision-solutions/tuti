@@ -5,7 +5,6 @@ import { expect, test, vi } from "vitest";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {}, push: () => {} }) }));
 vi.mock("@/components/sign-in-link", () => ({ useSignInHref: () => "/sign-in" }));
 vi.mock("@/components/rich-editor", () => ({ RichEditor: () => null }));
-vi.mock("@/server/posts", () => ({ addComment: async () => ({}) }));
 
 const { CommentForm } = await import("./comment-form");
 

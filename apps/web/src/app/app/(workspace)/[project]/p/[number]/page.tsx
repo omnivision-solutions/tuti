@@ -349,7 +349,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
               )}
               <CommentList
                 sort={sort}
-                ability={post.duplicateOf ? undefined : { can: "act", postId: post.id, uploads }}
+                ability={post.duplicateOf ? undefined : { can: "act", postId: post.id, project: slug, number: post.number, uploads }}
                 comments={[...post.comments.map(({ _count, likes, ...comment }) => ({ ...comment, likes: _count.likes, liked: likes.length > 0 })), ...post.notes.map((note) => ({ ...note, internal: true }))].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())}
                 teamUserIds={new Set(team.map((m) => m.userId))}
                 events={post.events.map(({ actor, ...event }) => ({ ...event, by: actor?.name ?? null }))}
@@ -357,6 +357,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
               />
               {!post.duplicateOf && <CommentForm
                   postId={post.id}
+                  post={{ project: slug, number: post.number }}
                   placeholder="Reply as the team…"
                   notes
                   voters={toEmail}

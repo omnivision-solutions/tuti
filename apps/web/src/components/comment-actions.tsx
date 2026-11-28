@@ -14,13 +14,14 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { CommentSort } from "@/lib/comment-threads";
 import { cn } from "@/lib/utils";
-import { setCommentLike } from "@/server/posts";
+import { errorMessage, useTRPCClient } from "@/components/trpc";
 
 /**
  * What a reader may do with a thread's comments: `act` (signed in here: reply and like), `signIn` (signed out on a portal: both
  * ask them to sign in) or `none` (signed in through another project's single sign-on: the counts only).
  */
-export type CommentAbility = { can: "act" | "signIn" | "none"; postId: string; portal?: boolean; uploads?: EditorUploads };
+/** `project` and `number`: the post, as its comments' operations name it (comments.create, comments.like). */
+export type CommentAbility = { can: "act" | "signIn" | "none"; postId: string; project: string; number: number; portal?: boolean; uploads?: EditorUploads };
 
 type ThreadState = {
   /** Which comment's Reply opened the box (null: it's closed), and whose it is (the box says who it answers). */
@@ -78,6 +79,7 @@ export function ReplyBox({ ability, replyTo }: { ability: CommentAbility; replyT
     <div ref={box} className="flex flex-col gap-2">
       <CommentForm
         postId={ability.postId}
+        post={{ project: ability.project, number: ability.number }}
         replyTo={replyTo}
         placeholder={t("replyToPlaceholder", { name: openedFor })}
         signedIn={ability.portal ? true : undefined}
@@ -94,6 +96,8 @@ const ACTION = "inline-flex h-8 items-center gap-1.5 rounded-lg px-1.5 -mx-1.5 t
 
 /** Reply and Like under a comment (`author`: whose, for their names: "Reply to Ada", "Like Ada's comment"). */
 export function CommentActions({ ability, commentId, author, likes, liked }: { ability: CommentAbility; commentId: string; author: string; likes: number; liked: boolean }) {
+  const client = useTRPCClient();
+  const router = useRouter();
   const { openedBy, reply } = useContext(Thread);
   const [pending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic({ likes, liked });
@@ -143,10 +147,12 @@ export function CommentActions({ ability, commentId, author, likes, liked }: { a
             startTransition(async () => {
               const next = !optimistic.liked;
               setOptimistic((s) => ({ liked: next, likes: s.likes + (next ? 1 : -1) }));
-              const result = await setCommentLike(commentId, next);
-              if (result.error) {
-                toast.error(result.error);
-              }
+              // Saved: the page again (its counts). After an await a transition has to be started again, so the refresh is
+              // one too: the like shown stays till the page's new count comes, without flickering back.
+              await client.comments.like.mutate({ project: ability.project, number: ability.number, id: commentId, liked: next }).then(
+                () => startTransition(() => router.refresh()),
+                (error: unknown) => toast.error(errorMessage(error)),
+              );
             })
           }
         >

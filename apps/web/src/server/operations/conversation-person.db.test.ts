@@ -6,7 +6,7 @@ import { PersonPanel } from "@/components/inbox/person-panel";
 import { upsertProjectUser } from "@/server/project-users";
 import { createProject, signUp } from "@/test/helpers";
 
-import { getConversationPerson, type Person, personDetails, personPanel } from "./conversation-person";
+import { getConversationPerson, type Person, personPanel } from "./conversation-person";
 import { call } from "./run";
 
 /** The panel as a page renders it, its data built by personPanel (as the Users page does; the Inbox reads it with inbox.conversation). */
@@ -15,34 +15,9 @@ const Panel = async ({ projectId, person, besides, page, ...props }: { projectId
 
 type Project = Awaited<ReturnType<typeof createProject>>;
 
-/** conversations.person for a conversation, as the owner, beside the panel's own function for the same person. */
-async function both(project: Project, owner: { id: string }, number: number, person: Person) {
-  const result = await call(getConversationPerson, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { number });
-  const details = await personDetails(project.id, person, { besides: number });
-  // What the panel shows, in the operation: the same people, posts, votes and conversations, and the same counts.
-  expect({
-    email: result.email,
-    verified: result.verified,
-    account: result.account,
-    blocked: result.blocked,
-    maybe: result.maybe,
-    posts: result.posts.map((p) => p.number),
-    votes: result.votes.map((p) => p.number),
-    conversations: result.conversations.map((c) => c.number),
-    counts: [result.postCount, result.voteCount, result.conversationCount],
-  }).toEqual({
-    email: details.shownEmail,
-    verified: details.verified,
-    account: !!details.user,
-    blocked: details.blocked,
-    maybe: details.lookalike,
-    posts: details.posts.map((p) => p.number),
-    votes: details.votes.map((p) => p.number),
-    conversations: details.others.map((c) => c.number),
-    counts: [details.postCount, details.voteCount, details.otherCount],
-  });
-  return result;
-}
+/** conversations.person for a conversation, as the owner. */
+const personOf = (project: Project, owner: { id: string }, number: number) =>
+  call(getConversationPerson, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { number });
 
 const conversation = (project: Project, number: number, data: Record<string, unknown>) =>
   prisma.conversation.create({ data: { projectId: project.id, number, subject: `Conversation ${number}`, origin: "WIDGET", ...data } });
@@ -62,7 +37,7 @@ test("conversations.person gives one of the project's users as the panel shows t
   await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: earlier.id, author: "USER", channel: "WIDGET", body: "\nWhere is my invoice?\nThanks" } });
   await conversation(project, 3, { userId, spam: true });
 
-  const result = await both(project, owner, 1, { userId, email: null, emailVerified: true });
+  const result = await personOf(project, owner, 1);
   expect(result).toMatchObject({
     id: "sam-1",
     name: "Sam Lee",
@@ -79,6 +54,7 @@ test("conversations.person gives one of the project's users as the panel shows t
     groups: [{ key: "business", name: "Business plan" }],
     posts: [{ number: 1, title: "Dark mode", status: "planned" }],
     votes: [{ number: 2, title: "Export to CSV", status: "open" }],
+    postCount: 1,
     voteCount: 1,
     conversations: [{ number: 2, subject: "Conversation 2", status: "closed", line: "Where is my invoice?" }],
     conversationCount: 1,
@@ -103,7 +79,7 @@ test("conversations.person gives someone known only by email: their name once ve
   await prisma.emailBlock.create({ data: { projectId: project.id, email: "e2e-ann@example.com" } });
   await upsertProjectUser(project.id, "ann-9", { name: "Ann from Acme", email: "e2e-ann@example.com" });
 
-  const result = await both(project, owner, 1, { userId: null, email: "e2e-ann@example.com", emailVerified: true, name: "Ann Ash" });
+  const result = await personOf(project, owner, 1);
   expect(result).toMatchObject({
     id: null,
     name: "Ann Ash",
@@ -128,7 +104,7 @@ test("conversations.person gives a signed-out visitor by the address they typed,
   await conversation(project, 1, { ...visitor, name: "Not Vic" });
   await conversation(project, 2, visitor);
 
-  const result = await both(project, owner, 1, { userId: null, email: "e2e-vic@example.com", emailVerified: false, name: null });
+  const result = await personOf(project, owner, 1);
   expect(result).toMatchObject({ id: null, name: null, email: "e2e-vic@example.com", verified: false, account: false, blocked: false, maybe: null });
   expect(result.conversations.map((c) => c.number)).toEqual([2]);
 });
@@ -139,7 +115,7 @@ test("conversations.person gives someone with neither an account nor an address 
   await conversation(project, 1, { origin: "EMAIL" });
   await conversation(project, 2, { origin: "EMAIL" });
 
-  const result = await both(project, owner, 1, { userId: null, email: null, emailVerified: false, name: null });
+  const result = await personOf(project, owner, 1);
   expect(result).toMatchObject({ name: null, email: null, account: false, conversations: [], conversationCount: 0 });
   // Nor beside it in the web's panel.
   const html = renderToStaticMarkup(await Panel({ projectId: project.id, slug: project.slug, person: { userId: null, email: null, emailVerified: false }, besides: 1 }));

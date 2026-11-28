@@ -2,6 +2,7 @@
 
 import { MoreHorizontalIcon, PlusIcon, UsersIcon, XIcon } from "lucide-react";
 import { type ReactNode, useActionState, useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import {
@@ -25,9 +26,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { keepingFields } from "@/lib/forms";
 import { count } from "@/lib/usage-format";
-import { LIST_OPERATORS, type Match, MATCHES, MAX_CONDITIONS, type Operator, OPERATORS, PRESENCE_OPERATORS, ruleSummary } from "@tuti/shared/group-conditions";
+import { type GroupCondition, LIST_OPERATORS, type Match, MATCHES, MAX_CONDITIONS, type Operator, OPERATORS, PRESENCE_OPERATORS, ruleSummary } from "@tuti/shared/group-conditions";
 import type { FormState } from "@/server/form-state";
-import { deleteGroup, type GroupPreview, previewGroup, saveGroup, suggestValues } from "@/server/groups";
+import { errorMessage, useTRPCClient } from "@/components/trpc";
+import type { OutputOf } from "@/server/operations/define";
+import type { previewGroup } from "@/server/operations/groups";
 import type { GroupView } from "@/server/operations/groups";
 
 const usersCount = (n: number) => `${count(n)} ${n === 1 ? "user" : "users"}`;
@@ -86,9 +89,23 @@ export function NewGroupButton({ projectSlug, properties }: { projectSlug: strin
   );
 }
 
+/** Who a group with the dialog's conditions would have now (groups.preview). */
+type GroupPreview = OutputOf<typeof previewGroup>;
+
+/** The conditions the dialog sends (JSON, `conditions`): null when they don't read, which groups.create and groups.update refuse. */
+function conditionsFrom(formData: FormData) {
+  try {
+    return JSON.parse(String(formData.get("conditions") ?? "[]")) as GroupCondition[];
+  } catch {
+    return null as unknown as GroupCondition[];
+  }
+}
+
 /** A group's ⋯ menu: Edit (its dialog) and Delete, which asks first. */
 function GroupActions({ projectSlug, properties, group }: { projectSlug: string; properties: string[]; group: GroupView }) {
   const [pending, startTransition] = useTransition();
+  const trpc = useTRPCClient();
+  const router = useRouter();
   const [deleting, setDeleting] = useState(false);
   return (
     <>
@@ -126,12 +143,15 @@ function GroupActions({ projectSlug, properties, group }: { projectSlug: string;
               disabled={pending}
               onClick={() =>
                 startTransition(async () => {
-                  const result = await deleteGroup(projectSlug, group.key);
-                  if (result.error) {
-                    toast.error(result.error);
-                  } else {
-                    toast.success(`${group.name} deleted`);
+                  try {
+                    await trpc.groups.delete.mutate({ project: projectSlug, group: group.key });
+                  } catch (error) {
+                    toast.error(errorMessage(error));
+                    return;
                   }
+                  toast.success(`${group.name} deleted`);
+                  // The list is the page's.
+                  router.refresh();
                 })
               }
             >
@@ -202,13 +222,26 @@ function GroupForm({ projectSlug, properties, group, open, setOpen }: GroupDialo
   // Each property's values, as its users have them, once its name is typed (names fetched once each). A Map: any name, "constructor" too.
   const [values, setValues] = useState(() => new Map<string, string[]>());
   const latest = useRef(0);
-  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await saveGroup(projectSlug, group?.key ?? null, prev, formData);
-    if (!result.error) {
-      setOpen(false);
-      toast.success(group ? "Group saved" : "Group added");
+  const trpc = useTRPCClient();
+  const router = useRouter();
+  const [state, action, pending] = useActionState<FormState, FormData>(async (_prev, formData) => {
+    const input = {
+      project: projectSlug,
+      name: String(formData.get("name") ?? ""),
+      description: String(formData.get("description") ?? ""),
+      conditions: conditionsFrom(formData),
+      match: String(formData.get("match") ?? "all") as Match,
+    };
+    try {
+      await (group ? trpc.groups.update.mutate({ ...input, group: group.key }) : trpc.groups.create.mutate(input));
+    } catch (error) {
+      return { error: errorMessage(error) };
     }
-    return result;
+    setOpen(false);
+    toast.success(group ? "Group saved" : "Group added");
+    // The list is the page's.
+    router.refresh();
+    return {};
   }, {});
   const id = group?.key ?? "new";
 
@@ -220,13 +253,15 @@ function GroupForm({ projectSlug, properties, group, open, setOpen }: GroupDialo
       return;
     }
     const timer = setTimeout(async () => {
-      const result = await previewGroup(projectSlug, rows.map(conditionOf), match);
+      const result: GroupPreview | { error: string } = await trpc.groups.preview
+        .mutate({ project: projectSlug, conditions: rows.map(conditionOf), match })
+        .catch((error: unknown) => ({ error: errorMessage(error) }));
       if (query === latest.current) {
         setPreview(result);
       }
     }, PREVIEW_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [previewable, projectSlug, rows, match]);
+  }, [previewable, projectSlug, rows, match, trpc]);
 
   const wanted = [...new Set(rows.map((row) => row.property.trim()).filter((name) => name !== "" && !values.has(name)))].join("\n");
   useEffect(() => {
@@ -234,11 +269,14 @@ function GroupForm({ projectSlug, properties, group, open, setOpen }: GroupDialo
       return;
     }
     const timer = setTimeout(async () => {
-      const found = await Promise.all(wanted.split("\n").map(async (name) => [name, await suggestValues(projectSlug, name)] as const));
-      setValues((current) => new Map([...current, ...found.map(([name, result]) => [name, "values" in result ? result.values : []] as const)]));
+      // A name it couldn't read values for offers none.
+      const found = await Promise.all(
+        wanted.split("\n").map(async (name) => [name, await trpc.groups.values.query({ project: projectSlug, property: name }).then(({ values }) => values, () => [])] as const),
+      );
+      setValues((current) => new Map([...current, ...found]));
     }, PREVIEW_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [open, projectSlug, wanted]);
+  }, [open, projectSlug, wanted, trpc]);
 
   const change = (i: number, patch: Partial<Row>) => setRows((current) => current.map((row, j) => (j === i ? { ...row, ...patch } : row)));
   const shown = previewable ? preview : null;

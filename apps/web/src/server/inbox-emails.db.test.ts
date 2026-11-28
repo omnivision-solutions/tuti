@@ -60,11 +60,19 @@ test("a user's reply goes to the assignee only, at most once every 10 minutes; t
 });
 
 test("a reply on an unassigned conversation goes to everyone with the emails on, and someone known only by email is named by it", async () => {
-  const { owner, member, key } = await setup();
+  const { owner, project, member, key } = await setup();
   await call(createConversation, key, { email: "e2e-asker@example.com", subject: "Discount?", body: "Nonprofit here" });
   expect(to(owner.email)).toEqual(["New conversation: Discount?"]);
   expect(to(member.email)).toEqual(["New conversation: Discount?"]);
   expect((await mailbox.latestTo(owner.email)).text).toContain("e2e-asker@example.com started a conversation");
+
+  // Their user's reply, with no one assigned, goes to everyone too.
+  await call(createConversation, key, { user: { id: "user-42", name: "Sam" }, subject: "Invoices", body: "Where are they?" });
+  await prisma.conversation.updateMany({ where: { projectId: project.id }, data: { notifiedAt: new Date(Date.now() - 11 * 60_000) } });
+  await call(replyToConversation, key, { number: 2, body: "Any news?", author: { id: "user-42" } });
+  for (const address of [owner.email, member.email]) {
+    expect(to(address)).toEqual(["New conversation: Discount?", "New conversation: Invoices", "Sam replied: Invoices"]);
+  }
 });
 
 test("an emailed name comes with its address (anyone can give any name), and a Cc'd colleague's reply is theirs", async () => {

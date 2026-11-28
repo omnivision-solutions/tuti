@@ -464,6 +464,26 @@ test("a vote through /api/trpc from a language's address saves that language: th
   expect([await languageOf(previewing.id), await languageOf(atDefault.id)]).toEqual([null, null]);
 });
 
+test("a comment through /api/trpc from a language's address saves that language, as a vote does", async () => {
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  const author = await verified("Author");
+  const post = await call(createPost, as(author.id), { board: "feature-requests", title: "CSV export" });
+  /** A comment as the post page's form sends it: /api/trpc, saying the page's language if any. */
+  const comment = (who: TestUser, language?: string) =>
+    trpcPost(
+      new Request(`${appUrl().origin}/api/trpc/comments.create`, {
+        method: "POST",
+        headers: { host: appUrl().host, cookie: who.cookie, "sec-fetch-site": "same-origin", "content-type": "application/json", ...(language && { [PAGE_LANGUAGE_HEADER]: language }) },
+        body: JSON.stringify({ json: { project: project.slug, number: post.number, body: "Me too" } }),
+      }),
+    );
+  const [german, atDefault] = [await verified("Greta"), await verified("At default")];
+  expect((await comment(german, "de")).status).toBe(200);
+  expect((await comment(atDefault)).status).toBe(200);
+  const languageOf = async (id: string) => (await prisma.user.findUniqueOrThrow({ where: { id } })).language;
+  expect([await languageOf(german.id), await languageOf(atDefault.id)]).toEqual(["de", null]);
+});
+
 test("a vote saves no language at the default language's address, at an offline one's (the team's preview), or by an API key on someone's behalf", async () => {
   await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
   await prisma.projectLanguage.create({ data: { projectId: project.id, code: "fr", live: false, automatic: false } });

@@ -1,76 +1,12 @@
 "use server";
 
 import { refresh } from "next/cache";
-import { z } from "zod";
 
-import { groupConditions, groupMatch, type Match } from "@tuti/shared/group-conditions";
 import type { PropertyFormats } from "@/lib/property-formats";
 
-import type { FormState } from "./form-state";
-import { getAdminProject } from "./membership";
-import { createGroup, deleteGroup as deleteGroupOperation, matchingUsers, propertyValues, updateGroup } from "./operations/groups";
 import { removeChangelogSubscribers } from "./operations/changelog-subscribers";
 import { updateProject, updatePropertyFormats } from "./operations/more";
 import { asAdmin, call } from "./operations/run";
-import { getSession } from "./session";
-
-/** Settings → Groups (see the groups.* operations). */
-
-const DENIED = "Only project owners and admins can change the groups";
-
-/** The conditions the dialog sends (JSON), checked by the operation: anything else is refused there. */
-function conditionsFrom(formData: FormData): unknown {
-  try {
-    return JSON.parse(String(formData.get("conditions") ?? "[]"));
-  } catch {
-    return null;
-  }
-}
-
-/** Adds a group (`key` null) or changes group `key`: its name, conditions and description. */
-export async function saveGroup(projectSlug: string, key: string | null, _state: FormState, formData: FormData): Promise<FormState> {
-  const input = {
-    name: String(formData.get("name") ?? ""),
-    description: String(formData.get("description") ?? ""),
-    conditions: conditionsFrom(formData) as z.input<typeof groupConditions>,
-    match: String(formData.get("match") ?? "all") as Match,
-  };
-  return asAdmin(projectSlug, DENIED, (context) =>
-    key === null ? call(createGroup, context, input) : call(updateGroup, context, { group: String(key), ...input }),
-  );
-}
-
-export async function deleteGroup(projectSlug: string, key: string): Promise<FormState> {
-  return asAdmin(projectSlug, DENIED, (context) => call(deleteGroupOperation, context, { group: String(key) }));
-}
-
-/** How many users the group dialog lists beside the conditions. */
-const PREVIEW_USERS = 50;
-
-export type GroupPreview = { readers: number; users: { id: string; name: string; email: string | null; avatar: string | null }[] };
-
-/** The group dialog's preview: how many of the project's users a group with these conditions (all, or any, matching) would have now, and the first 50. */
-export async function previewGroup(projectSlug: string, conditions: z.input<typeof groupConditions>, match: Match = "all"): Promise<{ error: string } | GroupPreview> {
-  const [session, project] = await Promise.all([getSession(), getAdminProject(projectSlug)]);
-  if (!session || !project) {
-    return { error: DENIED };
-  }
-  const input = groupConditions.safeParse(conditions);
-  if (!input.success) {
-    return { error: input.error.issues[0]?.message ?? "Invalid input" };
-  }
-  return matchingUsers(project.id, { match: groupMatch.catch("all").parse(match), conditions: input.data }, PREVIEW_USERS);
-}
-
-/** The group dialog's suggestions for a condition's value: the values the project's users have for `property`, the most common first. */
-export async function suggestValues(projectSlug: string, property: string): Promise<{ error: string } | { values: string[] }> {
-  const [session, project] = await Promise.all([getSession(), getAdminProject(projectSlug)]);
-  if (!session || !project) {
-    return { error: DENIED };
-  }
-  const name = typeof property === "string" ? property.trim() : "";
-  return { values: name === "" || name.length > 64 ? [] : await propertyValues(project.id, name) };
-}
 
 /** Users' Columns: the properties the table shows, in order (see project.update's userColumns). */
 export async function setUserColumns(projectSlug: string, columns: string[]): Promise<{ error?: string }> {

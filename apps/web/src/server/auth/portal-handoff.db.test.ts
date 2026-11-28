@@ -15,7 +15,7 @@ import { createComment as createCommentOperation } from "@/server/operations/cre
 import { listComments } from "@/server/operations/read";
 import { currentPostViewer, mayRead, readerOf } from "@/server/portal-access";
 import { portalVisitor } from "@/server/auth/portal-readers";
-import { addComment, createPost } from "@/server/posts";
+import { createPost } from "@/server/posts";
 import { findSimilarPosts } from "@/server/similar-posts";
 import { widgetIdeas } from "@/server/widget";
 import { answerArticle } from "@/server/docs-readers";
@@ -23,7 +23,7 @@ import { portalReaderHome } from "@/server/widget-home";
 import { widgetPerson } from "@/server/widget-person";
 import { continueToPortal } from "@/server/portal-handoff";
 import { getAccountSession, getSession } from "@/server/session";
-import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addComment, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
 import { auth } from "./auth";

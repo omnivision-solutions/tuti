@@ -137,6 +137,8 @@ test("a German conversation: the customer's message read in English, the reply p
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   await Promise.all([sending, reading]);
   await expect(preview).toContainText("Couldn't translate it into Deutsch");
+  // Why, without the API's advice to send it untranslated (the button beside it does that).
+  await expect(preview).not.toContainText("Send it untranslated");
   await preview.getByRole("button", { name: "Send in English" }).click();
   await expect(messages.getByRole("listitem").last()).toContainText(late);
   await expect(preview).toBeHidden();

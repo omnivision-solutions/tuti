@@ -1,9 +1,9 @@
 import { prisma } from "@tuti/db";
 import { describe, expect, test } from "vitest";
 
-import { actAs, createProject, signUp } from "@/test/helpers";
+import { actAs, addComment, createProject, signUp } from "@/test/helpers";
 
-import { addComment, createPost } from "./posts";
+import { createPost } from "./posts";
 
 function postForm(projectSlug: string, title: string) {
   const form = new FormData();
