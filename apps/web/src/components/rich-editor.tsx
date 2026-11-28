@@ -81,7 +81,7 @@ import { type GeneratedImage, ImageGenerator, type ImageEditing, type KeptTries,
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { MIN_GENERATED_SIDE } from "@/lib/image-limits";
-import { uploadFile, uploadImage } from "@/lib/upload-image";
+import { uploadFile, uploadImage, type UploadFailure } from "@/lib/upload-image";
 
 /** What the file picker offers for attachments and videos (the server checks each file too). */
 const FILE_ACCEPT = [...Object.keys(UPLOAD_FILE_TYPES), ...Object.keys(UPLOAD_VIDEO_TYPES)]
@@ -249,7 +249,14 @@ export function RichEditor({
   const unreadableNote = useId();
   /** File attachments uploading (articles); `uploading` counts them too. */
   const [attaching, setAttaching] = useState(0);
-  const [uploadError, setUploadError] = useState<string>();
+  /** The last upload's failure: `ours`, said in the page's language; else the server's words, English (L5). */
+  const [uploadError, setUploadError] = useState<{ text: string; ours: boolean }>();
+  const failed = (result: UploadFailure, file: File) =>
+    setUploadError(
+      result.reason
+        ? { text: result.reason === "unusable" ? t("imageUnusable", { name: file.name }) : t(result.reason === "tooLong" ? "imageTooLong" : "uploadFailed"), ours: true }
+        : { text: result.error, ours: false },
+    );
   /** Someone tried to submit while images were uploading. */
   const [held, setHeld] = useState(false);
   const canUpload = !!uploads;
@@ -276,10 +283,10 @@ export function RichEditor({
     for (const file of files) {
       setUploading((n) => n + 1);
       // A request that fails outright (offline) is an error too, so the count goes back down.
-      const result = await uploadImage(uploads.projectSlug, file).catch(() => ({ error: t("uploadFailed") }));
+      const result = await uploadImage(uploads.projectSlug, file).catch((): UploadFailure => ({ error: "", reason: "failed" }));
       setUploading((n) => n - 1);
       if ("error" in result) {
-        setUploadError(result.error);
+        failed(result, file);
       } else {
         learn(result.urls);
         editor.chain().focus().setImage(result).run();
@@ -293,11 +300,11 @@ export function RichEditor({
     for (const file of files) {
       setUploading((n) => n + 1);
       setAttaching((n) => n + 1);
-      const result = await uploadFile(uploads.projectSlug, file).catch(() => ({ error: t("uploadFailed") }));
+      const result = await uploadFile(uploads.projectSlug, file).catch((): UploadFailure => ({ error: "", reason: "failed" }));
       setUploading((n) => n - 1);
       setAttaching((n) => n - 1);
       if ("error" in result) {
-        setUploadError(result.error);
+        failed(result, file);
       } else if (result.src) {
         // A video: played where it's added.
         learn({ [videoKey(result.mediaId)]: result.src });
@@ -775,8 +782,8 @@ export function RichEditor({
         ))}
       {uploadError && (
         // The server's own words stay English (L5); the editor's own failure is in the page's language.
-        <p role="alert" lang={uploadError === t("uploadFailed") ? undefined : "en"} className="text-sm text-destructive">
-          {uploadError}
+        <p role="alert" lang={uploadError.ours ? undefined : "en"} className="text-sm text-destructive">
+          {uploadError.text}
         </p>
       )}
     </div>

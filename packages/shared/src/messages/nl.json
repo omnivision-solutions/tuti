@@ -689,6 +689,8 @@
     "waitImages": "{count, plural, one {Wacht tot de afbeelding geüpload is en probeer het dan opnieuw.} other {Wacht tot de afbeeldingen geüpload zijn en probeer het dan opnieuw.}}",
     "waitFiles": "{count, plural, one {Wacht tot het bestand geüpload is en probeer het dan opnieuw.} other {Wacht tot de bestanden geüpload zijn en probeer het dan opnieuw.}}",
     "uploadFailed": "Uploaden mislukt. Probeer het opnieuw.",
-    "unreadable": "Een deel van deze tekst kan hier niet worden getoond, waarschijnlijk door een update die net is uitgebracht. Herlaad de pagina om hem te bewerken: tot dan kan er op deze pagina niets worden opgeslagen, en de opgeslagen tekst blijft zoals hij is."
+    "unreadable": "Een deel van deze tekst kan hier niet worden getoond, waarschijnlijk door een update die net is uitgebracht. Herlaad de pagina om hem te bewerken: tot dan kan er op deze pagina niets worden opgeslagen, en de opgeslagen tekst blijft zoals hij is.",
+    "imageUnusable": "{name} kon niet als afbeelding worden gebruikt",
+    "imageTooLong": "De afbeelding duurt te lang. Probeer het opnieuw."
   }
 }

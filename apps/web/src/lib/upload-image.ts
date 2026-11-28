@@ -2,11 +2,17 @@ import type { MediaUrls } from "@tuti/content";
 
 import { createUpload, finishUpload, uploadStatus } from "@/server/media";
 
+/**
+ * Why an upload failed here in the browser (not the server's words), so a page can say it in its language: the upload
+ * itself, an image the server couldn't use, or one it took too long with. `error` is the same in English.
+ */
+export type UploadFailure = { error: string; reason?: "failed" | "unusable" | "tooLong" };
+
 /** Uploads straight to media storage, then waits until the image is processed. */
 export async function uploadImage(
   projectSlug: string,
   file: File,
-): Promise<{ mediaId: string; src: string; urls: MediaUrls; w: number; h: number } | { error: string }> {
+): Promise<{ mediaId: string; src: string; urls: MediaUrls; w: number; h: number } | UploadFailure> {
   const created = await createUpload(projectSlug, { type: file.type, size: file.size });
   if ("error" in created) {
     return created;
@@ -15,7 +21,7 @@ export async function uploadImage(
     () => null,
   );
   if (!put?.ok) {
-    return { error: "The upload failed. Try again." };
+    return { error: "The upload failed. Try again.", reason: "failed" };
   }
   const finished = await finishUpload(created.mediaId);
   if (finished.error) {
@@ -30,15 +36,15 @@ export async function uploadImage(
       return { mediaId: created.mediaId, src: status.src, urls: status.urls, w: status.width, h: status.height };
     }
     if (status.status === "FAILED") {
-      return { error: `${file.name} couldn't be used as an image` };
+      return { error: `${file.name} couldn't be used as an image`, reason: "unusable" };
     }
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
-  return { error: "The image is taking too long. Try again." };
+  return { error: "The image is taking too long. Try again.", reason: "tooLong" };
 }
 
 /** Uploads a file attachment or a video (articles) straight to media storage; it's ready once the server has checked it. A video has its `src`. */
-export async function uploadFile(projectSlug: string, file: File): Promise<{ mediaId: string; name: string; size: number; src?: string } | { error: string }> {
+export async function uploadFile(projectSlug: string, file: File): Promise<{ mediaId: string; name: string; size: number; src?: string } | UploadFailure> {
   const created = await createUpload(projectSlug, { name: file.name, type: file.type, size: file.size });
   if ("error" in created) {
     return created;
@@ -47,7 +53,7 @@ export async function uploadFile(projectSlug: string, file: File): Promise<{ med
     () => null,
   );
   if (!put?.ok) {
-    return { error: "The upload failed. Try again." };
+    return { error: "The upload failed. Try again.", reason: "failed" };
   }
   const finished = await finishUpload(created.mediaId);
   return finished.error ? { error: finished.error } : { mediaId: created.mediaId, name: created.name ?? file.name, size: file.size, src: finished.src };

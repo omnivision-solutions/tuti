@@ -689,6 +689,8 @@
     "waitImages": "{count, plural, one {Warte, bis das Bild hochgeladen ist, und versuch es dann noch einmal.} other {Warte, bis die Bilder hochgeladen sind, und versuch es dann noch einmal.}}",
     "waitFiles": "{count, plural, one {Warte, bis die Datei hochgeladen ist, und versuch es dann noch einmal.} other {Warte, bis die Dateien hochgeladen sind, und versuch es dann noch einmal.}}",
     "uploadFailed": "Hochladen fehlgeschlagen. Versuch es noch einmal.",
-    "unreadable": "Ein Teil dieses Texts kann hier nicht angezeigt werden, wahrscheinlich wegen eines gerade veröffentlichten Updates. Lade die Seite neu, um ihn zu bearbeiten: Bis dahin kann auf dieser Seite nichts gespeichert werden, und der gespeicherte Text bleibt, wie er ist."
+    "unreadable": "Ein Teil dieses Texts kann hier nicht angezeigt werden, wahrscheinlich wegen eines gerade veröffentlichten Updates. Lade die Seite neu, um ihn zu bearbeiten: Bis dahin kann auf dieser Seite nichts gespeichert werden, und der gespeicherte Text bleibt, wie er ist.",
+    "imageUnusable": "{name} konnte nicht als Bild verwendet werden",
+    "imageTooLong": "Das Bild braucht zu lange. Versuch es noch einmal."
   }
 }

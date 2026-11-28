@@ -298,6 +298,10 @@ test("Feedback, a board and a post in German: their words, counts and times, and
   await expect(linkDialog.getByRole("button", { name: "Link hinzufügen" })).toBeVisible();
   await linkDialog.getByRole("button", { name: "Abbrechen" }).click();
   await expect(linkDialog).toBeHidden();
+  await reader.setViewportSize({ width: 390, height: 800 });
+  await toolbar.scrollIntoViewIfNeeded();
+  await checkpoint(reader, "comment-editor-in-german-phone", { fullPage: false });
+  await reader.setViewportSize({ width: 1280, height: 800 });
   await comments.getByRole("textbox", { name: "Kommentieren" }).fill("Bitte auch für die App");
   await comments.getByRole("button", { name: "Kommentieren" }).click();
   await expect(reader.locator("[data-sonner-toast]", { hasText: "Kommentar gepostet" })).toBeVisible();

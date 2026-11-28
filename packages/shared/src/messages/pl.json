@@ -689,6 +689,8 @@
     "waitImages": "{count, plural, one {Poczekaj, aż obraz się prześle, i spróbuj ponownie.} few {Poczekaj, aż obrazy się prześlą, i spróbuj ponownie.} many {Poczekaj, aż obrazy się prześlą, i spróbuj ponownie.} other {Poczekaj, aż obrazy się prześlą, i spróbuj ponownie.}}",
     "waitFiles": "{count, plural, one {Poczekaj, aż plik się prześle, i spróbuj ponownie.} few {Poczekaj, aż pliki się prześlą, i spróbuj ponownie.} many {Poczekaj, aż pliki się prześlą, i spróbuj ponownie.} other {Poczekaj, aż pliki się prześlą, i spróbuj ponownie.}}",
     "uploadFailed": "Przesyłanie nie powiodło się. Spróbuj ponownie.",
-    "unreadable": "Części tego tekstu nie da się tu pokazać, prawdopodobnie z powodu właśnie wydanej aktualizacji. Odśwież stronę, aby go edytować: do tego czasu nic na tej stronie nie może zostać zapisane, a zapisany tekst pozostaje bez zmian."
+    "unreadable": "Części tego tekstu nie da się tu pokazać, prawdopodobnie z powodu właśnie wydanej aktualizacji. Odśwież stronę, aby go edytować: do tego czasu nic na tej stronie nie może zostać zapisane, a zapisany tekst pozostaje bez zmian.",
+    "imageUnusable": "Nie udało się użyć pliku {name} jako obrazu",
+    "imageTooLong": "Obraz przetwarza się zbyt długo. Spróbuj ponownie."
   }
 }

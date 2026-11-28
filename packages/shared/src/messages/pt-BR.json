@@ -689,6 +689,8 @@
     "waitImages": "{count, plural, one {Espere a imagem terminar de enviar e tente de novo.} other {Espere as imagens terminarem de enviar e tente de novo.}}",
     "waitFiles": "{count, plural, one {Espere o arquivo terminar de enviar e tente de novo.} other {Espere os arquivos terminarem de enviar e tente de novo.}}",
     "uploadFailed": "O envio falhou. Tente de novo.",
-    "unreadable": "Parte deste texto não pode ser mostrada aqui, provavelmente por causa de uma atualização que acabou de sair. Recarregue a página para editá-lo: nada nesta página pode ser salvo até lá, e o texto salvo continua como está."
+    "unreadable": "Parte deste texto não pode ser mostrada aqui, provavelmente por causa de uma atualização que acabou de sair. Recarregue a página para editá-lo: nada nesta página pode ser salvo até lá, e o texto salvo continua como está.",
+    "imageUnusable": "{name} não pôde ser usado como imagem",
+    "imageTooLong": "A imagem está demorando demais. Tente de novo."
   }
 }
