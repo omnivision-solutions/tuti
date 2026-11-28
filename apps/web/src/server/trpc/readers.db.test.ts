@@ -259,3 +259,17 @@ test("the widget's person never runs the team's operations, by the router or in 
   // As themselves in the app, the same operation runs.
   await expect(runOperation(listTeam, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {})).resolves.toBeTruthy();
 });
+
+test("a teammate through the widget gets a reader's docs and changelog: no article or entry for a group they're not in; in the app, both", async () => {
+  const group = await prisma.readerGroup.create({ data: { projectId: project.id, key: "enterprise", name: "Enterprise" } });
+  await prisma.changelogEntry.create({ data: { projectId: project.id, number: 5, title: "For Enterprise", publishedAt: new Date(), groups: { create: [{ groupId: group.id }] } } });
+  await prisma.article.create({
+    data: { projectId: project.id, slug: "saml-setup", title: "SAML setup", publishedAt: new Date(), access: "GROUPS", groups: { create: [{ groupId: group.id }] } },
+  });
+  const viaWidget = { authorization: `Widget ${widgetToken(project.id, owner.id)}` };
+  expect((await trpc("changelog.get", { number: 5 }, viaWidget)).status).toBe(404);
+  expect((await trpc("articles.get", { slug: "saml-setup" }, viaWidget)).status).toBe(404);
+  const app = await callerAs(owner);
+  await expect(app.changelog.get({ project: project.slug, number: 5 })).resolves.toMatchObject({ number: 5 });
+  await expect(app.articles.get({ project: project.slug, slug: "saml-setup" })).resolves.toMatchObject({ title: "SAML setup" });
+});
