@@ -41,5 +41,5 @@ test("a document's links, once each, from its text at any depth", () => {
 test("what an article is about: the team's description, else its text's first lines", () => {
   expect(articleDescription({ description: "Set it up.", body: "Long text" })).toBe("Set it up.");
   expect(articleDescription({ description: "", body: "Install\n\nthe   app." })).toBe("Install the app.");
-  expect(articleDescription({ description: "", body: "word ".repeat(60) })).toMatch(/^(word ){30}.*…$/);
+  expect(articleDescription({ description: "", body: "word ".repeat(60) })).toBe(`${"word ".repeat(31)}wo…`);
 });

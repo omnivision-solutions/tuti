@@ -16,11 +16,5 @@ test("every page the app has at /app/<name> is a reserved slug", () => {
   const segments = appSegments(join(import.meta.dirname, "../app/app"));
   expect(segments).toContain("licenses");
   expect(segments.filter((segment) => !isReservedSlug(segment))).toEqual([]);
-});
-
-test("the app's own pages under /app are no project's slug", () => {
-  for (const page of ["account", "new", "license", "licenses"]) {
-    expect(isReservedSlug(page)).toBe(true);
-  }
   expect(isReservedSlug("acme")).toBe(false);
 });

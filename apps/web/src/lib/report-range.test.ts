@@ -19,8 +19,9 @@ test("each range is whole UTC days, its last day the one before `until`", () => 
 });
 
 test("the past 30 days unless a known range is asked for", () => {
-  expect(span(undefined)).toEqual(["2026-10-05", "2026-11-04", 30, "2026-10-05", "2026-11-03"]);
-  expect(span("forever")).toEqual(span("30d"));
+  for (const key of [undefined, "forever", "30d"]) {
+    expect(span(key), key).toEqual(["2026-10-05", "2026-11-04", 30, "2026-10-05", "2026-11-03"]);
+  }
   expect(reportRange("14d", now).label).toBe("Past 14 days");
 });
 

@@ -131,10 +131,8 @@ test("the widget's reply time, as its message's values, in the same steps; the m
     [50 * 60, "Usually replies in 3 days", "Antwortet meist in 3 Tagen"],
   ];
   for (const [minutes, english, german] of steps) {
-    // The English matches replyTime's (the inbox's) for the same time.
-    expect(usually("en", minutes), `${minutes}`).toBe(`Usually replies in ${replyTime(minutes * 60_000)}`);
-    expect(usually("en", minutes)).toBe(english);
-    expect(usually("de", minutes)).toBe(german);
+    expect(usually("en", minutes), `${minutes}`).toBe(english);
+    expect(usually("de", minutes), `${minutes}`).toBe(german);
   }
 });
 

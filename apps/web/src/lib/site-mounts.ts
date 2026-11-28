@@ -42,7 +42,7 @@ export function normalizeSiteUrl(input: string): { origin: string; path: string 
 }
 
 /** How much of each of the sub-folder form's fields is read: site.set takes 500 characters in all. */
-export const SITE_FIELD_MAX = 600;
+const SITE_FIELD_MAX = 600;
 
 /**
  * Settings → Domain → Sub-folder's two fields as one address for site.set (which adds https:// to
