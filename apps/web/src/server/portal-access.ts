@@ -30,7 +30,7 @@ import { onTeam, sessionIn } from "./session";
  * the portal (a team member's on their own private portal) gives way to the widget's. `session` null: the widget's or
  * the preview's person, read with no portal session (onTeam).
  */
-const reader = cache(async (projectId: string): Promise<{ userId: string | null; session?: null }> => {
+const reader = cache(async (projectId: string): Promise<{ userId: string | null; session?: null; asReader?: true }> => {
   const jar = await cookies();
   const previewing = await previewReader(projectId, jar.get(PREVIEW_READER_COOKIE)?.value);
   if (previewing) {
@@ -42,7 +42,8 @@ const reader = cache(async (projectId: string): Promise<{ userId: string | null;
   }
   const token = jar.get(WIDGET_READER_COOKIE)?.value;
   const widget = token ? await widgetTokenUser(projectId, token) : null;
-  return widget ? { userId: widget, session: null } : { userId: session?.user.id ?? null };
+  // The widget's person: a reader whatever their role (Actor's viaWidget), let in as the team is but never shown its own.
+  return widget ? { userId: widget, session: null, asReader: true } : { userId: session?.user.id ?? null };
 });
 
 /** Whether whoever's asking may read the project's portal. */
@@ -99,8 +100,8 @@ export const readerOf = cache(async (projectId: string, userId: string | null | 
  * shows less.
  */
 export async function currentReader(projectId: string): Promise<Reader> {
-  const { userId, session } = await reader(projectId);
-  const read = await readerOf(projectId, userId, session);
+  const { userId, session, asReader } = await reader(projectId);
+  const read = await readerOf(projectId, userId, session, asReader);
   return (await headers()).get(PREVIEW.header) === PREVIEW.value ? SIGNED_OUT : read;
 }
 
