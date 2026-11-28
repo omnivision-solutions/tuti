@@ -1,8 +1,8 @@
 import { type Prisma, prisma } from "@tuti/db";
 import { historySince, visibleConversations } from "@tuti/jobs";
 
-import { newVisitor, visitorHash } from "@/lib/visitor-session";
-import { widgetTokenUser } from "@/lib/widget-session";
+import { newVisitor, visitorHash } from "@/server/auth/visitor-session";
+import { widgetTokenUser } from "@/server/auth/widget-session";
 
 import type { InboxChange } from "./live";
 import { canActIn } from "./membership";
@@ -10,8 +10,8 @@ import { sessionIn } from "./session";
 
 /**
  * Who's writing in the widget's Messages (docs/plan.md, Support inbox): someone the page signed in
- * (its widget token, lib/widget-session.ts), someone signed in on the portal itself, or a
- * signed-out visitor (their visitor token, lib/visitor-session.ts). Never the reader cookie, which
+ * (its widget token, server/auth/widget-session.ts), someone signed in on the portal itself, or a
+ * signed-out visitor (their visitor token, server/auth/visitor-session.ts). Never the reader cookie, which
  * only says who may read a private portal. Not a "use server" module: never callable from browsers.
  */
 
@@ -28,7 +28,7 @@ export type WidgetPerson = { projectId: string; where: Prisma.ConversationWhereI
  * Someone signed in: their own conversations and, when the project's app signs them in (their SSO identity here, by
  * the widget's token or on the portal), the project's conversations with nobody Tuti knows (no user, nor a visitor) from that address, verified
  * (an email whose DMARC passed; what the widget and the API are given never is). Matching by email is refused for
- * signing in (lib/sso.ts), as a project could claim anyone's address; here it's the project's own conversations, by
+ * signing in (server/auth/sso.ts), as a project could claim anyone's address; here it's the project's own conversations, by
  * its own word for the address, as received email already joins them (server/inbound.ts, userWithAddress). A portal
  * account's verified address alone doesn't: Tuti's word, not the project's, and its mail joins it as it comes.
  */

@@ -330,8 +330,9 @@ const POLL_GRACE_MS = SCAN_STALE_MS + 60 * 1000;
 /**
  * The hosts of the hosted sign-in services the app calls (@tuti/jobs sign-in-hosts.ts), allowed for its runs (foundDomains).
  * Reading the app's page and scripts takes seconds, so the worker does it (the screenshot-sign-in-scan job),
- * once per app address and week (kept on the settings); a look meanwhile says it's checking. `start: false` (the
- * screen's polls) never starts a read: one that ended without an answer (a script didn't load) ends the waiting.
+ * once per app address and week (kept on the settings); a look meanwhile says it's checking. Only `start`
+ * (screenshotSettings.scan) starts a read; a look (screenshotSettings.signInDomains, the screen's polls) never does: one
+ * that ended without an answer (a script didn't load) ends the waiting.
  */
 async function signInDomains(context: { actor: Actor; projectId: string }, start: boolean): Promise<z.infer<typeof signInDomainsOutput>> {
   const { projectId } = context;
@@ -398,21 +399,29 @@ export const getScreenshotSignInDomains = defineOperation({
   name: "screenshotSettings.signInDomains",
   title: "Get screenshot sign-in domains",
   summary:
-    "Hosts of the sign-in services your app calls (Firebase, Auth0, Supabase, Okta, Amazon Cognito, Clerk, Stytch, WorkOS), found in its code and allowed for its runs; remove one with screenshotSettings.update's `skippedDomains`. Read in the background: ask again while `checking`.",
+    "Hosts of the sign-in services your app calls (Firebase, Auth0, Supabase, Okta, Amazon Cognito, Clerk, Stytch, WorkOS), found in its code and allowed for its runs; remove one with screenshotSettings.update's `skippedDomains`. Read in the background (screenshotSettings.scan); ask while `checking`.",
   method: "GET",
   path: "/screenshots/settings/sign-in-domains",
   scope: "read",
   access: "admin",
-  input: z.object({
-    start: z
-      .union([z.boolean(), z.stringbool()])
-      .default(true)
-      .describe("`false` only reads: no read of the app is started (to ask again while `checking`)")
-      .meta({ examples: [false] }),
-  }),
+  input: z.object({}),
   output: signInDomainsOutput.describe("The sign-in domains found"),
+  run: async (context) => signInDomains(context, false),
+});
+
+export const scanScreenshotSignInDomains = defineOperation({
+  name: "screenshotSettings.scan",
+  title: "Scan for sign-in domains",
+  summary:
+    "Start reading your app for the sign-in services it calls, unless its answer is from the last week or a read is under way; returns what's known. Read in the background: ask screenshotSettings.signInDomains while `checking`. Each read counts against the hourly limit for reading an API reference.",
+  method: "POST",
+  path: "/screenshots/settings/scan",
+  scope: "write",
+  access: "admin",
+  input: z.object({}),
+  output: signInDomainsOutput.describe("The sign-in domains found so far"),
   errors: [429],
-  run: async (context, { start }) => signInDomains(context, start),
+  run: async (context) => signInDomains(context, true),
 });
 
 /** Refuses a run that can't go: no key or uploads here (503), no settings (409), no credits (402). */

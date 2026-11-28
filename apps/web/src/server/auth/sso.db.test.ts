@@ -122,7 +122,7 @@ test("the asserted email is kept lowercase, and a sign-in without one clears it"
 });
 
 test("the migration lowercases emails", async () => {
-  const sql = readFileSync(new URL("../../../../packages/db/prisma/migrations/20261023120000_user_properties/migration.sql", import.meta.url), "utf8");
+  const sql = readFileSync(new URL("../../../../../packages/db/prisma/migrations/20261023120000_user_properties/migration.sql", import.meta.url), "utf8");
   // Back to before it (this file's database is its own), with a user as they were then.
   await prisma.$executeRawUnsafe(`DROP INDEX "sso_identity_projectId_email_idx"`);
   const user = await signUp("Then");

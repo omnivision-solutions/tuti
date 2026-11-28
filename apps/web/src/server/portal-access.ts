@@ -4,7 +4,7 @@ import { planIncludes, readerEntriesFor } from "@tuti/shared";
 import { cookies, headers } from "next/headers";
 import { cache } from "react";
 
-import type { Session } from "@/lib/auth";
+import type { Session } from "@/server/auth/auth";
 import { inGroup, storedRule } from "@tuti/shared/group-conditions";
 import { PREVIEW } from "@/lib/portal-base";
 import { type Reader, SIGNED_OUT } from "@/lib/read-access";
@@ -12,8 +12,8 @@ import { storedProperties } from "@tuti/shared/user-properties";
 
 import type { Actor } from "./operations/define";
 import type { PostViewer } from "./post-visibility";
-import { previewUser } from "@/lib/preview-session";
-import { widgetTokenUser } from "@/lib/widget-session";
+import { previewUser } from "@/server/auth/preview-session";
+import { widgetTokenUser } from "@/server/auth/widget-session";
 
 import { onTeam, sessionFrom, sessionIn } from "./session";
 
@@ -84,7 +84,7 @@ export async function portalVisitor(slug: string, headers: Headers, preview?: st
 }
 
 /**
- * Customize's preview of a portal (lib/preview-session.ts): this cookie, partitioned to the app's
+ * Customize's preview of a portal (server/auth/preview-session.ts): this cookie, partitioned to the app's
  * site, holds the token of the team member it reads the portal as.
  */
 export const PREVIEW_READER_COOKIE = "tuti_preview_reader";

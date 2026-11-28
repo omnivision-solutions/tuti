@@ -3,7 +3,7 @@ import { configFile, type DnsFake, startDnsFake } from "@tuti/testkit";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { auth } from "@/lib/auth";
+import { auth } from "@/server/auth/auth";
 import { appUrl } from "@/lib/hosts";
 import { proxy } from "@/proxy";
 import { createProject, signUp, type TestUser } from "@/test/helpers";

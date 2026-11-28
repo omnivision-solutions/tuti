@@ -29,6 +29,7 @@ import { currentReader, mayRead } from "@/server/portal-access";
 import { portalBase, portalLanguage } from "@/server/portal-base";
 import { pageLanguages } from "@/server/language-addresses";
 import { TeamHtml } from "@/components/team-html";
+import { TrpcProvider } from "@/components/trpc";
 import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
 import { portalSite, SHARE_IMAGE } from "@/server/portal-metadata";
 import { getSession } from "@/server/session";
@@ -133,6 +134,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
 
   return (
     <PortalBaseProvider base={base} slug={slug} prefix={prefix}>
+      <TrpcProvider base={base}>
       <PortalIntl language={language} teamLanguage={languages?.default ?? DEFAULT_LANGUAGE} messages={messages}>
       {/* Not on the app's own domain (Tuti's own portal): the theme kept there is the app's, its user's pick. */}
       {/* Under a path of the team's site, the stored theme is the site's too: a pick made there stays, switch or not. */}
@@ -211,6 +213,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
           checks the page's real origin). Never on a Tuti address (a script there could pass for Tuti) or the app's own domain. */}
       {brand.customHtml && ownOrigin && <TeamHtml html={brand.customHtml} origin={ownOrigin} />}
       </PortalIntl>
+      </TrpcProvider>
     </PortalBaseProvider>
   );
 }

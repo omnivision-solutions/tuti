@@ -5,7 +5,7 @@ import { duplicatesMeter } from "@tuti/jobs";
 import { duplicatesModel, duplicateText, embed, embeddingsEnabled, judgeDuplicates, log, toVectorLiteral, TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 import { z } from "zod";
 
-import { widgetTokenUser } from "@/lib/widget-session";
+import { widgetTokenUser } from "@/server/auth/widget-session";
 
 import { canActIn } from "./membership";
 import { boardNames } from "./portal-labels";

@@ -4,7 +4,7 @@ import { type PostStatus, prisma } from "@tuti/db";
 import { beforeEach, expect, test, vi } from "vitest";
 
 import { unreadNumbers } from "@/lib/whats-new";
-import { widgetToken } from "@/lib/widget-session";
+import { widgetToken } from "@/server/auth/widget-session";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { markChangelogSeen } from "./changelog-seen";

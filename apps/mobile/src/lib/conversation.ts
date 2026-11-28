@@ -6,7 +6,7 @@ import type { Owned } from "./inbox";
 /**
  * One conversation: what `conversations.get` answers, replying, uploading, Draft with AI, the drafts kept on the phone,
  * and the live stream that says when to fetch it again (apps/web/src/server/operations/conversations.ts has the
- * operations; apps/web/src/lib/app-sign-in.ts the stream's contract).
+ * operations; apps/web/src/server/auth/app-sign-in.ts the stream's contract).
  */
 
 export type Attachment = { id: string; filename: string; contentType: string; size: number; url?: string | null };

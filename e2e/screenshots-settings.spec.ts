@@ -123,7 +123,7 @@ test("an app that signs in through Firebase: its hosts are found and allowed by 
     const passwordField = owner.getByLabel("Password", { exact: true }).and(owner.locator('input[type="password"]'));
     await passwordField.fill(password);
     // The page's next ask, held while the checking chip is looked at (inline jobs have the answer by then).
-    const isPoll = (url: URL) => url.pathname.endsWith("/settings/screenshots/sign-in-domains") && url.searchParams.get("start") === "false";
+    const isPoll = (url: URL) => url.pathname.endsWith("/api/trpc/screenshotSettings.signInDomains");
     let poll: Route | undefined;
     await owner.route(isPoll, (route) => {
       poll = route;
@@ -275,11 +275,13 @@ test("while the app is read again, the page keeps asking for as long as a read c
   const auth0 = { host: "acme.auth0.com", provider: "Auth0" };
   let done = false;
   let fail = false;
-  // The page's looks again (start=false), counted.
+  // The page's looks again (the query; its first look is the scan), counted.
   let asks = 0;
-  await owner.route("**/settings/screenshots/sign-in-domains*", (route) => {
-    asks += new URL(route.request().url()).searchParams.get("start") === "false" ? 1 : 0;
-    return fail ? route.fulfill({ status: 502 }) : route.fulfill({ json: done ? { domains: [firebase, auth0], checking: false } : { domains: [firebase], checking: true } });
+  await owner.route(/\/api\/trpc\/screenshotSettings\.(scan|signInDomains)\b/, (route) => {
+    asks += new URL(route.request().url()).pathname.endsWith(".signInDomains") ? 1 : 0;
+    // tRPC's batch answer (superjson): one result.
+    const answer = (json: unknown) => route.fulfill({ json: [{ result: { data: { json } } }] });
+    return fail ? route.fulfill({ status: 502 }) : answer(done ? { domains: [firebase, auth0], checking: false } : { domains: [firebase], checking: true });
   });
   // The clock moved a little at a time until the page asks again (it sets its next ask only once an answer is in).
   const nextAsk = async () => {

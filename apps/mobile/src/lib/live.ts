@@ -1,6 +1,6 @@
 /**
  * The project's live updates while the Inbox is open: `/api/live`, a Server-Sent Events stream with the session's
- * headers (apps/web/src/lib/app-sign-in.ts has the contract). React Native has no EventSource; Expo's fetch (the global
+ * headers (apps/web/src/server/auth/app-sign-in.ts has the contract). React Native has no EventSource; Expo's fetch (the global
  * `fetch` in the app) streams the body, read here line by line.
  */
 

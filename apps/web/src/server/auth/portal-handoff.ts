@@ -7,7 +7,7 @@ import { setSessionCookie } from "better-auth/cookies";
 import { z } from "zod";
 
 import { requestTarget } from "@/server/custom-domains";
-import { safeRedirectPath } from "./redirects";
+import { safeRedirectPath } from "@/lib/redirects";
 import { baseFrom, withBase } from "@/lib/portal-base";
 
 /**

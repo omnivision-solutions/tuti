@@ -9,6 +9,7 @@ import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { createArticle, deleteArticle, publishArticle, updateArticle } from "./operations/docs";
 import { getLanguages, retranslateLanguage, updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
+import type { InputOf } from "@/server/operations/define";
 
 /** Article translations (docs/plan.md, Languages, L6): the translate-article job, run inline. */
 
@@ -40,12 +41,12 @@ const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectI
 const log = { info: () => {}, warn: () => {} };
 
 /** languages.update and languages.retranslate, once the translating they start (in the background, inline) is done. */
-const languages = async (input: Parameters<typeof updateLanguages.run>[1]) => {
+const languages = async (input: InputOf<typeof updateLanguages>) => {
   const result = await call(updateLanguages, as(), input);
   await languageTranslationsDone();
   return result;
 };
-const retranslate = async (input: Parameters<typeof retranslateLanguage.run>[1]) => {
+const retranslate = async (input: InputOf<typeof retranslateLanguage>) => {
   const result = await call(retranslateLanguage, as(), input);
   await languageTranslationsDone();
   return result;

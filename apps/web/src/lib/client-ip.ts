@@ -38,7 +38,7 @@ export function trustedClientIp(headers: Headers): string | null {
   return (header && headers.get(header)?.split(",").at(-1)?.trim()) || null;
 }
 
-/** Where Better Auth reads the visitor's IP address from (lib/auth.ts); set by withClientIp only. */
+/** Where Better Auth reads the visitor's IP address from (server/auth/auth.ts); set by withClientIp only. */
 export const CLIENT_IP_HEADER = "x-tuti-client-ip";
 
 /**

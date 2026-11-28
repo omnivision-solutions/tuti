@@ -11,16 +11,17 @@ import { startSesFake } from "@tuti/testkit/ses";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { hashInvitationToken } from "@tuti/jobs";
-import { generateSsoSecret } from "@/lib/sso";
-import { widgetToken } from "@/lib/widget-session";
+import { generateSsoSecret } from "@/server/auth/sso";
+import { widgetToken } from "@/server/auth/widget-session";
 import { claimToken } from "@/server/appsumo";
 import { upsertProjectUser } from "@/server/project-users";
-import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
+import { actAs, callerAs, createProject, inGroupNamed, onPortal, signUp, type TestUser } from "@/test/helpers";
 import { testLicensePrivateKey } from "@/test/license";
 import { mailbox } from "@/test/mailbox";
+import { TRPCError } from "@trpc/server";
+import type { OperationName } from "./operations";
 import { request } from "@/test/next-headers";
 
-import * as aiFirst from "./ai-first";
 import * as aiModels from "./ai-models";
 import * as apiKeys from "./api-keys";
 import * as articleVersions from "./article-versions";
@@ -93,7 +94,6 @@ const modules = {
   "code-changes": codeChanges,
   "code-changes-tuning": codeChangesTuning,
   credits,
-  "ai-first": aiFirst,
   "ai-models": aiModels,
   "api-keys": apiKeys,
   "api-references": apiReferences,
@@ -209,9 +209,6 @@ const matrix: Matrix = {
     manageSubscription: { allowed: "ADMIN", call: (slug) => credits.manageSubscription(slug) },
     // Off on the free plan: nothing to remove (adding it is in plans.db.test.ts).
     setBadge: { allowed: "ADMIN", call: (slug) => credits.setBadge(slug, false) },
-  },
-  "ai-first": {
-    saveAiFirst: { allowed: "ADMIN", call: (slug) => aiFirst.saveAiFirst(slug, { widget: false, email: true, name: "Ada" }) },
   },
   "ai-models": {
     saveAiModel: { allowed: "ADMIN", call: (slug) => aiModels.saveAiModel(slug, { levels: { changelog: "balanced" } }) },
@@ -1461,4 +1458,79 @@ test.each(cases)("$name", async ({ name, rule }) => {
   actAs(userFor(allowedActor(rule)));
   rule.before?.();
   expect(await outcome(rule.call(fixture.slug, fixture))).not.toMatch(/^error: /);
+});
+
+/**
+ * Procedures (server/trpc), as the app, REST and MCP call them: one per kind of `access`, each refused to everyone below
+ * its level without changing anything (signed out, another project's team or single sign-on user, a portal's session,
+ * lower roles, a key with another project's slug, a read-only key for a write) and run by the lowest level allowed and
+ * by a read and write key. Screens add theirs here as they move onto the router (docs/plan.md, "One way in").
+ */
+type Caller = Awaited<ReturnType<typeof callerAs>>;
+type ProcedureCase = Omit<Case, "call" | "takesIds"> & { scope: "read" | "write"; call: (caller: Caller, slug: string) => Promise<unknown> };
+
+const procedures: { [N in OperationName]?: ProcedureCase } = {
+  "aiFirst.get": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.aiFirst.get({ project: slug }) },
+  "aiFirst.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.aiFirst.update({ project: slug, widget: false, email: true, name: "Ada" }) },
+  "changelog.update": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.changelog.update({ project: slug, number: 1, title: "Renamed by the matrix" }) },
+  // Owners only (plans are off here, so every project has Advanced tuning).
+  "codeChangesTuning.update": { allowed: "OWNER", scope: "write", call: (caller, slug) => caller.codeChangesTuning.update({ project: slug, "decide.rounds": 6 }) },
+  "votes.set": { allowed: "signed in", refusesSsoUsers: true, scope: "write", call: (caller, slug) => caller.votes.set({ project: slug, number: 1, voted: true }) },
+};
+
+/** What a procedure call did: ok, or the tRPC error's code (any other failure fails the test). */
+async function procedureOutcome(call: Promise<unknown>): Promise<string> {
+  try {
+    await call;
+    return "ok";
+  } catch (error) {
+    if (error instanceof TRPCError) {
+      return error.code;
+    }
+    throw error;
+  }
+}
+
+const REFUSED = /^(UNAUTHORIZED|FORBIDDEN|NOT_FOUND)$/;
+
+test.each(Object.entries(procedures).map(([name, rule]) => ({ name, rule: rule! })))("procedure $name", async ({ rule }) => {
+  const fixture = await createFixture();
+  const readKey = { apiKeyId: fixture.apiKeyId };
+  const writeKey = {
+    apiKeyId: (await prisma.apiKey.create({ data: { projectId: fixture.projectId, name: "Write", scope: "WRITE", keyHash: crypto.randomUUID(), prefix: "tuti_w", createdById: users.OWNER.id } })).id,
+  };
+  // Another project's key, naming this project.
+  const otherKey = { apiKeyId: (await prisma.apiKey.create({ data: { projectId: otherProject.id, name: "Other", scope: "WRITE", keyHash: crypto.randomUUID(), prefix: "tuti_o", createdById: users.outsider.id } })).id };
+  const before = await snapshot();
+
+  for (const actor of refusedActors({ ...rule, call: async () => {} })) {
+    expect({ actor, outcome: await procedureOutcome(rule.call(await callerAs(userFor(actor)), fixture.slug)) }).toEqual({ actor, outcome: expect.stringMatching(REFUSED) });
+  }
+  // A teammate naming another project's slug, and keys naming a project not theirs.
+  expect(await procedureOutcome(rule.call(await callerAs(users.OWNER), otherProject.slug))).toMatch(REFUSED);
+  expect(await procedureOutcome(rule.call(await callerAs(writeKey), otherProject.slug))).toMatch(REFUSED);
+  expect(await procedureOutcome(rule.call(await callerAs(otherKey), fixture.slug))).toMatch(REFUSED);
+  if (rule.scope === "write") {
+    expect(await procedureOutcome(rule.call(await callerAs(readKey), fixture.slug))).toBe("FORBIDDEN");
+  }
+  expect(await snapshot()).toEqual(before);
+
+  // A portal's session, even an owner's: a reader's, never the team's.
+  const reader = await signUp("Portal reader");
+  await prisma.teamMember.create({ data: { projectId: fixture.projectId, userId: reader.id, role: "OWNER" } });
+  await onPortal(reader, { id: fixture.projectId, slug: fixture.slug });
+  const asReader = await procedureOutcome(rule.call(await callerAs(reader), fixture.slug));
+  if (rule.allowed === "signed in" || rule.allowed === "public") {
+    expect(asReader).toBe("ok");
+  } else {
+    expect(asReader).toMatch(REFUSED);
+  }
+  request.host = "";
+
+  rule.before?.();
+  expect(await procedureOutcome(rule.call(await callerAs(userFor(allowedActor({ ...rule, call: async () => {} }))), fixture.slug))).toBe("ok");
+  if (rule.scope === "read") {
+    expect(await procedureOutcome(rule.call(await callerAs(readKey), fixture.slug))).toBe("ok");
+  }
+  expect(await procedureOutcome(rule.call(await callerAs(writeKey), fixture.slug))).toBe("ok");
 });

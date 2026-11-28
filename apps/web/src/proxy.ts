@@ -8,7 +8,7 @@ import { isUsableSlug, SLUG_PATTERN } from "@/lib/project-slugs";
 import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
 import { isArticleSlug } from "@/server/docs-queries";
 import { destinationKey, redirectKey, redirectLocation } from "@/lib/portal-redirects";
-import { PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/lib/preview-session";
+import { PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/server/auth/preview-session";
 import { PREVIEW_READER_COOKIE, portalVisitor, previewTokenFor, teamPreview } from "@/server/portal-access";
 import { redirectFor } from "@/server/portal-redirects";
 import { LANGUAGE, languagePrefix, ownAddress, preferredLanguage, prefixedTarget, splitLanguage, withLanguage } from "@/lib/language-addresses";

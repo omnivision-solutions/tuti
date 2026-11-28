@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { proxy } from "@/proxy";
 import { appUrl } from "@/lib/hosts";
-import { randomSecret } from "@/lib/portal-handoff";
+import { randomSecret } from "@/server/auth/portal-handoff";
 import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";

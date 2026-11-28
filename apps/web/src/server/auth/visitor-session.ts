@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 
-import { signValue, verifyValue } from "./signed";
+import { signValue, verifyValue } from "@/lib/signed";
 
 /**
  * Visitor tokens: a signed-out visitor in the widget's Messages (docs/plan.md, Support inbox).

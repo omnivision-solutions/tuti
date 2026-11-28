@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 
 import { call } from "@/server/operations/run";
 import { FETCHES_PER_MEMBER_PER_MINUTE } from "@/server/operations/fetch-limits";
-import { getScreenshotSignInDomains } from "@/server/operations/screenshots";
+import { getScreenshotSignInDomains, scanScreenshotSignInDomains } from "@/server/operations/screenshots";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
 /**
@@ -132,9 +132,10 @@ beforeEach(async () => {
 /** The hosts found, by service, as the scanner keeps them. */
 const byService = (domains: { host: string; provider: string; skipped: boolean }[]) =>
   [...new Set(domains.map(({ provider }) => provider))].map((provider) => ({ provider, hosts: domains.filter((one) => one.provider === provider).map(({ host }) => host) }));
-/** A look at the sign-in domains (by service); `start: false` (the screen's polls) only reads. */
-const look = async (input: { start?: boolean } = {}) => {
-  const { domains, checking } = await call(getScreenshotSignInDomains, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, input);
+/** A look at the sign-in domains (by service): a scan (screenshotSettings.scan), or with `start: false` (the screen's polls) only a read (screenshotSettings.signInDomains). */
+const look = async ({ start = true }: { start?: boolean } = {}) => {
+  const context = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
+  const { domains, checking } = start ? await call(scanScreenshotSignInDomains, context, {}) : await call(getScreenshotSignInDomains, context, {});
   return { suggestions: byService(domains), checking };
 };
 /** The suggestions once the read is done: a first look starts it (and says it's checking), the next reads its answer. */

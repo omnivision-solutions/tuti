@@ -16,7 +16,7 @@ import {
 import { createComment, createPost, MAX_TEXT_LENGTH } from "@/server/operations/create";
 import { updatePost } from "@/server/operations/manage";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
 /** A post's update from several pull requests (docs/plan.md, V4): one status change with one comment, each pull request's part kept. */
@@ -107,6 +107,28 @@ test("a second pull request's progress update joins the waiting one: one update 
   expect(await statuses(first.id, second.id)).toEqual(["APPLIED", "APPLIED"]);
   expect((await review()).update).toBeNull();
   await expect(call(applyCodeChangeAction, team(), { id: first.id })).rejects.toThrow("Someone already applied or dismissed this");
+});
+
+// The comment goes through comments.create's own check (runOperation): one its approver couldn't post directly (here,
+// another project's single sign-on user on this team) is refused, and the update is left unapplied and waiting again.
+test("a comment its approver couldn't post directly is refused inside the approval: nothing changes, and it waits again", async () => {
+  const progress = await part("MOVES_FORWARD", "Weekly repeats are out.");
+  const member = await addMember(project.id, "MEMBER");
+  const elsewhere = await createProject(owner);
+  await prisma.ssoIdentity.create({ data: { projectId: elsewhere.id, externalId: "e2e-elsewhere", userId: member.id } });
+  const asMember = { actor: { kind: "user" as const, userId: member.id }, projectId: project.id };
+  await expect(call(applyCodeChangeAction, asMember, { id: progress.id, revision: postVersion([progress.id]) })).rejects.toMatchObject({ status: 403 });
+  expect(await postNow()).toEqual({ status: "PLANNED", commentCount: 0, comments: [], links: [] });
+  expect(await statuses(progress.id)).toEqual(["PENDING"]);
+  expect((await review()).update).toMatchObject({ parts: [progress.id], status: "pending" });
+
+  // On a post already in progress, where nothing moves and the comment is posted last: refused the same.
+  await prisma.post.update({ where: { id: post.id }, data: { status: "IN_PROGRESS" } });
+  const later = await part("MOVES_FORWARD", "Monthly ones are out too.");
+  const { revision } = (await review()).update!;
+  await expect(call(applyCodeChangeAction, asMember, { id: later.id, revision })).rejects.toMatchObject({ status: 403 });
+  expect(await postNow()).toEqual({ status: "IN_PROGRESS", commentCount: 0, comments: [], links: [] });
+  expect(await statuses(progress.id, later.id)).toEqual(["PENDING", "PENDING"]);
 });
 
 test("completing replaces a waiting progress update, its comment folded in; dismissing the completion brings the progress update back", async () => {
@@ -231,9 +253,16 @@ test("a held try's comment reused as the note, whose completion then fails, and 
     data: { status: "PENDING", decidedById: owner.id, decidedAt: new Date(Date.now() - 60_000), waitReason: COMMENT_UNSURE, payload: { heldComment: "It's all out." } },
   });
   const comment = await call(createComment, team(), { number: post.number, body: "It's all out." });
-  // Approved again with the box as it was (that comment is the note), and the status move fails.
-  vi.spyOn(updatePost, "run").mockRejectedValueOnce(new Error("connection reset"));
-  await expect(call(applyCodeChangeAction, team(), { id: completes.id, revision: (await review()).update!.revision, comment: "It's all out." })).rejects.toThrow();
+  // Approved again with the box as it was (that comment is the note), and the status move fails (the database refuses
+  // the post's new status, as a dropped connection would fail it).
+  await prisma.$executeRawUnsafe(`CREATE FUNCTION "test_fail_move"() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'connection reset'; END $$`);
+  await prisma.$executeRawUnsafe(`CREATE TRIGGER "test_fail_move" BEFORE UPDATE ON "post" FOR EACH ROW WHEN (NEW.status IS DISTINCT FROM OLD.status) EXECUTE FUNCTION "test_fail_move"()`);
+  try {
+    await expect(call(applyCodeChangeAction, team(), { id: completes.id, revision: (await review()).update!.revision, comment: "It's all out." })).rejects.toThrow();
+  } finally {
+    await prisma.$executeRawUnsafe(`DROP TRIGGER "test_fail_move" ON "post"`);
+    await prisma.$executeRawUnsafe(`DROP FUNCTION "test_fail_move"()`);
+  }
   expect(await postNow()).toMatchObject({ status: "PLANNED", commentCount: 1 });
   expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).authorEmailDueAt).not.toBeNull();
   // Dismissed: it stays only a comment, so its email to the author goes.

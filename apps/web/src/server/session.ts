@@ -3,15 +3,15 @@ import { emailConfigured } from "@tuti/email";
 import { headers } from "next/headers";
 import { cache } from "react";
 
-import { auth, type Session } from "@/lib/auth";
+import { auth, type Session } from "@/server/auth/auth";
 
 import { sessionWorksOn } from "./custom-domains";
 
 /**
  * The session a request's cookie carries, if it works on the request's host (a portal's on that portal only).
- * Better Auth's hook (lib/auth.ts) already leaves others out; checked again here, where everything reads it.
+ * Better Auth's hook (server/auth/auth.ts) already leaves others out; checked again here, where everything reads it.
  * On a server that sends email, a session counts only once its address is verified: signing in with a password needs
- * that (lib/auth.ts), and one from before it did (or the previous release's, while a deploy overlaps) is signed out here:
+ * that (server/auth/auth.ts), and one from before it did (or the previous release's, while a deploy overlaps) is signed out here:
  * on the app, and on a portal a password account's ("Continue as" from the app). Not a portal's single sign-on user's:
  * the project's app vouches for them. Never one of a user their project's app deleted.
  */
@@ -41,7 +41,7 @@ async function unprovenPassword(userId: string): Promise<boolean> {
 export const getSession = cache(async () => sessionFrom(await headers()));
 
 /**
- * Whether a session may act in a project. One a portal started (see lib/auth.ts) only works on that portal's
+ * Whether a session may act in a project. One a portal started (see server/auth/auth.ts) only works on that portal's
  * host, but actions there name their project: it acts in that portal's project only.
  */
 export const actsIn = (session: Session, projectId: string) => session.session.boundTo === "app" || session.session.boundTo === projectId;
@@ -63,7 +63,7 @@ async function requestSession() {
 
 /**
  * Whether `userId` is who this request's portal session signs in. A portal's session is a reader's, even a team member's
- * on their own project's portal: whoever runs a portal's site or domain sees its cookies (lib/auth.ts). `session`: the
+ * on their own project's portal: whoever runs a portal's site or domain sees its cookies (server/auth/auth.ts). `session`: the
  * request's, for proxy.ts (no getSession there).
  */
 export async function signedInAsReader(userId: string, session?: Session | null): Promise<boolean> {

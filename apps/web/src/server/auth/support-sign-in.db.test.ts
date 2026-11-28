@@ -8,7 +8,7 @@ import { signUp } from "@/test/helpers";
 
 import { auth } from "./auth";
 
-const script = fileURLToPath(new URL("../../../../scripts/sign-in-as.mjs", import.meta.url));
+const script = fileURLToPath(new URL("../../../../../scripts/sign-in-as.mjs", import.meta.url));
 
 /** What the maintainers' script prints: the link. Its connection is in a zone behind UTC, which timestamps mustn't follow. */
 function mintLink(email: string) {

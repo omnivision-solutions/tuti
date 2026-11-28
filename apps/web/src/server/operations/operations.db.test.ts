@@ -13,7 +13,7 @@ import { createApiKey } from "@/server/api-keys";
 import { upsertProjectUser } from "@/server/project-users";
 import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 
-import { type Operation, type OperationName, operations } from "./index";
+import { type OperationName, operations, type PublicOperation } from "./index";
 import { errorStatuses } from "./openapi";
 
 /**
@@ -275,6 +275,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "screenshotSettings.update": () => ({ signIn: "password", username: "e2e-demo@example.com", password: "matrix-password", window: "phone" }),
   "screenshotSettings.test": () => ({}),
   "screenshotSettings.signInDomains": () => ({}),
+  "screenshotSettings.scan": () => ({}),
   "screenshots.take": () => ({ shots: [{ show: "The dashboard" }] }),
   "screenshots.get": (f) => ({ id: f.screenshotRunId }),
   "changelog.takeScreenshots": () => ({ number: 3, shots: [{ show: "The dashboard" }] }),
@@ -579,7 +580,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
 const PEOPLE_ONLY = new Set<string>(["articles.verifyAll", "imports.start", "conversations.markRead", "conversations.upload", "devices.register", "devices.remove", "notifications.update"]);
 
 /** Calls an operation over REST like a client would. */
-async function call(operation: Operation, input: Record<string, unknown>, key: string) {
+async function call(operation: PublicOperation, input: Record<string, unknown>, key: string) {
   const values = { ...input };
   const path = operation.path.replace(/\{(\w+)\}/g, (_, name: string) => {
     const value = String(values[name]);
@@ -668,6 +669,24 @@ const snapshot = () =>
     prisma.screenshotRun.findMany({ where: { projectId: project.id }, include: { screenshots: true }, orderBy: { id: "asc" } }),
   ]);
 
+/**
+ * Every table's contents but what a call itself counts: sessions (reading one may refresh it), API keys (each request
+ * counts against its key's rate limit and marks it used) and the day's count of docs searches (articles.search tallies
+ * each one for Help center insights, a read counted as the rate limit counts it).
+ */
+async function everyTable(): Promise<Record<string, string>> {
+  const tables = await prisma.$queryRaw<{ name: string }[]>`
+    SELECT table_name AS name FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name NOT IN ('session', 'api_key', 'docs_search_day', '_prisma_migrations')`;
+  const entries = await Promise.all(
+    tables.map(async ({ name }) => {
+      const [row] = await prisma.$queryRawUnsafe<{ hash: string }[]>(`SELECT md5(coalesce(string_agg(t::text, ',' ORDER BY t::text), '')) AS hash FROM "${name}" t`);
+      return [name, row!.hash] as const;
+    }),
+  );
+  return Object.fromEntries(entries);
+}
+
 test("every operation is in this matrix", () => {
   expect(operations.map((o) => o.name).sort()).toEqual(Object.keys(cases).sort());
 });
@@ -751,9 +770,14 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   if (operation.name === "articles.updateTranslation") {
     model.reply(JSON.stringify({ segments: { "1": "Matrix-Artikel", "2": "Matrix-Text." } }));
   }
+  const untouched = operation.method === "GET" ? await everyTable() : null;
   const result = await call(operation, input(), keys.write);
   // Its result is checked against its output as it runs (defineOperation).
   expect(result).toMatchObject({ status: 200 });
+  // A GET (a tRPC query) writes nothing, starts nothing and spends nothing: every table as it was.
+  if (untouched) {
+    expect(await everyTable()).toEqual(untouched);
+  }
   // What it queued in the background (inline here) is done before the next case.
   await languageTranslationsDone();
 });

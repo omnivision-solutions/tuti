@@ -7,7 +7,7 @@ import { generateMetadata as articleMetadata } from "@/app/portal/[project]/(sit
 import { generateMetadata as feedbackMetadata } from "@/app/portal/[project]/(site)/feedback/page";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
-import { previewToken } from "@/lib/preview-session";
+import { previewToken } from "@/server/auth/preview-session";
 import { proxy } from "@/proxy";
 import { createProject, signUp } from "@/test/helpers";
 import { request } from "@/test/next-headers";

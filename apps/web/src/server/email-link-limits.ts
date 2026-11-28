@@ -4,9 +4,9 @@ import { prisma } from "@tuti/db";
 import { lockProject } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 
-import { auth } from "@/lib/auth";
+import { auth } from "@/server/auth/auth";
 import { clientKey, trustedClientIp } from "@/lib/client-ip";
-import { hashSecret } from "@/lib/portal-handoff";
+import { hashSecret } from "@/server/auth/portal-handoff";
 import {
   SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR,
   SIGN_IN_LINKS_PER_CLIENT_PER_HOUR,

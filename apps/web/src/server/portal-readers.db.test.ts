@@ -7,7 +7,7 @@ import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
-import { hashSecret } from "@/lib/portal-handoff";
+import { hashSecret } from "@/server/auth/portal-handoff";
 
 import {
   addPortalReaders,

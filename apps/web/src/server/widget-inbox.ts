@@ -6,7 +6,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 
 import { rowLine } from "@/lib/format";
-import { visitorHash } from "@/lib/visitor-session";
+import { visitorHash } from "@/server/auth/visitor-session";
 
 import { type AiAnswer, askPerson } from "./ai-turn";
 import { attachmentLinks, checkUploads, claimUploads, startUpload, type Uploader } from "./attachments";

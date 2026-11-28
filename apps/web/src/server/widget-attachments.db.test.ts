@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { widgetToken } from "@/lib/widget-session";
+import { widgetToken } from "@/server/auth/widget-session";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
 import { getConversation } from "./operations/conversations";

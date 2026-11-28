@@ -15,7 +15,7 @@ import { POST as confirmRoute } from "@/app/portal/[project]/(site)/changelog/su
 import { POST as unsubscribeRoute } from "@/app/portal/[project]/(site)/changelog/subscription/unsubscribe/route";
 import { POST as emailsOnRoute } from "@/app/portal/[project]/(site)/changelog/subscription/emails-on/route";
 import { POST as optOutRoute } from "@/app/portal/[project]/(site)/unsubscribe/confirm/route";
-import { hashSecret } from "@/lib/portal-handoff";
+import { hashSecret } from "@/server/auth/portal-handoff";
 import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR, SIGN_IN_LINKS_PER_PORTAL_PER_HOUR } from "@/lib/sign-in-link";
 import { entryTold } from "@/server/changelog-queries";
 import { createChangelogEntry, publishChangelogEntry, unpublishChangelogEntry } from "@/server/operations/changelog";

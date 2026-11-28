@@ -2,6 +2,8 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
+import { tuti } from "./eslint-rules.mjs";
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -24,6 +26,13 @@ const eslintConfig = defineConfig([
         },
       ],
     },
+  },
+  // One way in (docs/plan.md): no server actions, and the database only behind the check. Warnings until T12, where
+  // the list they print must be empty.
+  {
+    files: ["src/**/*.ts", "src/**/*.tsx"],
+    plugins: { tuti },
+    rules: { "tuti/no-server-actions": "warn", "tuti/server-boundary": "warn" },
   },
   // Override default ignores of eslint-config-next.
   globalIgnores([
