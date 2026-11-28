@@ -223,12 +223,13 @@ export const updateBoard = defineOperation({
   }),
   output: z.object({}),
   run: async ({ projectId }, { board: id, slug, description, ...fields }) => {
-    const board = await prisma.board.findFirst({ where: { id, projectId }, select: { slug: true } });
-    if (!board) {
-      throw notFound();
-    }
     try {
       await prisma.$transaction(async (tx) => {
+        // Its URL as it is now, the row locked: a rename at the same time waits, then redirects from this one's new URL too.
+        const [board] = await tx.$queryRaw<{ slug: string }[]>`SELECT slug FROM board WHERE id = ${id} AND "projectId" = ${projectId} FOR UPDATE`;
+        if (!board) {
+          throw notFound();
+        }
         if (slug !== board.slug) {
           await tx.boardRedirect.deleteMany({ where: { projectId, slug } });
           await tx.boardRedirect.upsert({

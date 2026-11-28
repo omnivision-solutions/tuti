@@ -3,7 +3,7 @@ import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { generateMetadata as boardMetadata } from "@/app/portal/[project]/(site)/feedback/[board]/page";
-import { actAs, createBoard, createProject, deleteBoard, setBoardOff, signUp, updateBoard } from "@/test/helpers";
+import { actAs, callerNow, createBoard, createProject, deleteBoard, setBoardOff, signUp, untilWaitingOnLock, updateBoard } from "@/test/helpers";
 
 
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -69,6 +69,50 @@ describe("renaming a board keeps its old URLs working", () => {
     // "feature-requests" is the bugs board now; its old URL "bugs" leads there.
     expect(await redirects()).toEqual({ bugs: "feature-requests" });
   });
+});
+
+test("two renames at once: the second reads the URL the first gave it, so every earlier URL still redirects", async () => {
+  // The board's row held, so both renames are under way before either reads its URL.
+  let release!: () => void;
+  let locked!: () => void;
+  const lockTaken = new Promise<void>((resolve) => (locked = resolve));
+  const held = prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT 1 FROM board WHERE id = ${boardId} FOR UPDATE`;
+      locked();
+      await new Promise<void>((resolve) => (release = resolve));
+    },
+    { timeout: 30_000 },
+  );
+  await lockTaken;
+  const first = rename(boardId, "ideas");
+  await untilWaitingOnLock(1);
+  const second = rename(boardId, "wishlist");
+  await untilWaitingOnLock(2);
+  release();
+  await held;
+  expect(await Promise.all([first, second])).toEqual([{}, {}]);
+  // Whichever went last, the board has its URL, and the two before it lead there.
+  const { slug } = await prisma.board.findUniqueOrThrow({ where: { id: boardId }, select: { slug: true } });
+  const other = slug === "ideas" ? "wishlist" : "ideas";
+  expect(await redirects()).toEqual({ "feature-requests": slug, [other]: slug });
+});
+
+test("an edit that leaves fields out keeps them; one that sends them empty clears them", async () => {
+  const caller = await callerNow();
+  const texts = { description: "What to build", postButton: "Ask for it", titlePlaceholder: "Your idea", detailsPlaceholder: "Why it helps" };
+  await caller.boards.update({ project: project.slug, board: boardId, name: "Ideas", slug: "feature-requests", ...texts, postVisibility: "PRIVATE" });
+  const saved = () =>
+    prisma.board.findUniqueOrThrow({
+      where: { id: boardId },
+      select: { name: true, description: true, postButton: true, titlePlaceholder: true, detailsPlaceholder: true, postVisibility: true },
+    });
+  // Only the name and URL sent (as a client from before a field was added sends it): the rest stays as saved.
+  await caller.boards.update({ project: project.slug, board: boardId, name: "Wishes", slug: "feature-requests" });
+  expect(await saved()).toEqual({ name: "Wishes", ...texts, postVisibility: "PRIVATE" });
+  // Sent empty, as the form sends a field cleared: the default words, no description.
+  await caller.boards.update({ project: project.slug, board: boardId, name: "Wishes", slug: "feature-requests", description: "", postButton: "", titlePlaceholder: "", detailsPlaceholder: "" });
+  expect(await saved()).toEqual({ name: "Wishes", description: null, postButton: null, titlePlaceholder: null, detailsPlaceholder: null, postVisibility: "PRIVATE" });
 });
 
 test("two boards can't share a URL", async () => {
