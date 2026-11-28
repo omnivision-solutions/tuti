@@ -42,7 +42,7 @@ export const getProject = defineOperation({
   },
 });
 
-/** Settings' gate, for each settings page as it moves onto the router: nothing to read, refused to anyone but owners and admins. */
+/** Settings' gate, for the (admin) layout and each settings page as it moves onto the router: nothing to read, refused to anyone but owners and admins. */
 export const getSettingsAccess = defineOperation({
   name: "settings.access",
   title: "Open settings",

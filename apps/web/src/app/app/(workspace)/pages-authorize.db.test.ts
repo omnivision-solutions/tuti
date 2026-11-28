@@ -9,6 +9,7 @@ import { createApiReference } from "@/server/operations/api-references";
 import { call } from "@/server/operations/run";
 
 import FeedbackPage from "./[project]/feedback/page";
+import AdminSettingsLayout from "./[project]/settings/(admin)/layout";
 
 /**
  * Every page under /app checks who's asking itself, before it loads anything: a request can render a page without the
@@ -161,4 +162,18 @@ test("Feedback shows the team's posts to the team, and is not found for anyone e
     actAs(who);
     await expect(FeedbackPage(props("[project]/feedback/page.tsx") as never)).rejects.toMatchObject({ digest: "NEXT_HTTP_ERROR_FALLBACK;404" });
   }
+});
+
+test("Settings' layout (settings.access) shows its page to owners and admins, and is not found for anyone else", async () => {
+  const layout = () => AdminSettingsLayout({ children: "page", params: Promise.resolve({ project: project.slug }) } as never);
+  for (const who of [owner, await addMember(project.id, "ADMIN")]) {
+    actAs(who);
+    await expect(layout()).resolves.toBe("page");
+  }
+  for (const who of [member, outsider]) {
+    actAs(who);
+    await expect(layout()).rejects.toMatchObject({ digest: "NEXT_HTTP_ERROR_FALLBACK;404" });
+  }
+  actAs(null);
+  await expect(layout()).rejects.toMatchObject({ digest: expect.stringMatching(/^NEXT_REDIRECT;/) });
 });

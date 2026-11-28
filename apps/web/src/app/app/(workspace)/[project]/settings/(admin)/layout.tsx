@@ -1,12 +1,7 @@
-import { notFound } from "next/navigation";
+import { serverCaller } from "@/server/trpc/server";
 
-import { getAdminProject } from "@/server/membership";
-
-/** Every Settings page but Team & roles: owners and admins only. */
+/** Every Settings page but Team & roles: owners and admins only (settings.access); anyone else gets a 404. */
 export default async function AdminSettingsLayout({ children, params }: LayoutProps<"/app/[project]/settings">) {
-  if (!(await getAdminProject((await params).project))) {
-    // Team members who aren't owners/admins get the same response as outsiders.
-    notFound();
-  }
+  await (await serverCaller()).settings.access({ project: (await params).project });
   return children;
 }
