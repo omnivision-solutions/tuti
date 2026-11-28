@@ -108,7 +108,8 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
             current={at("/feedback")}
             items={[
               { title: t("allBoards"), href: at("/feedback"), count: total.toLocaleString(language) },
-              ...boards.map((board) => ({ title: board.name, href: at(boardPath(board)), count: board._count.posts.toLocaleString(language) })),
+              // Each board's name in the page's language where it's translated, its own `lang` either way (docs/plan.md L14).
+              ...boards.map((board) => ({ title: <span lang={board.lang}>{board.name}</span>, href: at(boardPath(board)), count: board._count.posts.toLocaleString(language) })),
             ]}
           />
         }
@@ -164,7 +165,9 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
                           {post.title}
                         </Link>
                       </h2>
-                      <p className="text-[0.84375rem] text-muted-foreground">{board.name}</p>
+                      <p lang={board.lang} className="text-[0.84375rem] text-muted-foreground">
+                        {board.name}
+                      </p>
                     </div>
                     {vote(post, "box")}
                   </li>
@@ -190,10 +193,14 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
                   className="flex flex-col gap-4 rounded-xl bg-card p-5 shadow-card ring-1 ring-card-edge sm:p-6"
                 >
                   <div className="flex flex-col gap-0.5">
-                    <h2 id={`board-${board.id}`} className="font-heading text-lg leading-snug font-[650] break-words">
+                    <h2 id={`board-${board.id}`} lang={board.lang} className="font-heading text-lg leading-snug font-[650] break-words">
                       {board.name}
                     </h2>
-                    {board.description && <p className="text-sm text-muted-foreground">{board.description}</p>}
+                    {board.description && (
+                      <p lang={board.lang} className="text-sm text-muted-foreground">
+                        {board.description}
+                      </p>
+                    )}
                   </div>
                   {ideas.length > 0 ? (
                     <ul className="flex flex-col gap-2.5">
