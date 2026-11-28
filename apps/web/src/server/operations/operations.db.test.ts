@@ -126,6 +126,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   // German, which the fixture adds: the team's own (keeping it up to date would queue the labels job).
   "tabs.getTranslations": () => ({ slug: "docs" }),
   "tabs.updateTranslation": () => ({ slug: "docs", language: "de", keepUpToDate: false, name: "Dokumentation" }),
+  "boards.getTranslations": () => ({ slug: "feature-requests" }),
+  "boards.updateTranslation": () => ({ slug: "feature-requests", language: "de", keepUpToDate: false, name: "Funktionswünsche" }),
   "apiReferences.list": () => ({}),
   "apiReferences.get": () => ({ slug: "matrix-reference", spec: true }),
   "apiReferences.create": () => ({ name: "Public API", spec: MATRIX_SPEC }),

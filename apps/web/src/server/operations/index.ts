@@ -92,7 +92,7 @@ import { getSite, removeSite, setSite, verifySite } from "./site";
 import { createRedirect, deleteRedirect, listRedirects } from "./redirects";
 import { getLanguages, retranslateLanguage, updateLanguages } from "./languages";
 import { getGlossary, updateGlossary } from "./glossary";
-import { getCollectionTranslations, getTabTranslations, updateCollectionTranslation, updateTabTranslation } from "./label-translations";
+import { getBoardTranslations, getCollectionTranslations, getTabTranslations, updateBoardTranslation, updateCollectionTranslation, updateTabTranslation } from "./label-translations";
 import { getChangelogTranslation, saveChangelogTranslation } from "./changelog-translations";
 import { getTranslation, keepTranslationUpToDate, publishTranslation, saveTranslation, updateTranslationSections } from "./translations";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
@@ -308,6 +308,8 @@ const all = [
   updateCollectionTranslation,
   getTabTranslations,
   updateTabTranslation,
+  getBoardTranslations,
+  updateBoardTranslation,
   // Before screenshots.get: /screenshots/settings isn't a run's id.
   getScreenshotSettings,
   updateScreenshotSettings,

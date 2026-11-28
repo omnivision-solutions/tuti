@@ -131,6 +131,15 @@ test("kept up to date is refused with AI off (it would never be made) and on a s
   expect(labelIn(await billing(), "fr")).toEqual({ name: "Facturation", description: "" });
 });
 
+test("a sample collection with no translation yet, in a language Automatic for new pages: not kept up to date (never translated)", async () => {
+  await setUp();
+  await prisma.collection.updateMany({ where: { projectId: project.id, slug: "billing" }, data: { sample: true, translations: {} } });
+  expect(await translations()).toEqual([
+    { language: "de", name: null, description: null, keepUpToDate: false },
+    { language: "fr", name: null, description: null, keepUpToDate: false },
+  ]);
+});
+
 test("a new collection in a language Automatic for new pages: kept up to date before its translation is made, not 'not translated'", async () => {
   await call(updateLanguages, as(), { languages: [{ code: "de" }, { code: "fr", newPages: "manual" }] });
   let meanwhile: unknown;
@@ -158,3 +167,20 @@ test("the team's own name alone over an automatic translation made from an old d
   expect(labelIn(await billing(), "de")).toEqual({ name: "Bezahlung", description: "" });
 });
 
+
+test("the labels job's translation leaves a collection's updatedAt (the sitemap's lastmod, Autopilot's Undo) as the team's last change; the team's own save moves it", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de" }] });
+  let before: Date | undefined;
+  model.reply(labelsReply({ "0.n": "Abrechnung" }), async () => {
+    before = (await billing()).updatedAt;
+  });
+  await call(createCollection, as(), { name: "Billing" });
+  await languageTranslationsDone();
+  expect(labelIn(await billing(), "de")).toMatchObject({ name: "Abrechnung" });
+  expect((await billing()).updatedAt).toEqual(before);
+  // From a fixed past time, so the database's clock against Node's doesn't decide it.
+  const past = new Date("2020-01-01T00:00:00Z");
+  await prisma.collection.update({ where: { id: (await billing()).id }, data: { updatedAt: past } });
+  await call(updateCollectionTranslation, as(), { slug: "billing", language: "de", keepUpToDate: false, name: "Rechnungen" });
+  expect((await billing()).updatedAt.getTime()).toBeGreaterThan(past.getTime());
+});

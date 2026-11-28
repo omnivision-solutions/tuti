@@ -4,6 +4,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { docsContents } from "@/server/docs-queries";
 import { applyCodeChangeAction, getCodeChangeTarget, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { createArticle, createCollection, createTab, deleteArticle, deleteCollection, publishArticle, updateArticle, updateCollection, updateTab } from "@/server/operations/docs";
+import { updateCollectionTranslation } from "@/server/operations/label-translations";
+import { updateLanguages } from "@/server/operations/languages";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -284,6 +286,15 @@ test("Undo keeps the collection approving made once the team changed it, and its
   expect((await undoes(kept.id)).undoRemovesCollection).toBeUndefined();
   await call(undoCodeChangeAction, team(), { id: kept.id });
   expect(await prisma.collection.findFirstOrThrow({ where: { projectId: project.id, name: "Exports" }, select: { description: true } })).toEqual({ description: "Getting your data out." });
+});
+
+test("Undo keeps the collection approving made once the team wrote its name in another language", async () => {
+  await call(updateLanguages, team(), { languages: [{ code: "de", newPages: "manual" }] });
+  const action = await draft({ newCollection: "Exports", icon: null });
+  await approve(action.id);
+  await call(updateCollectionTranslation, team(), { slug: "exports", language: "de", keepUpToDate: false, name: "Exporte" });
+  await call(undoCodeChangeAction, team(), { id: action.id });
+  expect(await prisma.collection.findFirstOrThrow({ where: { projectId: project.id, name: "Exports" }, select: { translations: true } })).toMatchObject({ translations: { de: { name: "Exporte" } } });
 });
 
 test("Undo keeps the collection approving made once a tab shows it as its landing page", async () => {

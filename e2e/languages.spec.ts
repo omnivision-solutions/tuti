@@ -291,6 +291,24 @@ test("Feedback, a board and a post in German: their words, counts and times, and
   await reader.getByRole("textbox", { name: "Titel" }).fill("Dark mode");
   await expect(reader.getByRole("dialog", { name: "Idee teilen" }).getByRole("listitem").filter({ hasText: "Dark mode" }).getByText("Funktionswünsche", { exact: true })).toHaveAttribute("lang", "de");
   await reader.getByRole("textbox", { name: "Titel" }).fill("");
+  // The editor's own words: a new line's hint, the / menu (filtered by its German names) and the bar over selected text.
+  const details = reader.getByRole("dialog", { name: "Idee teilen" }).getByRole("textbox", { name: "Details" });
+  await details.click();
+  await details.pressSequentially("Erste Zeile");
+  await reader.keyboard.press("Enter");
+  await expect(details.locator("p.is-empty")).toHaveAttribute("data-placeholder", "Tippe / für Listen, Bilder und mehr");
+  await details.pressSequentially("/");
+  const blocks = reader.getByRole("listbox", { name: "Blöcke" });
+  await expect(blocks.getByRole("option")).toHaveText(["Aufzählung", "Nummerierte Liste", "Codeblock", "Bild", "Video"]);
+  await details.pressSequentially("num");
+  await expect(blocks.getByRole("option")).toHaveText(["Nummerierte Liste"]);
+  await checkpoint(reader, "post-editor-menu-in-german", { fullPage: false });
+  for (let i = 0; i < 4; i++) await reader.keyboard.press("Backspace");
+  await expect(blocks).toBeHidden();
+  await reader.keyboard.press("ArrowUp");
+  await reader.keyboard.press("Home");
+  await reader.keyboard.press("Shift+End");
+  await expect(reader.getByRole("toolbar", { name: "Formatierung" }).getByRole("button", { name: "Fett" })).toBeVisible();
   await reader.keyboard.press("Escape");
   await expect(reader.getByRole("dialog", { name: "Idee teilen" })).toBeHidden();
 
@@ -307,6 +325,18 @@ test("Feedback, a board and a post in German: their words, counts and times, and
   await expect(comments.getByRole("heading", { name: "0 Kommentare" })).toBeVisible();
   // Its history: the status change, without who made it.
   await expect(comments.getByText(/^Auf Geplant gesetzt · (jetzt|vor \d+ Minuten?)$/)).toBeVisible();
+  // The comment box's toolbar and its link dialog.
+  const toolbar = comments.getByRole("toolbar", { name: "Formatierung" });
+  await expect(toolbar.getByRole("button", { name: "Kursiv" })).toBeVisible();
+  await toolbar.getByRole("button", { name: "Link", exact: true }).click();
+  const linkDialog = reader.getByRole("dialog", { name: "Link hinzufügen" });
+  await expect(linkDialog.getByRole("button", { name: "Link hinzufügen" })).toBeVisible();
+  await linkDialog.getByRole("button", { name: "Abbrechen" }).click();
+  await expect(linkDialog).toBeHidden();
+  await reader.setViewportSize({ width: 390, height: 800 });
+  await toolbar.scrollIntoViewIfNeeded();
+  await checkpoint(reader, "comment-editor-in-german-phone", { fullPage: false });
+  await reader.setViewportSize({ width: 1280, height: 800 });
   await comments.getByRole("textbox", { name: "Kommentieren" }).fill("Bitte auch für die App");
   await comments.getByRole("button", { name: "Kommentieren" }).click();
   await expect(reader.locator("[data-sonner-toast]", { hasText: "Kommentar gepostet" })).toBeVisible();
