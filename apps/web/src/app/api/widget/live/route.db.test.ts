@@ -143,3 +143,24 @@ test("the portal reader's stream checks their session at each keepalive without 
   await vi.advanceTimersByTimeAsync(KEEPALIVE_MS);
   expect(await stream.next()).toBeNull();
 });
+
+test("the stream ends at the next keepalive once they may no longer hear: Messages off, or their access to a private portal gone", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  onTestFinished(() => void vi.useRealTimers());
+  const ada = await signUp("Ada");
+  const asAda = await open({ authorization: `Widget ${widgetToken(project.id, ada.id)}` });
+  expect(await asAda.next()).toBe(ready);
+  await prisma.project.update({ where: { id: project.id }, data: { supportInbox: false } });
+  await vi.advanceTimersByTimeAsync(KEEPALIVE_MS);
+  expect(await asAda.next()).toBeNull();
+
+  await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true, portalAccess: "PRIVATE" } });
+  const reader = await signUp("Rae Reader");
+  await prisma.user.update({ where: { id: reader.id }, data: { emailVerified: true } });
+  const access = await prisma.portalReader.create({ data: { projectId: project.id, email: reader.email } });
+  const asReader = await open({ authorization: `Widget ${widgetToken(project.id, reader.id)}` });
+  expect(await asReader.next()).toBe(ready);
+  await prisma.portalReader.delete({ where: { id: access.id } });
+  await vi.advanceTimersByTimeAsync(KEEPALIVE_MS);
+  expect(await asReader.next()).toBeNull();
+});
