@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { listen, prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
 import { afterEach, expect, test, vi } from "vitest";
@@ -22,7 +24,16 @@ async function hear(wants: (change: InboxChange) => boolean) {
   return heard;
 }
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 500));
+/**
+ * Waits until everything sent before it has arrived: one listener hears its channel's NOTIFYs in the order they
+ * committed, so once a marker sent now arrives, any earlier change has too (and a change not heard by then never comes).
+ */
+async function settle() {
+  const projectId = `marker-${randomUUID()}`;
+  const marker = await hear((change) => change.projectId === projectId);
+  await notifyInboxNow({ projectId, conversationId: "marker", userId: null, visitorHash: null });
+  await vi.waitFor(() => expect(marker).toHaveLength(1));
+}
 
 async function setup() {
   const owner = await signUp("Olive Owner");

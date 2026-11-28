@@ -29,7 +29,7 @@ const SHOWN = 5;
  * that has posted, voted or commented here (never just any account, which would tell the team who
  * has one).
  */
-export async function maybeUser(projectId: string, email: string) {
+async function maybeUser(projectId: string, email: string) {
   const sso = await prisma.ssoIdentity.findFirst({
     // Case-insensitive: emails older instances saved kept their capitals.
     where: { projectId, email: { equals: email, mode: "insensitive" } },

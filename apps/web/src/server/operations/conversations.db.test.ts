@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
-import { expect, test } from "vitest";
+import { startWebhookReceiver, type WebhookReceiver } from "@tuti/testkit";
+import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import type { z } from "zod";
 
 import { addMember, actAs, createProject, signUp } from "@/test/helpers";
@@ -34,6 +35,14 @@ async function setup() {
   const key: Actor = { kind: "apiKey", keyId: "key", projectId: project.id, scope: "write", createdById: owner.id };
   return { owner, project, key, context: { actor: key, projectId: project.id } };
 }
+
+// The project's webhook, on this machine: a delivery never waits on outside DNS.
+let hooks: WebhookReceiver;
+beforeAll(async () => {
+  hooks = await startWebhookReceiver();
+});
+afterAll(() => hooks.close());
+beforeEach(() => vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true"));
 
 const sam = { id: "user-42", name: "Sam", email: "e2e-sam@example.com" };
 
@@ -333,7 +342,7 @@ test("webhooks hear of new conversations and of the user's messages, not the tea
   await prisma.webhook.create({
     data: {
       projectId: context.projectId,
-      url: "https://hooks.example.com/tuti",
+      url: hooks.url,
       secret: "secret",
       events: ["conversation.created", "conversation.message_created"],
       createdById: owner.id,
@@ -872,7 +881,7 @@ const owned = async (projectId: string) => prisma.conversation.findFirstOrThrow(
 
 test("conversations.update hands one to the AI and takes it back, and marks it priority: the conversation, lists and webhooks say so, and nothing else about it moves", async () => {
   const { context, owner } = await setup();
-  await prisma.webhook.create({ data: { projectId: context.projectId, url: "https://hooks.example.com/tuti", secret: "secret", events: ["conversation.created"], createdById: owner.id } });
+  await prisma.webhook.create({ data: { projectId: context.projectId, url: hooks.url, secret: "secret", events: ["conversation.created"], createdById: owner.id } });
   // The team's and not priority, as every conversation from before: webhooks are told so.
   expect(await call(createConversation, context, { user: sam, body: "Help" })).toMatchObject({ handledBy: "team", priority: false });
   const [created] = await prisma.webhookDelivery.findMany({ where: { webhook: { projectId: context.projectId } }, select: { payload: true } });

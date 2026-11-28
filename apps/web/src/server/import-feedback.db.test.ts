@@ -4,7 +4,7 @@ import { prisma } from "@tuti/db";
 import { savedPicture } from "@tuti/shared/media-links";
 import { FEEDBACK_PAGE, handlers, IMPORT_KEY, IMPORT_RUN, importsSettled, upsertProjectUser } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
-import { billingFile, FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
+import { billingFile, FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake, startWebhookReceiver, type WebhookReceiver } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { importSummary } from "@/lib/import-parts";
@@ -24,6 +24,13 @@ let s3: S3Fake;
 let openai: OpenAIFake;
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
+
+// The project's webhook, on this machine: a delivery never waits on outside DNS.
+let hooks: WebhookReceiver;
+beforeAll(async () => {
+  hooks = await startWebhookReceiver();
+});
+afterAll(() => hooks.close());
 
 beforeAll(async () => {
   [fake, s3, openai] = await Promise.all([startFeaturebaseFake(), startS3Fake(), startOpenAIFake()]);
@@ -87,7 +94,7 @@ const made = async () => ({
 });
 
 test("Feedback comes across quietly: boards, posts with their content, images, dates, statuses and numbers, votes, comments and notes; what only some people see is left out, counted", async () => {
-  await prisma.webhook.create({ data: { projectId: project.id, url: "https://hooks.example.com/tuti", secret: "s", events: ["post.created", "post.updated", "comment.created", "vote.created"], createdById: owner.id } });
+  await prisma.webhook.create({ data: { projectId: project.id, url: hooks.url, secret: "s", events: ["post.created", "post.updated", "comment.created", "vote.created"], createdById: owner.id } });
   const emailed = mailbox.emails.length;
   await importFeedback();
 
