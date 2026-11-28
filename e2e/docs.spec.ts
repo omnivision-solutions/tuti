@@ -1097,7 +1097,9 @@ test("the team builds its docs in the tree: a tab, a collection and an article f
   await expect(visitor.getByText("Sign in to read this.")).toBeVisible();
   await expect(visitor.getByText("Every invoice is a PDF")).toHaveCount(0);
 
-  // On a phone the tree is a "Browse docs" menu above the page.
+  // On a phone the tree is a "Browse docs" menu above the page. The save's toast would sit over that button (and,
+  // hovered by the click, stay), so it's gone first.
+  await expect(team.getByText("Collection saved")).toHaveCount(0);
   await team.setViewportSize({ width: 390, height: 844 });
   await expect(tree).toBeHidden();
   await team.getByRole("button", { name: "Browse docs" }).click();
