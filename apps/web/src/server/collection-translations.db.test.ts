@@ -167,3 +167,17 @@ test("the team's own name alone over an automatic translation made from an old d
   expect(labelIn(await billing(), "de")).toEqual({ name: "Bezahlung", description: "" });
 });
 
+
+test("the labels job's translation leaves a collection's updatedAt (the sitemap's lastmod, Autopilot's Undo) as the team's last change; the team's own save moves it", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de" }] });
+  let before: Date | undefined;
+  model.reply(labelsReply({ "0.n": "Abrechnung" }), async () => {
+    before = (await billing()).updatedAt;
+  });
+  await call(createCollection, as(), { name: "Billing" });
+  await languageTranslationsDone();
+  expect(labelIn(await billing(), "de")).toMatchObject({ name: "Abrechnung" });
+  expect((await billing()).updatedAt).toEqual(before);
+  await call(updateCollectionTranslation, as(), { slug: "billing", language: "de", keepUpToDate: false, name: "Rechnungen" });
+  expect((await billing()).updatedAt.getTime()).toBeGreaterThan(before!.getTime());
+});
