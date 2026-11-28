@@ -33,6 +33,7 @@ const MATRIX_SPEC = JSON.stringify({ openapi: "3.1.0", info: { title: "Matrix AP
 const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "project.get": () => ({}),
   "project.update": () => ({ name: "Renamed by the matrix" }),
+  "settings.access": () => ({}),
   "propertyFormats.update": () => ({ formats: { mrr: { label: "MRR", format: "money" } } }),
   "team.list": () => ({}),
   "votes.set": () => ({ number: 1, voted: true }),

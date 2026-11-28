@@ -30,7 +30,7 @@ import { suggestReply, summarizeConversation } from "./support-ai";
 import { getSpamSettings, trySpamFilter, updateSpamSettings } from "./spam";
 import { removeLink } from "./links";
 import { mergePost, updatePost } from "./manage";
-import { dismissDuplicate, getProject, likeComment, listDuplicates, listTeam, setSubscription, setVote, updateProject, updatePropertyFormats } from "./more";
+import { dismissDuplicate, getProject, getSettingsAccess, likeComment, listDuplicates, listTeam, setSubscription, setVote, updateProject, updatePropertyFormats } from "./more";
 import {
   composeChangelogCover,
   addChangelogPullRequests,
@@ -114,6 +114,7 @@ export { type Actor, type ApiKeyActor, type Operation, OperationError, type Publ
 /** Every operation, as a list of literal types: the tRPC router is typed from it. */
 export const all = [
   getProject,
+  getSettingsAccess,
   updateProject,
   updatePropertyFormats,
   listTeam,

@@ -11,8 +11,9 @@ export const metadata: Metadata = { title: "General · Settings" };
 /** Settings → General: the project's name, and where its portal is (changed in Domain). */
 export default async function GeneralSettingsPage(props: PageProps<"/app/[project]/settings/general">) {
   const { project: slug } = await props.params;
-  // Owners and admins only: the (admin) layout's 404 for anyone else.
-  const { name, portalUrl: portal } = await (await serverCaller()).project.get({ project: slug });
+  const trpc = await serverCaller();
+  // Owners and admins only (settings.access): anyone else gets a 404, whatever the layout did.
+  const [, { name, portalUrl: portal }] = await Promise.all([trpc.settings.access({ project: slug }), trpc.project.get({ project: slug })]);
   const address = `${new URL(portal).host}${new URL(portal).pathname.replace(/\/$/, "")}`;
   return (
     <SettingsPane title="General">
