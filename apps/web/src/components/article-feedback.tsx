@@ -2,6 +2,7 @@
 
 import { cn } from "cn";
 import { ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useEffect, useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -26,6 +27,7 @@ export function ArticleFeedback({ projectSlug, slug, className }: { projectSlug:
   const [comment, setComment] = useState("");
   const [pending, startTransition] = useTransition();
   const commentId = useId();
+  const t = useTranslations("docs");
 
   const send = (helpful: boolean, text?: string) =>
     startTransition(async () => {
@@ -38,18 +40,18 @@ export function ArticleFeedback({ projectSlug, slug, className }: { projectSlug:
     });
 
   return (
-    <section aria-label="Was this helpful?" className={cn("flex flex-col gap-3", className)}>
+    <section aria-label={t("wasThisHelpful")} className={cn("flex flex-col gap-3", className)}>
       {step === "ask" && (
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="font-sans text-[0.9375rem] font-semibold">Was this helpful?</h2>
+          <h2 className="font-sans text-[0.9375rem] font-semibold">{t("wasThisHelpful")}</h2>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" disabled={pending} onClick={() => send(true)} className="font-semibold">
               <ThumbsUpIcon aria-hidden />
-              Yes
+              {t("yes")}
             </Button>
             <Button variant="outline" size="sm" disabled={pending} onClick={() => send(false)} className="font-semibold">
               <ThumbsDownIcon aria-hidden />
-              No
+              {t("no")}
             </Button>
           </div>
         </div>
@@ -62,7 +64,7 @@ export function ArticleFeedback({ projectSlug, slug, className }: { projectSlug:
             send(false, comment);
           }}
         >
-          <Label htmlFor={commentId}>What were you looking for? (optional)</Label>
+          <Label htmlFor={commentId}>{t("lookingFor")}</Label>
           <Textarea
             id={commentId}
             value={comment}
@@ -71,12 +73,12 @@ export function ArticleFeedback({ projectSlug, slug, className }: { projectSlug:
           />
           <div className="flex justify-end">
             <Button type="submit" disabled={pending || !comment.trim()}>
-              Send
+              {t("send")}
             </Button>
           </div>
         </form>
       )}
-      {step === "thanks" && <p className="text-sm text-muted-foreground">Thanks for letting us know.</p>}
+      {step === "thanks" && <p className="text-sm text-muted-foreground">{t("thanks")}</p>}
     </section>
   );
 }

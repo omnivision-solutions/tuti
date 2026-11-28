@@ -22,6 +22,7 @@ export function RichText({
   link,
   eager = false,
   lang,
+  words,
 }: {
   doc: JSONContent;
   className?: string;
@@ -35,13 +36,15 @@ export function RichText({
   link?: LinkRenderer;
   /** Its images load at once (one likely in view as the page opens), not lazily. */
   eager?: boolean;
+  /** The page's own words around its blocks, in the page's language (`lang`, where its text is in another); else English. */
+  words?: RichTextWords;
 }) {
-  const options: Options = { media: mediaUrls ?? undefined, link, eager };
+  const options: Options = { media: mediaUrls ?? undefined, link, eager, words };
   const headings = docHeadings(doc);
   let next = 0;
   const content = (doc.content ?? []).map((child, i) =>
     child.type === "tableOfContents" ? (
-      <TableOfContents key={i} headings={headings} links={headingIds} />
+      <TableOfContents key={i} headings={headings} links={headingIds} words={words} lang={lang} />
     ) : (
       renderNode(child, i, options, headingIds && child.type === "heading" ? headings[next++]?.id : undefined)
     ),
@@ -58,7 +61,18 @@ export function RichText({
  * the editor's shows them as text). Nothing without headings, except as text: a diff shows it alone, without the
  * article's headings, and says what it is.
  */
-export function TableOfContents({ headings, links = true }: { headings: Heading[]; links?: boolean }) {
+export function TableOfContents({
+  headings,
+  links = true,
+  words,
+  lang,
+}: {
+  headings: Heading[];
+  links?: boolean;
+  /** Its name in the page's language (`words.lang`), its headings in the text's (`lang`). */
+  words?: RichTextWords;
+  lang?: string;
+}) {
   const entries = tocEntries(headings);
   if (entries.length === 0) {
     return links ? null : <p className="rich-toc">Table of contents</p>;
@@ -70,15 +84,17 @@ export function TableOfContents({ headings, links = true }: { headings: Heading[
     </li>
   );
   return (
-    <nav className="rich-toc" aria-label="In this article">
-      <p>In this article</p>
-      <ul>{entries.map((entry) => item(entry, entry.children.length > 0 && <ul>{entry.children.map((child) => item(child))}</ul>))}</ul>
+    <nav className="rich-toc" lang={words?.lang} aria-label={words?.inThisArticle ?? "In this article"}>
+      <p>{words?.inThisArticle ?? "In this article"}</p>
+      <ul lang={words?.lang && lang}>{entries.map((entry) => item(entry, entry.children.length > 0 && <ul>{entry.children.map((child) => item(child))}</ul>))}</ul>
     </nav>
   );
 }
 
 export type LinkRenderer = (href: string, text: ReactNode) => ReactNode | null;
-type Options = { media?: MediaUrls; link?: LinkRenderer; eager?: boolean };
+export type RichTextWords = { lang?: string; inThisArticle: string; video: string };
+
+type Options = { media?: MediaUrls; link?: LinkRenderer; eager?: boolean; words?: RichTextWords };
 
 function children(node: JSONContent, options: Options): ReactNode[] {
   return (node.content ?? []).map((child, i) => renderNode(child, i, options));
@@ -220,7 +236,8 @@ function renderNode(node: JSONContent, key: number, options: Options, id?: strin
             allow="fullscreen; picture-in-picture"
             allowFullScreen
             loading="lazy"
-            title="Video"
+            title={options.words?.video ?? "Video"}
+            lang={options.words?.lang}
           />
         </div>
       ) : null;

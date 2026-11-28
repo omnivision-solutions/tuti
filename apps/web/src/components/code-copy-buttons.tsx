@@ -1,5 +1,6 @@
 "use client";
 
+import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useRef } from "react";
 
 import { copyText } from "@/components/copy-button";
@@ -14,6 +15,8 @@ const COPY_ICON =
  */
 export function CodeCopyButtons() {
   const marker = useRef<HTMLSpanElement>(null);
+  const t = useTranslations("docs");
+  const [copy, copyCode, copied, failed, language] = [t("copy"), t("copyCode"), t("copied"), t("couldntCopy"), useLocale()];
   useEffect(() => {
     const article = marker.current?.previousElementSibling;
     if (!article) {
@@ -23,13 +26,16 @@ export function CodeCopyButtons() {
     const copyButton = (pre: () => Element) => {
       const button = document.createElement("button");
       button.type = "button";
-      button.innerHTML = `${COPY_ICON}<span>Copy</span>`;
-      button.setAttribute("aria-label", "Copy code");
+      button.innerHTML = COPY_ICON;
+      button.append(Object.assign(document.createElement("span"), { textContent: copy }));
+      button.setAttribute("aria-label", copyCode);
+      // The page's words, inside the article's text (which may be in another language).
+      button.lang = language;
       button.className =
         "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border bg-card px-2 font-sans portal:border-transparent portal:bg-secondary portal:hover:bg-secondary-hover text-[0.8125rem] font-semibold text-muted-foreground transition-colors hover:text-foreground";
       button.addEventListener("click", () => {
         const block = pre();
-        void copyText((block.querySelector("code") ?? (block as HTMLElement)).innerText);
+        void copyText((block.querySelector("code") ?? (block as HTMLElement)).innerText, { copied, failed });
       });
       return button;
     };
@@ -61,6 +67,6 @@ export function CodeCopyButtons() {
       }
     }
     return () => added.forEach((element) => element.remove());
-  }, []);
+  }, [copy, copyCode, copied, failed, language]);
   return <span ref={marker} hidden />;
 }

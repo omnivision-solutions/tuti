@@ -412,7 +412,9 @@ export async function DocsArticle({
   /** Its slug at this address (its slug in the address's language, where it has one). */
   own?: string;
 }) {
-  const [at, lang, { language: pageLanguage, prefix }] = await Promise.all([portalLinks(), teamLanguage(), portalLanguage()]);
+  const [at, lang, { language: pageLanguage, prefix }, { language: shown, t }] = await Promise.all([portalLinks(), teamLanguage(), portalLanguage(), pageTranslator("docs")]);
+  // The page's own words around the article's text, in the page's language (marked so where the text is in another).
+  const words = { lang: shown, inThisArticle: t("inThisArticle"), video: t("video") };
   // Its own words are in its version's language here, or the default language's (docs/plan.md, "A page not yet translated"),
   // with a line in the page's language saying so.
   const textLang = article.language ?? lang;
@@ -511,10 +513,10 @@ export async function DocsArticle({
           {readable?.sample && <SampleBadge />}
           {readable && (
             <p className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
-              {readable.updatedAt && <ArticleUpdated at={readable.updatedAt.toISOString()} label={formatDate(readable.updatedAt)} />}
+              {readable.updatedAt && <ArticleUpdated at={readable.updatedAt.toISOString()} label={formatDate(readable.updatedAt, shown)} />}
               {minutes && (
                 <span className="inline-flex items-center gap-2 [&:not(:first-child)]:before:content-['·']">
-                  {minutes} min read
+                  {t("minRead", { count: minutes })}
                 </span>
               )}
             </p>
@@ -529,7 +531,7 @@ export async function DocsArticle({
           {readable && outlined(headings) && (
             <details className="group/toc mt-1 text-sm xl:hidden xl:[:root[data-docs-reading]_&]:block">
               <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-lg bg-secondary px-3 py-1.5 font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
-                On this page
+                {t("onThisPage")}
                 <ChevronDownIcon aria-hidden className="size-4 transition-transform group-open/toc:rotate-180" />
               </summary>
               <ul lang={textLang} className="mt-2 flex w-fit max-w-full min-w-64 flex-col rounded-lg border border-border bg-card p-1.5 shadow-sm">
@@ -548,6 +550,7 @@ export async function DocsArticle({
           <>
             <RichText
               lang={textLang}
+              words={words}
               doc={readable.doc}
               mediaUrls={await mediaUrls(readable.doc)}
               headingIds
@@ -571,7 +574,7 @@ export async function DocsArticle({
 
 /** The end of an article: the previous and next ones in reading order, related ones (articleEnd), and "Still stuck?". */
 async function ArticleEnd({ end, support, lang }: { end: Awaited<ReturnType<typeof articleEnd>>; support: SupportContact | null; lang?: string }) {
-  const at = await portalLinks();
+  const [at, { t }] = await Promise.all([portalLinks(), pageTranslator("docs")]);
   const step = (article: DocsArticleLink, rel: "prev" | "next") => (
     <Link
       href={at(`/docs/${article.slug}`)}
@@ -585,11 +588,11 @@ async function ArticleEnd({ end, support, lang }: { end: Awaited<ReturnType<type
         {rel === "prev" ? (
           <>
             <ArrowLeftIcon aria-hidden className="size-3.5" />
-            Previous
+            {t("previous")}
           </>
         ) : (
           <>
-            Next
+            {t("next")}
             <ArrowRightIcon aria-hidden className="size-3.5" />
           </>
         )}
@@ -602,7 +605,7 @@ async function ArticleEnd({ end, support, lang }: { end: Awaited<ReturnType<type
   return (
     <>
       {(end.previous || end.next) && (
-        <nav aria-label="Previous and next" className="grid gap-3 sm:grid-cols-2">
+        <nav aria-label={t("previousAndNext")} className="grid gap-3 sm:grid-cols-2">
           {end.previous && step(end.previous, "prev")}
           {end.next && step(end.next, "next")}
         </nav>
@@ -610,7 +613,7 @@ async function ArticleEnd({ end, support, lang }: { end: Awaited<ReturnType<type
       {end.related.length > 0 && (
         <section aria-labelledby="related-articles" className="flex flex-col gap-3">
           <h2 id="related-articles" className="font-sans text-[0.8125rem] font-medium text-muted-foreground">
-            Related articles
+            {t("relatedArticles")}
           </h2>
           <ArticleLinks articles={end.related} href={(s) => at(`/docs/${s}`)} lang={lang} />
         </section>

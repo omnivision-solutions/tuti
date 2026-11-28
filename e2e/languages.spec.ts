@@ -1372,7 +1372,12 @@ test("the widget's Help center and Messages in German at /de/widget: browsing, a
   const api = await apiFor(team, slug);
   await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
   await api("/collections", { name: "Basics" });
-  const intro = await api("/articles", { title: "Getting started", body: "Invite your team from the Team page.", collection: "basics" });
+  const line = (type: string, text: string, attrs?: object) => ({ type, ...(attrs && { attrs }), content: [{ type: "text", text }] });
+  const introContent = {
+    type: "doc",
+    content: [{ type: "tableOfContents" }, line("heading", "Invite", { level: 2 }), line("paragraph", "Invite your team from the Team page."), line("heading", "Roles", { level: 2 })],
+  };
+  const intro = await api("/articles", { title: "Getting started", content: introContent, collection: "basics" });
   await api(`/articles/${intro.slug}/publish`, {});
   const loose = await api("/articles", { title: "Release notes", body: "What changed." });
   await api(`/articles/${loose.slug}/publish`, {});
@@ -1404,6 +1409,8 @@ test("the widget's Help center and Messages in German at /de/widget: browsing, a
   await visitor.getByRole("link", { name: "Getting started" }).click();
   await expect(visitor.getByRole("heading", { level: 1, name: "Getting started" })).toHaveAttribute("lang", "en");
   await expect(visitor.getByText("Invite your team from the Team page.").locator("xpath=ancestor::*[@lang][1]")).toHaveAttribute("lang", "en");
+  // A table of contents in it: its heading the panel's words, in German.
+  await expect(visitor.getByRole("navigation", { name: "In diesem Artikel" })).toHaveAttribute("lang", "de");
   // Not in German yet: said in German.
   await expect(visitor.getByText("Diese Seite gibt es noch nicht auf Deutsch: Sie wird in ihrer Originalsprache angezeigt.")).toBeVisible();
   await expect(visitor.getByRole("link", { name: "In neuem Tab öffnen" })).toHaveAttribute("href", /^\/de\/docs\//);
@@ -1447,4 +1454,80 @@ test("the widget's Help center and Messages in German at /de/widget: browsing, a
   // A new message, now that they're known here: attaching files, in German.
   await visitor.getByRole("button", { name: "Neue Nachricht" }).click();
   await expect(visitor.getByRole("button", { name: "Dateien anhängen" })).toBeVisible();
+});
+
+test("an article's own words in German at /de/docs: its actions, reading time, sections, code's Copy, Was this helpful and the way on, around the team's English", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/languages", { languages: [{ code: "de", live: true, newPages: "manual" }] }, "PATCH");
+  await api("/collections", { name: "Basics" });
+  const text = (value: string) => [{ type: "text", text: value }];
+  const content = {
+    type: "doc",
+    content: [
+      { type: "tableOfContents" },
+      { type: "heading", attrs: { level: 2 }, content: text("Install") },
+      { type: "codeBlock", content: text("npm install acme") },
+      { type: "heading", attrs: { level: 2 }, content: text("Sign in") },
+      { type: "paragraph", content: text("Open the app and sign in.") },
+    ],
+  };
+  const first = await api("/articles", { title: "Setup", content, collection: "basics" });
+  await api(`/articles/${first.slug}/publish`, {});
+  // Changed since it was published: readers see when.
+  await query(`UPDATE article SET "publishedAt" = '2026-01-05', "revisedAt" = '2026-03-10' WHERE slug = $1 AND "projectId" = (SELECT id FROM project WHERE slug = $2)`, [first.slug, slug]);
+  const second = await api("/articles", { title: "Billing", body: "Pay by card.", collection: "basics" });
+  await api(`/articles/${second.slug}/publish`, {});
+  const third = await api("/articles", { title: "Teams", body: "Invite your team.", collection: "basics" });
+  await api(`/articles/${third.slug}/publish`, {});
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 1440, height: 900 });
+  await reader.goto(`/de/docs/${first.slug}`);
+  const main = reader.getByRole("main");
+  // The team's English, said so; around it the page's own words in German.
+  await expect(main.getByRole("heading", { level: 1, name: "Setup" })).toHaveAttribute("lang", "en");
+  await expect(main.getByText("1 Min. Lesezeit")).toBeVisible();
+  await expect(main.getByText("Aktualisiert am 10. März 2026")).toBeVisible();
+  await expect(main.locator("time", { hasText: "10. März 2026" })).toHaveAttribute("datetime", "2026-03-10T00:00:00.000Z");
+  await expect(main.getByRole("button", { name: "Seite kopieren" })).toBeVisible();
+  await main.getByRole("button", { name: "Weitere Seitenaktionen" }).click();
+  await expect(reader.getByRole("menuitem", { name: "In ChatGPT öffnen" })).toHaveAttribute("href", /Lies%20/);
+  await expect(reader.getByRole("menuitem", { name: "Als Markdown ansehen" })).toBeVisible();
+  await reader.keyboard.press("Escape");
+  await expect(reader.getByRole("button", { name: "Lesemodus" })).toBeVisible();
+  await expect(reader.getByRole("navigation", { name: "Auf dieser Seite" })).toBeVisible();
+  // The table of contents' label inside the English text: marked German.
+  const contents = main.getByRole("navigation", { name: "In diesem Artikel" });
+  await expect(contents).toHaveAttribute("lang", "de");
+  await expect(contents.getByRole("link", { name: "Install" }).locator("xpath=ancestor::*[@lang][1]")).toHaveAttribute("lang", "en");
+  await expect(main.getByRole("button", { name: "Code kopieren" })).toHaveText("Kopieren");
+  await expect(main.getByRole("button", { name: "Code kopieren" })).toHaveAttribute("lang", "de");
+  await reader.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await main.getByRole("button", { name: "Code kopieren" }).click();
+  await expect(reader.locator("[data-sonner-toast]", { hasText: "Kopiert" })).toBeVisible();
+  await main.getByRole("button", { name: "Seite kopieren" }).click();
+  await expect(reader.locator("[data-sonner-toast]", { hasText: "Als Markdown kopiert" })).toBeVisible();
+  await reader.getByRole("button", { name: "Lesemodus" }).hover();
+  await expect(reader.getByText("Lesemodus: Spalten neben dem Artikel ausblenden und nur den Artikel lesen")).toBeVisible();
+  // The way on, and the answer to Was this helpful.
+  await expect(main.getByRole("navigation", { name: "Zurück und weiter" }).getByRole("link", { name: /Weiter/ })).toContainText("Billing");
+  await expect(main.getByRole("region", { name: "Ähnliche Artikel" }).getByRole("link", { name: "Teams" })).toBeVisible();
+  await expect(main.getByRole("heading", { name: "War das hilfreich?" })).toBeVisible();
+  await checkpoint(reader, "article-own-words-in-german");
+  await main.getByRole("button", { name: "Nein" }).click();
+  await main.getByLabel("Wonach hast du gesucht? (optional)").fill("Mehr zu Rechnungen.");
+  await main.getByRole("button", { name: "Senden" }).click();
+  await expect(main.getByText("Danke für dein Feedback.")).toBeVisible();
+  // The next one's way back.
+  await main.getByRole("navigation", { name: "Zurück und weiter" }).getByRole("link", { name: /Weiter/ }).click();
+  await expect(main.getByRole("navigation", { name: "Zurück und weiter" }).getByRole("link", { name: /Zurück/ })).toContainText("Setup");
+  // On a phone: the actions under the title, the sections a menu.
+  await reader.setViewportSize({ width: 390, height: 800 });
+  await reader.goto(`/de/docs/${first.slug}`);
+  await expect(main.locator("summary").getByText("Auf dieser Seite")).toBeVisible();
+  await checkpoint(reader, "article-own-words-in-german-phone", { fullPage: false });
 });

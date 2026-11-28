@@ -1,6 +1,7 @@
 "use client";
 
 import { BookOpenIcon } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useSyncExternalStore } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import { DOCS_READING_ATTRIBUTE, DOCS_READING_KEY } from "@/lib/docs-reading";
 export function ReadingModeToggle() {
   // The attribute on <html> (the layout's script sets it before the page shows) is the one place it's kept.
   const on = useSyncExternalStore(subscribe, () => document.documentElement.hasAttribute(DOCS_READING_ATTRIBUTE), () => false);
+  const t = useTranslations("docs");
   const toggle = () => {
     const next = !on;
     document.documentElement.toggleAttribute(DOCS_READING_ATTRIBUTE, next);
@@ -29,7 +31,7 @@ export function ReadingModeToggle() {
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Reading mode"
+            aria-label={t("readingMode")}
             aria-pressed={on}
             onClick={toggle}
             className="text-muted-foreground aria-pressed:bg-soft aria-pressed:text-soft-foreground"
@@ -38,7 +40,7 @@ export function ReadingModeToggle() {
       >
         <BookOpenIcon aria-hidden />
       </TooltipTrigger>
-      <TooltipContent>{on ? "Reading mode: show the columns beside the article again" : "Reading mode: hide the columns beside the article and read it alone"}</TooltipContent>
+      <TooltipContent>{t(on ? "readingModeOn" : "readingModeOff")}</TooltipContent>
     </Tooltip>
   );
 }
