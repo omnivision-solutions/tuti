@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act, createElement as h } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 const mutate = vi.fn<(input: unknown) => Promise<object>>(async () => ({}));
 vi.mock("@/components/trpc", () => ({ useTRPCClient: () => ({ portal: { update: { mutate } } }), errorMessage: String }));
@@ -11,6 +11,8 @@ vi.mock("sonner", () => ({ toast }));
 
 const { PortalHomeSelect } = await import("./portal-home-select");
 
+// Each test sees only its own calls (toasts, saves), whatever ran before it.
+beforeEach(() => vi.clearAllMocks());
 afterEach(() => document.body.replaceChildren());
 
 test("a new home page from the page (a refresh, another tab) is what the select shows", async () => {
