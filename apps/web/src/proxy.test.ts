@@ -20,7 +20,7 @@ vi.mock("@/server/language-addresses", () => ({
   inDefaultLanguage: async (_slug: string, _code: string, path: string) => path,
 }));
 // Offline: every portal is public here (private portals: proxy.db.test.ts).
-vi.mock("@/server/portal-access", () => ({
+vi.mock("@/server/auth/portal-readers", () => ({
   portalVisitor: async () => portal.visitor,
   previewTokenFor: async () => false,
   teamPreview: async (_slug: string, _headers: Headers, preview?: string) => preview === "team",

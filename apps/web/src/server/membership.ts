@@ -4,7 +4,7 @@ import { cache } from "react";
 import { lastingImage } from "./media-urls";
 import { toReviewCounts } from "./operations/code-changes";
 import { awake } from "./operations/conversations";
-import { canReadPortal } from "./portal-access";
+import { canReadPortal } from "@/server/auth/portal-readers";
 import { getSession } from "./session";
 
 const ADMIN_ROLES = ["OWNER", "ADMIN"] as const;

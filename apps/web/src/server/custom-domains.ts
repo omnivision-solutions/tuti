@@ -171,3 +171,15 @@ export async function txtRecords(name: string): Promise<string[]> {
 export async function mxHosts(domain: string): Promise<string[]> {
   return (await lookUp(domain, "MX")).map((data) => data.split(/\s+/).at(-1)!.replace(/\.$/, "").toLowerCase()).filter(Boolean);
 }
+
+/** Where the site's check asks for the token, under the path (proxy.ts answers it). */
+export const CHECK_PATH = "/.well-known/tuti-site";
+
+/**
+ * What the portal's Tuti address answers at <path>/.well-known/tuti-site, for `slug`'s site mount at
+ * `path` (verified or not); without `path`, at /_tuti/.well-known/tuti-site, for its mount wherever it is.
+ */
+export async function siteCheckToken(slug: string, path?: string): Promise<string | null> {
+  const mount = await prisma.siteMount.findFirst({ where: { project: { slug }, ...(path && { path }) }, select: { verificationToken: true } });
+  return mount && `tuti-site=${mount.verificationToken}`;
+}
