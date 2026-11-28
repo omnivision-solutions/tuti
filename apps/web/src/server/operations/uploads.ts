@@ -281,6 +281,8 @@ export const finishUpload = defineOperation({
     try {
       await enqueue("imageUploaded", { mediaId: media.id });
     } catch (error) {
+      // The claim given back, so finishing again works; only from PROCESSING, so an inline job's outcome stays.
+      await prisma.media.updateMany({ where: { id: media.id, status: "PROCESSING" }, data: { status: "UPLOADING" } });
       log.error("Processing an uploaded image failed", { mediaId: media.id, error });
       throw new OperationError(503, "unavailable", "The image couldn't be processed");
     }

@@ -286,6 +286,22 @@ describe("finishing", () => {
     expect(jobs.enqueue.mock.calls.filter(([name]) => name === "imageUploaded")).toEqual([]);
   });
 
+  test("an image whose job couldn't be queued waits to be finished again, and a retry processes it once", async () => {
+    const file = await photo(100, 100);
+    const created = (await createUpload(project.slug, { type: "image/jpeg", size: file.length })) as { mediaId: string; uploadUrl: string };
+    await fetch(created.uploadUrl, { method: "PUT", body: new Uint8Array(file) });
+    jobs.enqueue.mockClear();
+    jobs.enqueue.mockImplementationOnce(async () => {
+      throw new Error("The queue is down");
+    });
+    expect(await finishUpload(created.mediaId)).toEqual({ error: "The image couldn't be processed" });
+    expect(await uploadStatus(created.mediaId)).toEqual({ status: "UPLOADING" });
+    expect(await finishUpload(created.mediaId)).toEqual({});
+    // The failed attempt, then the retry's one job.
+    expect(jobs.enqueue.mock.calls.filter(([name]) => name === "imageUploaded")).toHaveLength(2);
+    expect(await uploadStatus(created.mediaId)).toMatchObject({ status: "READY" });
+  });
+
   test("only the uploader can finish an upload or see its status", async () => {
     const file = await photo(100, 100);
     const created = (await createUpload(project.slug, { type: "image/jpeg", size: file.length })) as { mediaId: string; uploadUrl: string };
