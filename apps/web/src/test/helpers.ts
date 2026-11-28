@@ -288,6 +288,21 @@ async function asForm(save: () => Promise<unknown>): Promise<{ error?: string }>
   );
 }
 
+/**
+ * The posts like `title` (posts.similar), as the new post form asks for them through /api/trpc: as the widget's person
+ * by their token (`Authorization: Widget <token>`), else the request's own cookies (actAs, onPortal).
+ */
+export async function findSimilarPosts(projectSlug: string, title: string, widgetToken?: string | null) {
+  const [{ createCaller }, { requestContext }, { headers }] = await Promise.all([import("@/server/trpc/server"), import("@/server/trpc/context"), import("./next-headers")]);
+  const said = await headers();
+  // From the form's own page: the browser says so.
+  said.set("sec-fetch-site", "same-origin");
+  if (widgetToken) {
+    said.set("authorization", `Widget ${widgetToken}`);
+  }
+  return (await createCaller(await requestContext(said)).posts.similar({ project: projectSlug, title })).posts;
+}
+
 /** The request's cookie session's caller (actAs), as a page's client calls /api/trpc. */
 async function cookieCallerNow() {
   const [{ createCaller }, { sessionContext }, { getSession }] = await Promise.all([import("@/server/trpc/server"), import("@/server/trpc/context"), import("@/server/session")]);

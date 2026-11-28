@@ -264,6 +264,7 @@ import {
   testScreenshotSettings,
   updateScreenshotSettings,
 } from "./screenshots";
+import { similarPosts } from "./similar-posts";
 import {
   getSite,
   removeSite,
@@ -480,6 +481,7 @@ export const all = [
   deleteUser,
   listPosts,
   getPost,
+  similarPosts,
   listComments,
   createPost,
   createComment,

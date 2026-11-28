@@ -17,11 +17,22 @@ import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { boardPath, postPath } from "@/lib/post-urls";
 import type { FormState } from "@/server/form-state";
 import { createPost } from "@/server/posts";
-import { findSimilarPosts, type SimilarPost } from "@/server/similar-posts";
+import type { SimilarPost } from "@/server/operations/similar-posts";
 import { usePortalHere, usePortalHref } from "@/components/portal-base";
+import { useTRPCClient, widgetCall } from "@/components/trpc";
 import { Card } from "@/components/ui/card";
 
 const SUGGEST_DELAY_MS = 300;
+
+/**
+ * The posts like `title` (posts.similar), as the widget's person where it has one (widgetCall), else whoever's reading
+ * the portal. None when the call fails or is refused (a title too long to search, a reader no longer let in), as before.
+ */
+const similarTo = (client: ReturnType<typeof useTRPCClient>, project: string, title: string, widgetToken: string | null | undefined): Promise<SimilarPost[]> =>
+  client.posts.similar.mutate({ project, title }, widgetCall(widgetToken)).then(
+    ({ posts }) => posts,
+    () => [],
+  );
 
 type Placeholders = { titlePlaceholder?: string; detailsPlaceholder?: string };
 
@@ -92,6 +103,7 @@ export function NewPostForm({
   const path = usePortalHere();
   const t = useTranslations("feedback");
   const router = useRouter();
+  const client = useTRPCClient();
   const searchParams = useSearchParams();
   const [expanded, setExpanded] = useState(!collapsible || !!defaultTitle);
   const formRef = useRef<HTMLFormElement>(null);
@@ -149,12 +161,12 @@ export function NewPostForm({
     clearTimeout(timer.current);
     const query = ++latestQuery.current;
     const sent = performance.now();
-    void findSimilarPosts(projectSlug, title, widgetToken).then((posts) => {
+    void similarTo(client, projectSlug, title, widgetToken).then((posts) => {
       if (query === latestQuery.current) {
         found(posts, sent);
       }
     });
-  }, [projectSlug, widgetToken]);
+  }, [client, projectSlug, widgetToken]);
 
   // Look for similar posts once typing pauses; ignore replies to older queries.
   const suggest = (title: string) => {
@@ -167,7 +179,7 @@ export function NewPostForm({
     }
     timer.current = setTimeout(async () => {
       const sent = performance.now();
-      const posts = await findSimilarPosts(projectSlug, title, widgetToken);
+      const posts = await similarTo(client, projectSlug, title, widgetToken);
       if (query === latestQuery.current) {
         setSimilar(posts);
         onSimilar?.(posts, sent);

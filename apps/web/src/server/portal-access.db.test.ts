@@ -17,7 +17,7 @@ import { proxy } from "@/proxy";
 import { getSession } from "@/server/session";
 import { sessionContext } from "@/server/trpc/context";
 import { createCaller } from "@/server/trpc/server";
-import { actAs, addComment, createProject, onPortal, redirectTarget, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addComment, createProject, findSimilarPosts, onPortal, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
@@ -31,7 +31,6 @@ import { currentPostViewer, mayRead } from "./portal-access";
 import { canReadPortal, PREVIEW_READER_COOKIE } from "@/server/auth/portal-readers";
 import * as posts from "./posts";
 import { confirmSignInLink, emailSignInLink } from "./sign-in-link";
-import * as similarPosts from "./similar-posts";
 
 /**
  * A private portal (Settings → Access): every reader of a portal's content, for each
@@ -183,7 +182,14 @@ const readers: { name: string; account?: true; served: (slug: string) => Promise
     name: "asking a person (escalateDocs)",
     served: async (slug) => (await docsReaders.escalateDocs(slug, fixture.questionId, "e2e-reader@example.com", "")).error !== "Docs not found",
   },
-  { name: "similar posts while typing (findSimilarPosts)", served: async (slug) => (await similarPosts.findSimilarPosts(slug, "Dark mode please")).length > 0 },
+  {
+    name: "similar posts while typing (posts.similar)",
+    served: async (slug) =>
+      findSimilarPosts(slug, "Dark mode please").then(
+        (found) => found.length > 0,
+        () => false,
+      ),
+  },
   {
     name: "posting (createPost)",
     account: true,
@@ -421,7 +427,7 @@ test("one project's private portal changes nothing for other projects, and its r
 
   actAs(null);
   expect(await visit(other.slug, "/roadmap")).toBe("served");
-  expect(await similarPosts.findSimilarPosts(other.slug, "Dark mode please")).not.toEqual([]);
+  expect(await findSimilarPosts(other.slug, "Dark mode please")).not.toEqual([]);
   for (const reader of [owner, visitors["SSO user"]!]) {
     actAs(reader);
     expect(await visit(otherPrivate.slug, "/roadmap")).toBe(`sign in: /sign-in?${new URLSearchParams({ next: "/roadmap" })}`);

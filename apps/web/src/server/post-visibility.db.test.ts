@@ -11,7 +11,7 @@ import RoadmapPage from "@/app/portal/[project]/(site)/roadmap/page";
 import WidgetPage from "@/app/portal/[project]/widget/page";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, findSimilarPosts, signUp, type TestUser } from "@/test/helpers";
 
 import { setBoardOff } from "./boards";
 import { publishedEntries } from "./changelog-queries";
@@ -27,7 +27,6 @@ import { firstBoardPath, portalHomePath } from "./portal-home";
 import { addSampleContent } from "./sample-content";
 import { accountPosts, boardStatusCounts, boardsWithCounts, postsLike, recentlyShipped, votersToEmail } from "./post-lists";
 import { postViewer, SIGNED_OUT_VIEWER, TEAM_VIEWER } from "./post-visibility";
-import { findSimilarPosts } from "./similar-posts";
 import { widgetIdeas } from "./widget";
 import { ideaNews } from "./widget-home";
 

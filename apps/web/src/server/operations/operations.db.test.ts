@@ -244,6 +244,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "posts.get": () => ({ number: 1 }),
   "posts.list": () => ({}),
   "posts.merge": () => ({ number: 2, into: 1 }),
+  // Internal (tRPC only): through the caller, below.
+  "posts.similar": () => ({ title: "Dark mode please" }),
   "posts.update": () => ({ number: 1, status: "planned" }),
   "project.get": () => ({}),
   "project.update": () => ({ name: "Renamed by the matrix" }),

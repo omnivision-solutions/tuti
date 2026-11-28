@@ -8,12 +8,11 @@ import { generateSsoSecret } from "@/server/auth/sso";
 import { widgetToken } from "@/server/auth/widget-session";
 import { requestContext } from "@/server/trpc/context";
 import { createCaller } from "@/server/trpc/server";
-import { actAs, createProject, onPortal, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, findSimilarPosts, onPortal, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
 import { WIDGET_READER_COOKIE } from "./auth/portal-readers";
 import { currentReader } from "./portal-access";
-import { findSimilarPosts } from "./similar-posts";
 import {
   widgetComment,
   widgetComments,

@@ -16,14 +16,13 @@ import { listComments } from "@/server/operations/read";
 import { currentPostViewer, mayRead, readerOf } from "@/server/portal-access";
 import { portalVisitor } from "@/server/auth/portal-readers";
 import { createPost } from "@/server/posts";
-import { findSimilarPosts } from "@/server/similar-posts";
 import { widgetIdeas } from "@/server/widget";
 import { answerArticle } from "@/server/docs-readers";
 import { portalReaderHome } from "@/server/widget-home";
 import { widgetPerson } from "@/server/widget-person";
 import { continueToPortal } from "@/server/portal-handoff";
 import { getAccountSession, getSession } from "@/server/session";
-import { actAs, addComment, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addComment, createProject, findSimilarPosts, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
 import { auth } from "./auth";
@@ -245,7 +244,8 @@ test("a session a portal on its team's own site starts doesn't work on the app h
   actAs({ ...ada, cookie: stolen });
   request.host = portalHost();
   expect(await widgetIdeas(own.slug, null, true)).toEqual([]);
-  expect((await findSimilarPosts(own.slug, "Posted as Ada")).map((idea) => idea.voted)).toEqual([false]);
+  // The router takes a portal's session in its own project only: another's similar posts are refused, never asked as her.
+  await expect(findSimilarPosts(own.slug, "Posted as Ada")).rejects.toMatchObject({ code: "NOT_FOUND" });
 
   // Nor does it read, answer or message as her in her own project (private, with Messages on), or change her account.
   await prisma.article.create({ data: { projectId: own.id, slug: "setup", title: "Setup", body: "Steps.", publishedAt: new Date() } });
