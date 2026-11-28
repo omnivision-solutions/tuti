@@ -187,6 +187,10 @@ test("what the app answers is what the sender hears: no project there, too large
   await expect(unknown.send("sam@example.org", ["support@nobody.support.test"])).rejects.toMatchObject({ responseCode: 550 });
   server!.close();
 
+  const large = await receiver([{ status: 413 }]);
+  await expect(large.send("sam@example.org", ["support@acme.support.test"])).rejects.toMatchObject({ responseCode: 552 });
+  server!.close();
+
   const down = await receiver([{ status: 503 }]);
   await expect(down.send("sam@example.org", ["support@acme.support.test"])).rejects.toMatchObject({ responseCode: 451 });
   server!.close();
@@ -219,16 +223,6 @@ test("recipients past the limit are told to come separately (452), and only the 
   expect(sent.rejected).toEqual(["support@c.support.test"]);
 });
 
-test("one address can't hold every connection: past its share it's told to come back (421)", async () => {
-  const { open } = await receiver([], { maxPerSource: 1 });
-  const first = await open();
-  const second = await open();
-  expect(first.greeting).toMatch(/^220 /);
-  expect(second.greeting).toMatch(/^421 /);
-  first.end();
-  second.end();
-});
-
 test("a session is closed past its lifetime, however busy it keeps itself", async () => {
   const { open } = await receiver([], { sessionLifetimeMs: 300 });
   const session = await open();
@@ -240,15 +234,20 @@ test("a session is closed past its lifetime, however busy it keeps itself", asyn
 test("messages still being delivered count, even after their sender hangs up: past the limit, try again later (451)", async () => {
   let release!: () => void;
   const slow = new Promise<void>((resolve) => (release = resolve));
-  const { send, posts } = await receiver([], { maxInFlight: 1 }, async () => {
+  const { open, send, posts, buffered } = await receiver([], { maxInFlight: 1 }, async () => {
     await slow;
     return { status: 200, outcome: "conversation" };
   });
-  const first = send("sam@example.org", ["support@a.support.test"]);
+  const quitter = await open();
+  await startMessage(quitter);
+  quitter.write("Subject: Help\r\n\r\nHello\r\n.");
   await vi.waitFor(() => expect(posts).toHaveLength(1));
+  quitter.end();
+  await quitter.closed;
   await expect(send("sam@example.org", ["support@b.support.test"])).rejects.toMatchObject({ responseCode: 451 });
   release();
-  await first;
+  // Answered (its bytes released) once its post is done.
+  await vi.waitFor(() => expect(buffered()).toBe(0));
   await send("sam@example.org", ["support@c.support.test"]);
   expect(posts).toHaveLength(2);
 });
@@ -663,7 +662,7 @@ test.skipIf(process.platform === "darwin")("one network can't have every message
 });
 
 // Linux routes all of 127.0.0.0/8 to loopback; macOS has only 127.0.0.1 (CI runs Linux).
-test.skipIf(process.platform === "darwin")("two addresses in one network share its connections, and one closing frees a place for either", async () => {
+test.skipIf(process.platform === "darwin")("two addresses in one network share its connections: past its share, come back later (421), until one closing frees a place for either", async () => {
   const { open } = await receiver([], { maxPerSource: 2 });
   const first = await open("127.0.0.1");
   const second = await open("127.0.0.3");
