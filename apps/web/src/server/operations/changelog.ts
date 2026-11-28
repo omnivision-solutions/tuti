@@ -59,7 +59,7 @@ import { author, authorId, saving } from "./create";
 import { aiOrRefuse } from "./credits";
 import { actingUserId, type Actor, defineOperation, OperationError } from "./define";
 import { postNumber, projectPortal, projectSlug } from "./read";
-import { onTeam } from "../session";
+import { actorOnTeam } from "../session";
 import { actorReader } from "../portal-access";
 import { groupLinks } from "./docs";
 import { requirePlan } from "./plan";
@@ -267,7 +267,7 @@ async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entry
  * the widget's token). Only the team sees drafts.
  */
 export async function isTeam(actor: Actor, projectId: string): Promise<boolean> {
-  return actor.kind === "apiKey" || (actor.kind === "user" && !actor.viaWidget && onTeam(projectId, actor.userId));
+  return actorOnTeam(actor, projectId);
 }
 
 /** An entry as someone off the team reads it: only its public posts (post-visibility.ts), as the portal lists them. */

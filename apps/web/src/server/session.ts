@@ -6,6 +6,7 @@ import { cache } from "react";
 import { auth, type Session } from "@/server/auth/auth";
 
 import { sessionWorksOn } from "./custom-domains";
+import type { Actor } from "./operations/define";
 
 /**
  * The session a request's cookie carries, if it works on the request's host (a portal's on that portal only).
@@ -69,6 +70,14 @@ async function requestSession() {
 export async function signedInAsReader(userId: string, session?: Session | null): Promise<boolean> {
   const signedIn = session === undefined ? await requestSession() : session;
   return signedIn?.user.id === userId && signedIn.session.boundTo !== "app";
+}
+
+/**
+ * Whether an operation's caller acts as the project's team: a key (the team's), or a person on its team as this request
+ * has them (onTeam), never the widget's person (Actor's viaWidget: a reader whatever their role) nor a visitor.
+ */
+export async function actorOnTeam(actor: Actor, projectId: string): Promise<boolean> {
+  return actor.kind === "apiKey" || (actor.kind === "user" && !actor.viaWidget && (await onTeam(projectId, actor.userId)));
 }
 
 /** Whether `userId` is on the project's team, as this request has them: never with a portal's session (signedInAsReader). Every check of the team by user id that portals reach comes here. */

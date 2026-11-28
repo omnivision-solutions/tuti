@@ -11,7 +11,7 @@ import { emitEvent } from "../events";
 import { actingUserId, type Actor, defineOperation, OperationError } from "./define";
 import { actorPostViewer, fromApiVisibility, seesBoard, VISIBILITIES } from "../post-visibility";
 import { commentShape, findVisiblePost, postNumber, postShape, postSummarySelect, projectPortal, summary } from "./read";
-import { onTeam, signedInAsReader } from "../session";
+import { actorOnTeam, onTeam, signedInAsReader } from "../session";
 import { rememberPageLanguage } from "@/server/portal-language";
 
 /** A comment that isn't (or is no longer) on the post: replied to or liked. */
@@ -270,7 +270,7 @@ export const createComment = defineOperation({
       throw new OperationError(403, "forbidden", teamOnly);
     }
     const userId = await authorId(context, input.author);
-    if (teamOnly && context.actor.kind !== "apiKey" && !(await onTeam(projectId, userId))) {
+    if (teamOnly && !(await actorOnTeam(context.actor, projectId))) {
       throw new OperationError(403, "forbidden", teamOnly);
     }
     const portal = await projectPortal(projectId);

@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { NextRequest } from "next/server";
-import { beforeEach, expect, test } from "vitest";
+import { startS3Fake } from "@tuti/testkit";
+import { beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 import { GET as trpcGet, POST as trpcPost } from "@/app/api/trpc/[trpc]/route";
 import { proxy } from "@/proxy";
@@ -213,14 +214,31 @@ test("only a key writes on someone's behalf: a person, the widget's person and a
 });
 
 test("a teammate through the widget reads as a reader: no draft entry, no team-only post; in the app, both", async () => {
+  // Uploads need storage: the local fake.
+  const s3 = await startS3Fake();
+  onTestFinished(async () => {
+    vi.unstubAllEnvs();
+    await s3.close();
+  });
+  for (const [name, value] of Object.entries(s3.env)) {
+    vi.stubEnv(name, value);
+  }
   const number = await post();
   await prisma.post.update({ where: { projectId_number: { projectId: project.id, number } }, data: { visibility: "TEAM" } });
   await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Not out yet" } });
   const viaWidget = { authorization: `Widget ${widgetToken(project.id, owner.id)}` };
   expect((await trpc("posts.get", { number }, viaWidget)).status).toBe(404);
   expect((await trpc("changelog.get", { number: 1 }, viaWidget)).status).toBe(404);
+  // Nor writes as the team: an internal note, a file attached (both the team's own).
+  // On a post they can see (the team-only one is a 404 to them).
+  const note = { number: await post(), body: "Only for us", internal: true };
+  const file = { type: "application/pdf", size: 1000, name: "plan.pdf" };
+  expect((await trpc("comments.create", note, viaWidget, true)).status).toBe(403);
+  expect((await trpc("uploads.create", file, viaWidget, true)).status).toBe(403);
   // The same teammate in the app: the team's.
   const app = await callerAs(owner);
   await expect(app.posts.get({ project: project.slug, number })).resolves.toMatchObject({ number });
   await expect(app.changelog.get({ project: project.slug, number: 1 })).resolves.toMatchObject({ number: 1 });
+  await expect(app.comments.create({ project: project.slug, ...note })).resolves.toBeTruthy();
+  await expect(app.uploads.create({ project: project.slug, ...file })).resolves.toMatchObject({ name: "plan.pdf" });
 });
