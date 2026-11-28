@@ -84,7 +84,8 @@ export function NewPostForm({
   /** Who the widget's signed in (its token), for whether they voted for the similar posts. */
   widgetToken?: string | null;
   /** Each answer of similar posts (the widget keeps their votes with its lists'). */
-  onSimilar?: (posts: SimilarPost[]) => void;
+  /** `sent`: when its search was sent (performance.now()), for a caller that keeps the newest of overlapping answers. */
+  onSimilar?: (posts: SimilarPost[], sent: number) => void;
 }) {
   const at = usePortalHref();
   // In the page's language: signing in comes back to it.
@@ -133,9 +134,9 @@ export function NewPostForm({
   useEffect(() => () => clearTimeout(timer.current), []);
 
   const [initialTitle] = useState(defaultTitle);
-  const found = useEffectEvent((posts: SimilarPost[]) => {
+  const found = useEffectEvent((posts: SimilarPost[], sent: number) => {
     setSimilar(posts);
-    onSimilar?.(posts);
+    onSimilar?.(posts, sent);
   });
 
   // A prefilled title gets its similar posts too; and the one in the box, again, for whoever the widget
@@ -147,9 +148,10 @@ export function NewPostForm({
     }
     clearTimeout(timer.current);
     const query = ++latestQuery.current;
+    const sent = performance.now();
     void findSimilarPosts(projectSlug, title, widgetToken).then((posts) => {
       if (query === latestQuery.current) {
-        found(posts);
+        found(posts, sent);
       }
     });
   }, [projectSlug, widgetToken]);
@@ -164,10 +166,11 @@ export function NewPostForm({
       return;
     }
     timer.current = setTimeout(async () => {
+      const sent = performance.now();
       const posts = await findSimilarPosts(projectSlug, title, widgetToken);
       if (query === latestQuery.current) {
         setSimilar(posts);
-        onSimilar?.(posts);
+        onSimilar?.(posts, sent);
       }
     }, SUGGEST_DELAY_MS);
   };
