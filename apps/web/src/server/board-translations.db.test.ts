@@ -155,3 +155,17 @@ test("a board readers don't see: not 'kept up to date' with no translation yet (
   await languageTranslationsDone();
   expect(model.requests).toHaveLength(0);
 });
+
+test("translating a board leaves its updatedAt (the sitemap's lastmod) as the team's last change, by the job or in its settings", async () => {
+  await german();
+  await prisma.board.create({ data: { projectId: project.id, name: "Ideas", slug: "ideas" } });
+  const { updatedAt } = await board("ideas");
+  model.reply(labelsReply({ "0.n": "Ideen" }));
+  await handlers.retryArticleTranslations({}, log);
+  await languageTranslationsDone();
+  expect(await inGerman("ideas")).toEqual({ name: "Ideen", description: "" });
+  expect((await board("ideas")).updatedAt).toEqual(updatedAt);
+  await call(updateBoardTranslation, as(), { slug: "ideas", language: "de", keepUpToDate: false, name: "Vorschläge" });
+  expect(await inGerman("ideas")).toEqual({ name: "Vorschläge", description: "" });
+  expect((await board("ideas")).updatedAt).toEqual(updatedAt);
+});

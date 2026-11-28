@@ -11,11 +11,11 @@ import { defineOperation, OperationError } from "./define";
  * made again when its text changes) or the team's own (never replaced).
  */
 
-/** What differs between a collection's, a tab's and a board's: its noun, and whether it has a description. */
-type Kind = { noun: "collection" | "tab" | "board"; description: boolean };
-const COLLECTION: Kind = { noun: "collection", description: true };
-const TAB: Kind = { noun: "tab", description: false };
-const BOARD: Kind = { noun: "board", description: true };
+/** What differs between a collection's, a tab's and a board's: its table, its noun, and whether it has a description. */
+type Kind = { table: "collection" | "docs_tab" | "board"; noun: "collection" | "tab" | "board"; description: boolean };
+const COLLECTION: Kind = { table: "collection", noun: "collection", description: true };
+const TAB: Kind = { table: "docs_tab", noun: "tab", description: false };
+const BOARD: Kind = { table: "board", noun: "board", description: true };
 
 const language = z.enum(LANGUAGE_CODES).describe("The language's code (one of the project's languages)").meta({ examples: ["de"] });
 const keepUpToDateOutput = z.boolean().describe("Made and kept up to date by AI (else the team's own, never replaced)").meta({ examples: [true] });
@@ -139,12 +139,9 @@ async function saveTranslation(kind: Kind, projectId: string, input: { slug: str
     const entry: LabelTranslation = input.keepUpToDate
       ? { name: was?.name ?? "", ...description, auto: true, source: was?.auto && was.source === source ? was.source : null }
       : { name: input.name!, ...description, auto: false, source };
-    const translations = { ...(row.translations as LabelTranslations), [input.language]: entry } as Prisma.InputJsonValue;
-    await (kind === COLLECTION
-      ? tx.collection.update({ where: { id: row.id }, data: { translations } })
-      : kind === TAB
-        ? tx.docsTab.update({ where: { id: row.id }, data: { translations } })
-        : tx.board.update({ where: { id: row.id }, data: { translations } }));
+    const translations = { ...(row.translations as LabelTranslations), [input.language]: entry };
+    // Raw, so its updatedAt (a board's is the sitemap's lastmod) stays its own text's last change, not a translation's.
+    await tx.$executeRaw`UPDATE ${Prisma.raw(kind.table)} SET translations = ${JSON.stringify(translations)}::jsonb WHERE id = ${row.id}`;
     return { label: { ...row, translations }, automatic: found.automatic };
   });
   if (input.keepUpToDate) {

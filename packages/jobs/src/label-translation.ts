@@ -210,12 +210,9 @@ async function writeLabel(label: Label, projectId: string, language: string, sta
     if (!now || labelSource(now.name, now.description) !== entry.source || (current && !current.auto) || !(await sameSetting(tx, projectId, language, started))) {
       return 0;
     }
-    const translations = { ...now.translations, [language]: entry } as Prisma.InputJsonValue;
-    await (label.table === "collection"
-      ? tx.collection.update({ where: { id: label.id }, data: { translations } })
-      : label.table === "board"
-        ? tx.board.update({ where: { id: label.id }, data: { translations } })
-        : tx.docsTab.update({ where: { id: label.id }, data: { translations } }));
+    // Raw, so its updatedAt (a board's is the sitemap's lastmod) stays the team's last change, not a translation's.
+    const translations = JSON.stringify({ ...now.translations, [language]: entry });
+    await tx.$executeRaw`UPDATE ${Prisma.raw(label.table === "tab" ? "docs_tab" : label.table)} SET translations = ${translations}::jsonb WHERE id = ${label.id}`;
     return 1;
   });
 }
