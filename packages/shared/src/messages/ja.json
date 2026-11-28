@@ -562,7 +562,21 @@
     "replyPreview": "{author} さんが {title} に返信しました",
     "replyEyebrow": "投票したアイデアに新しい返信",
     "replyTitle": "{name} の {author} さんが返信しました",
-    "replyOnPost": "投稿で返信する"
+    "replyOnPost": "投稿で返信する",
+    "verifySubject": "Tuti のメールアドレスを確認してください",
+    "verifyPreview": "登録を完了するには、メールアドレスを確認してください。",
+    "verifyFooter": "リンクの有効期限は 24 時間です。Tuti に登録していない場合は、このメールを無視してください。",
+    "verifyTitle": "{name} さん、メールアドレスを確認してください",
+    "verifyText": "登録を完了するには、これがあなたのメールアドレスであることを確認してください。",
+    "verifyButton": "メールアドレスを確認",
+    "readerSubject": "{inviter} さんが {name} へのアクセス権を付与しました",
+    "readerPreview": "{name} のポータルを閲覧できるようになりました。",
+    "readerFooter": "心当たりがない場合は、このメールを無視してください。",
+    "readerEyebrow": "招待が届きました",
+    "readerTitle": "{inviter} さんが {name} のポータルへのアクセス権を付与しました",
+    "readerText": "ドキュメントを読んだり、変更履歴をフォローしたり、{name} のチームにフィードバックを送ったりできます。",
+    "readerButton": "ポータルを開く",
+    "readerNote": "<b>{email}</b> でサインインしてください。アカウントをまだお持ちでなくても「{button}」を使えます。"
   },
   "subscription": {
     "title": "変更履歴のメール",

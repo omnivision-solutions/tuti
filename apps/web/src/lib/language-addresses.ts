@@ -9,6 +9,12 @@ import { portalPage, redirectKey, reservedPath } from "@tuti/shared/portal-redir
  */
 export const LANGUAGE = { header: "x-tuti-language", prefix: "x-tuti-language-prefix", default: "x-tuti-language-default" } as const;
 
+/**
+ * The page's language a portal's Resend email says it's on, as it asks the auth API (which has no language prefix) for
+ * the verification email: that email's language (lib/auth.ts), only one the portal serves. The browser's word, nothing more.
+ */
+export const PAGE_LANGUAGE_HEADER = "x-tuti-page-language";
+
 /** A language's prefix: /de, /pt-br. */
 export const languagePrefix = (code: Language) => `/${code.toLowerCase()}`;
 

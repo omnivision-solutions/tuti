@@ -562,7 +562,21 @@
     "replyPreview": "{author} replied to {title}",
     "replyEyebrow": "New reply on an idea you voted for",
     "replyTitle": "{author} from {name} replied",
-    "replyOnPost": "Reply on the post"
+    "replyOnPost": "Reply on the post",
+    "verifySubject": "Verify your email for Tuti",
+    "verifyPreview": "Confirm your email address to finish signing up.",
+    "verifyFooter": "The link works for 24 hours. If you didn't sign up for Tuti, you can ignore this email.",
+    "verifyTitle": "Confirm your email, {name}",
+    "verifyText": "Confirm this is your email to finish signing up.",
+    "verifyButton": "Verify my email",
+    "readerSubject": "{inviter} gave you access to {name}",
+    "readerPreview": "You can now read {name}'s portal.",
+    "readerFooter": "If you weren't expecting this, you can ignore this email.",
+    "readerEyebrow": "You're invited",
+    "readerTitle": "{inviter} gave you access to {name}'s portal",
+    "readerText": "Read the docs, follow the changelog and share feedback with the {name} team.",
+    "readerButton": "Open the portal",
+    "readerNote": "Sign in as <b>{email}</b>. “{button}” works even if you don't have an account yet."
   },
   "subscription": {
     "title": "Changelog emails",

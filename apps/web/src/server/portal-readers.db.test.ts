@@ -175,3 +175,18 @@ test("a domain lets in everyone with a verified address there; nobody's emailed 
   expect(await call(removePortalReader, as(), { email: "@example.com" })).toEqual({ removed: "@example.com" });
   expect(await canReadPortal({ id: project.id }, colleague.id)).toBe(false);
 });
+
+test("a new reader's email is in their language while the portal serves it (an account's chosen one), else its default, its sign-in page at that language's address", async () => {
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  const [german, other] = [address(), address()];
+  const reader = await signUp("Gerda");
+  await prisma.user.update({ where: { id: reader.id }, data: { email: german, language: "de" } });
+  expect(await call(addPortalReaders, as(), { emails: [german, other] })).toMatchObject({ emailed: 2 });
+  const toGerman = await mailbox.latestTo(german);
+  expect(toGerman.subject).toBe(`Olive Owner hat dir Zugang zu ${project.name} gegeben`);
+  expect(toGerman.text).toContain(`http://${project.slug}.localhost:3100/de/sign-in`);
+  expect(toGerman.text).toContain(`Melde dich als ${german} an.`);
+  const toOther = await mailbox.latestTo(other);
+  expect(toOther.subject).toBe(`Olive Owner gave you access to ${project.name}`);
+  expect(toOther.text).toContain(`http://${project.slug}.localhost:3100/sign-in`);
+});

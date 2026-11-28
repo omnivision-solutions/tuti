@@ -1,28 +1,26 @@
 import { Text } from "@react-email/components";
 
+import { emailTranslator } from "./language";
 import { Buttons, Layout, textStyle, Title } from "./layout";
 
-export const verifyEmailSubject = "Verify your email for Tuti";
+/** `language`: the portal page's it was asked on (docs/plan.md, Languages), else English (the app's). */
+type VerifyProps = { name: string; url: string; language?: string };
 
-export function VerifyEmail({ name, url }: { name: string; url: string }) {
+export const verifyEmailSubject = (language?: string) => emailTranslator(language, "emails")("verifySubject");
+
+export function VerifyEmail({ name, url, language }: VerifyProps) {
+  const t = emailTranslator(language, "emails");
   return (
-    <Layout
-      preview="Confirm your email address to finish signing up."
-      footer={
-        <>
-          The link works for 24 hours. If you didn&apos;t sign up for Tuti, you can ignore this email.
-        </>
-      }
-    >
+    <Layout preview={t("verifyPreview")} footer={t("verifyFooter")} language={language}>
       {/* Sent on signing up on the app or a portal, and again on Resend, maybe months later: no welcome. */}
-      <Title>Confirm your email, {name}</Title>
-      <Text style={textStyle}>Confirm this is your email to finish signing up.</Text>
-      <Buttons href={url} label="Verify my email" />
+      <Title>{t("verifyTitle", { name })}</Title>
+      <Text style={textStyle}>{t("verifyText")}</Text>
+      <Buttons href={url} label={t("verifyButton")} />
     </Layout>
   );
 }
 
-export const verifyEmail = (props: { name: string; url: string }) => ({
-  subject: verifyEmailSubject,
+export const verifyEmail = (props: VerifyProps) => ({
+  subject: verifyEmailSubject(props.language),
   body: <VerifyEmail {...props} />,
 });

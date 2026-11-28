@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { emailBrand, handOverOnVerified, projectSender } from "@tuti/jobs";
+import { emailBrand, handOverOnVerified, projectSender, readerEmailLanguage } from "@tuti/jobs";
 import { emailConfigured, passwordResetEmail, sendEmail, signInLinkEmail, verifyEmail } from "@tuti/email";
 import { log } from "@tuti/shared";
 import { betterAuth } from "better-auth";
@@ -16,6 +16,7 @@ import { portalAddress, requestTarget, sessionBinding, sessionWorksOn, siteMount
 import { APP_ORIGIN, appSignIn, noAccountFromApp } from "./app-sign-in";
 import { CLIENT_IP_HEADER, withClientIp } from "./client-ip";
 import { allowedHostPatterns, appUrl, portalTemplate } from "./hosts";
+import { PAGE_LANGUAGE_HEADER } from "./language-addresses";
 import { hashSecret, portalHandoff } from "./portal-handoff";
 import { supportSignIn } from "./support-sign-in";
 import { PASSWORD_RESET_MINUTES, SIGN_IN_LINK_MINUTES, type SignInLinkMetadata } from "./sign-in-link";
@@ -62,6 +63,19 @@ async function sendPasswordReset({ user, url, token }: { user: { email: string }
     // A portal's reset comes from its project; the app's from Tuti.
     ...(project && (await projectSender(project.id))),
   });
+}
+
+/**
+ * The verification email's language: asked on a portal (its Resend email), the page's it says (PAGE_LANGUAGE_HEADER) while
+ * that portal serves it, else the portal's default (as its other emails to readers); asked on the app, English: its sign-up
+ * and sign-in pages are (a portal's password sign-up is the app's page).
+ */
+export async function verificationLanguage(request: Request | undefined): Promise<string | undefined> {
+  const boundTo = request ? await sessionBinding(request.headers.get("host")) : null;
+  if (!request || !boundTo || boundTo === "app") {
+    return undefined;
+  }
+  return (await readerEmailLanguage(boundTo))(request.headers.get(PAGE_LANGUAGE_HEADER)).language;
 }
 
 /** How long an emailed verification link works (emailVerification.expiresIn), and so the way back it carries. */
@@ -312,7 +326,10 @@ export const auth = betterAuth({
       try {
         // Signing up, or signing in before verifying (its password checked): the account's own email.
         const signingUp = !!request && /\/(sign-up|sign-in)\/email$/.test(new URL(request.url).pathname);
-        await sendEmail({ to: user.email, ...verifyEmail({ name: user.name, url: await withoutHandoffState(url, user.id, signingUp) }) });
+        await sendEmail({
+          to: user.email,
+          ...verifyEmail({ name: user.name, url: await withoutHandoffState(url, user.id, signingUp), language: await verificationLanguage(request) }),
+        });
       } catch (error) {
         log.error("Sending the verification email failed", { error });
         // A failed email mustn't fail a sign-up (it can be sent again), but asking to send it again should say it failed,

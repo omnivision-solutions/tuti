@@ -4,9 +4,11 @@ import { expect, test } from "vitest";
 import { changelogEmail } from "./changelog-email";
 import { emailLanguage } from "./language";
 import { passwordChangedEmail, passwordResetEmail } from "./password-reset-email";
+import { portalReaderEmail } from "./portal-reader-email";
 import { shippedEmail } from "./shipped-email";
 import { signInLinkEmail } from "./sign-in-link-email";
 import { statusEmail } from "./status-email";
+import { verifyEmail } from "./verify-email";
 
 const project = { projectName: "Acme", accent: null, poweredBy: true, logo: null };
 
@@ -71,4 +73,31 @@ test("a changelog entry's email: its date in the subscriber's language", async (
   };
   expect(await render(changelogEmail({ ...entry, language: "de" }).body, { plainText: true })).toContain("Neu · 27. November 2026");
   expect(await render(changelogEmail(entry).body, { plainText: true })).toContain("New · 27 November 2026");
+});
+
+test("the verification email in the portal page's language it was asked on; the app's in English", async () => {
+  const email = verifyEmail({ name: "Ada", url: "https://acme.example/api/auth/verify-email?token=t", language: "de" });
+  expect(email.subject).toBe("Bestätige deine E-Mail-Adresse für Tuti");
+  expect(await render(email.body)).toMatch(/<html[^>]* lang="de"/);
+  const text = await render(email.body, { plainText: true });
+  // (Plain text has headings in capitals.)
+  for (const shown of ["BESTÄTIGE DEINE E-MAIL-ADRESSE, ADA", "E-Mail-Adresse bestätigen", "Der Link funktioniert 24 Stunden lang."]) {
+    expect(text).toContain(shown);
+  }
+  const english = verifyEmail({ name: "Ada", url: "https://tuti.example/api/auth/verify-email?token=t" });
+  expect(english.subject).toBe("Verify your email for Tuti");
+  expect(await render(english.body, { plainText: true })).toContain("CONFIRM YOUR EMAIL, ADA");
+});
+
+test("a new reader's invitation in their language: the sign-in page's own name for emailing a link, quoted as each language does", async () => {
+  const email = portalReaderEmail({ ...project, inviterName: "Olive", email: "e2e-ada@example.com", url: "https://acme.example/de/sign-in", language: "de" });
+  expect(email.subject).toBe("Olive hat dir Zugang zu Acme gegeben");
+  expect(await render(email.body)).toMatch(/<html[^>]* lang="de"/);
+  const text = await render(email.body, { plainText: true });
+  for (const shown of ["Du bist eingeladen", "OLIVE HAT DIR ZUGANG ZUM PORTAL VON ACME GEGEBEN", "Portal öffnen", "„Anmeldelink per E-Mail senden“ funktioniert auch"]) {
+    expect(text).toContain(shown);
+  }
+  const english = portalReaderEmail({ ...project, inviterName: "Olive", email: "e2e-ada@example.com", url: "https://acme.example/sign-in" });
+  expect(english.subject).toBe("Olive gave you access to Acme");
+  expect(await render(english.body, { plainText: true })).toContain("“Email me a sign-in link” works even if you don't have an account yet.");
 });

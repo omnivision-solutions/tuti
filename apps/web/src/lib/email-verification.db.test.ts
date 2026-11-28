@@ -11,6 +11,7 @@ import { request } from "@/test/next-headers";
 import { auth, VERIFICATION_SECONDS } from "./auth";
 import { getSession } from "@/server/session";
 
+import { PAGE_LANGUAGE_HEADER } from "./language-addresses";
 import { randomSecret } from "./portal-handoff";
 import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR } from "./sign-in-link";
 
@@ -393,4 +394,31 @@ test("someone else's address signed up with a hand-picked callback: its own veri
   expect(outcome).not.toHaveProperty("redirect");
   expect(JSON.stringify(((outcome as { tree: React.ReactElement }).tree).props)).toContain(`["Continue to ","${theirs.name}"]`);
   expect(await continueButton(Promise.resolve((outcome as { tree: unknown }).tree))).toBe(`http://${theirs.slug}.localhost:3100/continue?redirect=%2F`);
+});
+
+test("asked again on a portal (Resend email), the verification email is in its page's language while the portal serves it, else its default; on the app, English", async () => {
+  const project = await createProject(await signUpUser("Owner"));
+  await prisma.projectLanguage.create({ data: { projectId: project.id, code: "de", live: true, automatic: false } });
+  const ada = await signUpUser("Ada", undefined, { verified: false });
+  const origin = `http://${project.slug}.localhost:3100`;
+  /** Resend email on `at`, as its button does: saying the page's language (PAGE_LANGUAGE_HEADER). */
+  const resendAt = async (at: string, language: string) => {
+    const response = await auth.handler(
+      new Request(`${at}/api/auth/send-verification-email`, {
+        method: "POST",
+        headers: { host: new URL(at).host, origin: at, "content-type": "application/json", [PAGE_LANGUAGE_HEADER]: language },
+        body: JSON.stringify({ email: ada.email, callbackURL: "/account" }),
+      }),
+    );
+    expect(response.ok, await response.clone().text()).toBe(true);
+    return (await mailbox.latestTo(ada.email)).subject;
+  };
+  expect(await resendAt(origin, "de")).toBe("Bestätige deine E-Mail-Adresse für Tuti");
+  // A language it doesn't serve (any word a browser sends): its default's.
+  expect(await resendAt(origin, "fr")).toBe("Verify your email for Tuti");
+  await prisma.project.update({ where: { id: project.id }, data: { language: "de" } });
+  await prisma.projectLanguage.deleteMany({ where: { projectId: project.id } });
+  expect(await resendAt(origin, "fr")).toBe("Bestätige deine E-Mail-Adresse für Tuti");
+  // The app's (its sign-up and sign-in pages, a portal's password sign-up included): English, whatever it says.
+  expect(await resendAt(APP_URL, "de")).toBe("Verify your email for Tuti");
 });

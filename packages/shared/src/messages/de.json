@@ -562,7 +562,21 @@
     "replyPreview": "{author} hat auf {title} geantwortet",
     "replyEyebrow": "Neue Antwort auf eine Idee, für die du gestimmt hast",
     "replyTitle": "{author} von {name} hat geantwortet",
-    "replyOnPost": "Im Beitrag antworten"
+    "replyOnPost": "Im Beitrag antworten",
+    "verifySubject": "Bestätige deine E-Mail-Adresse für Tuti",
+    "verifyPreview": "Bestätige deine E-Mail-Adresse, um die Registrierung abzuschließen.",
+    "verifyFooter": "Der Link funktioniert 24 Stunden lang. Wenn du dich nicht bei Tuti registriert hast, kannst du diese E-Mail ignorieren.",
+    "verifyTitle": "Bestätige deine E-Mail-Adresse, {name}",
+    "verifyText": "Bestätige, dass das deine E-Mail-Adresse ist, um die Registrierung abzuschließen.",
+    "verifyButton": "E-Mail-Adresse bestätigen",
+    "readerSubject": "{inviter} hat dir Zugang zu {name} gegeben",
+    "readerPreview": "Du kannst jetzt das Portal von {name} lesen.",
+    "readerFooter": "Wenn du das nicht erwartet hast, kannst du diese E-Mail ignorieren.",
+    "readerEyebrow": "Du bist eingeladen",
+    "readerTitle": "{inviter} hat dir Zugang zum Portal von {name} gegeben",
+    "readerText": "Lies die Dokumentation, verfolge den Changelog und teile dem Team von {name} dein Feedback mit.",
+    "readerButton": "Portal öffnen",
+    "readerNote": "Melde dich als <b>{email}</b> an. „{button}“ funktioniert auch, wenn du noch kein Konto hast."
   },
   "subscription": {
     "title": "Changelog-E-Mails",

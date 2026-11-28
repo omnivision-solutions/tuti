@@ -562,7 +562,21 @@
     "replyPreview": "{author} respondió a {title}",
     "replyEyebrow": "Nueva respuesta en una idea que votaste",
     "replyTitle": "{author} de {name} respondió",
-    "replyOnPost": "Responder en la publicación"
+    "replyOnPost": "Responder en la publicación",
+    "verifySubject": "Verifica tu correo para Tuti",
+    "verifyPreview": "Confirma tu dirección de correo para terminar de registrarte.",
+    "verifyFooter": "El enlace funciona durante 24 horas. Si no te registraste en Tuti, puedes ignorar este correo.",
+    "verifyTitle": "Confirma tu correo, {name}",
+    "verifyText": "Confirma que este es tu correo para terminar de registrarte.",
+    "verifyButton": "Verificar mi correo",
+    "readerSubject": "{inviter} te ha dado acceso a {name}",
+    "readerPreview": "Ya puedes leer el portal de {name}.",
+    "readerFooter": "Si no lo esperabas, puedes ignorar este correo.",
+    "readerEyebrow": "Te han invitado",
+    "readerTitle": "{inviter} te ha dado acceso al portal de {name}",
+    "readerText": "Lee la documentación, sigue el changelog y comparte tus comentarios con el equipo de {name}.",
+    "readerButton": "Abrir el portal",
+    "readerNote": "Inicia sesión con <b>{email}</b>. «{button}» funciona aunque todavía no tengas cuenta."
   },
   "subscription": {
     "title": "Correos del changelog",
