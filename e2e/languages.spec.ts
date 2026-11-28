@@ -1428,6 +1428,10 @@ test("an article's own words in German at /de/docs: its actions, reading time, s
   await reader.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await main.getByRole("button", { name: "Code kopieren" }).click();
   await expect(reader.locator("[data-sonner-toast]", { hasText: "Kopiert" })).toBeVisible();
+  await main.getByRole("button", { name: "Seite kopieren" }).click();
+  await expect(reader.locator("[data-sonner-toast]", { hasText: "Als Markdown kopiert" })).toBeVisible();
+  await reader.getByRole("button", { name: "Lesemodus" }).hover();
+  await expect(reader.getByText("Lesemodus: Spalten neben dem Artikel ausblenden und nur den Artikel lesen")).toBeVisible();
   // The way on, and the answer to Was this helpful.
   await expect(main.getByRole("navigation", { name: "Zurück und weiter" }).getByRole("link", { name: /Weiter/ })).toContainText("Billing");
   await expect(main.getByRole("region", { name: "Ähnliche Artikel" }).getByRole("link", { name: "Teams" })).toBeVisible();
@@ -1437,6 +1441,9 @@ test("an article's own words in German at /de/docs: its actions, reading time, s
   await main.getByLabel("Wonach hast du gesucht? (optional)").fill("Mehr zu Rechnungen.");
   await main.getByRole("button", { name: "Senden" }).click();
   await expect(main.getByText("Danke für dein Feedback.")).toBeVisible();
+  // The next one's way back.
+  await main.getByRole("navigation", { name: "Zurück und weiter" }).getByRole("link", { name: /Weiter/ }).click();
+  await expect(main.getByRole("navigation", { name: "Zurück und weiter" }).getByRole("link", { name: /Zurück/ })).toContainText("Setup");
   // On a phone: the actions under the title, the sections a menu.
   await reader.setViewportSize({ width: 390, height: 800 });
   await reader.goto(`/de/docs/${first.slug}`);
