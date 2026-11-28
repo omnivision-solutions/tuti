@@ -235,6 +235,14 @@ test("a teammate through the widget reads as a reader: no draft entry, no team-o
   const file = { type: "application/pdf", size: 1000, name: "plan.pdf" };
   expect((await trpc("comments.create", note, viaWidget, true)).status).toBe(403);
   expect((await trpc("uploads.create", file, viaWidget, true)).status).toBe(403);
+  // What they write as themselves is a reader's: never shown as the team's.
+  const comment = await trpc("comments.create", { number: note.number, body: "Me too" }, viaWidget, true);
+  expect(comment.status).toBe(200);
+  expect(JSON.stringify(comment.body)).toContain('"team":false');
+  await prisma.changelogEntry.create({ data: { projectId: project.id, number: 2, title: "Out now", publishedAt: new Date() } });
+  const reply = await trpc("changelogComments.create", { number: 2, body: "Nice" }, viaWidget, true);
+  expect(reply.status).toBe(200);
+  expect(JSON.stringify(reply.body)).toContain('"team":false');
   // The same teammate in the app: the team's.
   const app = await callerAs(owner);
   await expect(app.posts.get({ project: project.slug, number })).resolves.toMatchObject({ number });

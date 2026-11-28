@@ -80,6 +80,14 @@ export async function actorOnTeam(actor: Actor, projectId: string): Promise<bool
   return actor.kind === "apiKey" || (actor.kind === "user" && !actor.viaWidget && (await onTeam(projectId, actor.userId)));
 }
 
+/**
+ * Whether what an operation's caller writes is a reader's, never shown as the team's whoever wrote it: written by the
+ * widget's person (Actor's viaWidget), or with a portal's session (signedInAsReader).
+ */
+export async function writesAsReader(actor: Actor, userId: string): Promise<boolean> {
+  return (actor.kind === "user" && !!actor.viaWidget) || (await signedInAsReader(userId));
+}
+
 /** Whether `userId` is on the project's team, as this request has them: never with a portal's session (signedInAsReader). Every check of the team by user id that portals reach comes here. */
 export async function onTeam(projectId: string, userId: string, session?: Session | null): Promise<boolean> {
   const [member, reader] = await Promise.all([

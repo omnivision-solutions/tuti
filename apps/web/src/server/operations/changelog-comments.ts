@@ -5,7 +5,7 @@ import { z } from "zod";
 import { claimsOf, groupClaims } from "@/lib/reader-groups";
 
 import { attachMedia, displayDoc, readContent } from "../content";
-import { signedInAsReader } from "../session";
+import { writesAsReader } from "../session";
 import { isTeam, mayReadEntry } from "./changelog";
 import { authorId, describedAuthor, MAX_TEXT_LENGTH, saving } from "./create";
 import { type Actor, defineOperation, OperationError } from "./define";
@@ -44,7 +44,7 @@ type Row = { id: string; body: string; content: unknown; asReader: boolean; crea
 
 const view = (row: Row, team: Set<string>) => ({
   id: row.id,
-  // A team member's comment written with a portal's session is a reader's (signedInAsReader).
+  // A team member's comment written with a portal's session or by the widget is a reader's (writesAsReader).
   author: { name: row.author.name, team: team.has(row.author.id) && !row.asReader },
   body: row.body,
   content: displayDoc(row),
@@ -143,8 +143,8 @@ export const createChangelogComment = defineOperation({
     published(entry);
     const read = await readText(projectId, input);
     const userId = await authorId(context, input.author);
-    // Written with a portal's session: a reader's, never shown as the team's, whoever wrote it.
-    const asReader = await signedInAsReader(userId);
+    // Written by the widget's person or with a portal's session: a reader's, never shown as the team's, whoever wrote it.
+    const asReader = await writesAsReader(context.actor, userId);
     const comment = await saving(() =>
       prisma.$transaction(async (tx) => {
         await stillPublished(tx, entry.id, input.number);
