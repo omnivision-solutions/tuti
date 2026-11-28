@@ -86,11 +86,11 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
   const latest = shipped.map((post) => ({ ...post, board: byId.get(post.boardId)! }));
   const total = boards.reduce((sum, board) => sum + board._count.posts, 0);
 
-  const vote = (post: { id: string; status: string; voteCount: number; votes: unknown[] }, shape: "chip" | "box") =>
+  const vote = (post: { id: string; number: number; status: string; voteCount: number; votes: unknown[] }, shape: "chip" | "box") =>
     post.status === "COMPLETED" ? (
       <VoteCount count={post.voteCount} shape={shape} />
     ) : (
-      <VoteButton shape={shape} postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} signedOut={!session} />
+      <VoteButton shape={shape} project={slug} number={post.number} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} signedOut={!session} />
     );
   const search = (className?: string) => <BoardSearch action={at("/feedback")} q={q ?? ""} className={className} />;
   const newPost = (round: boolean) => (

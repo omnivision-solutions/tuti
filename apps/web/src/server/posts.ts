@@ -4,7 +4,7 @@ import { prisma } from "@tuti/db";
 
 import type { FormState } from "./form-state";
 import { createComment as createCommentOperation, createPost as createPostOperation } from "./operations/create";
-import { likeComment, setSubscription, setVote } from "./operations/more";
+import { likeComment, setSubscription } from "./operations/more";
 import { asAnyone, call } from "./operations/run";
 
 /** Posts on a portal board; see the posts.create operation. */
@@ -24,25 +24,6 @@ export async function createPost(_prev: FormState, formData: FormData): Promise<
         content: value("content") || undefined,
         body: value("body"),
       }),
-  );
-}
-
-/** Votes, or takes the vote back, for the signed-in user; see the votes.set operation. */
-export async function toggleVote(postId: string): Promise<FormState> {
-  let number = 0;
-  return asAnyone(
-    "Sign in to vote",
-    "Post not found",
-    async () => {
-      const post = await prisma.post.findUnique({ where: { id: String(postId) }, select: { projectId: true, number: true } });
-      number = post?.number ?? 0;
-      return post && { id: post.projectId };
-    },
-    async (context) => {
-      const userId = context.actor.kind === "user" ? context.actor.userId : "";
-      const voted = await prisma.vote.findFirst({ where: { post: { number, projectId: context.projectId }, userId } });
-      return call(setVote, context, { number, voted: !voted });
-    },
   );
 }
 

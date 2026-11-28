@@ -1,10 +1,10 @@
 import { prisma } from "@tuti/db";
 import { beforeEach, describe, expect, test } from "vitest";
 
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, callerAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { mergePost } from "./manage-posts";
-import { addComment, createPost, toggleVote } from "./posts";
+import { addComment, createPost } from "./posts";
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -52,16 +52,23 @@ async function state(id: string) {
   return { ...post, votes: post.votes.map((v) => v.userId).sort(), comments: post.comments.map((c) => c.body).sort() };
 }
 
+/** A vote as the portal's page sends it (votes.set, as `user`): nothing, or the refusal's message. */
+async function vote(user: TestUser, postId: string): Promise<{ error?: string }> {
+  const { number } = await prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { number: true } });
+  return (await callerAs(user)).votes.set({ project: project.slug, number, voted: true }).then(
+    () => ({}),
+    (error: Error) => ({ error: error.message }),
+  );
+}
+
 describe("merging a duplicate into the original", () => {
   test("moves votes (people who voted on both count once) and comments", async () => {
     const [ada, bo, cy] = [await signUp("Ada"), await signUp("Bo"), await signUp("Cy")];
     const original = await post(ada, "Dark mode");
     const duplicate = await post(bo, "Night theme");
-    actAs(cy);
-    await toggleVote(original.id);
-    await toggleVote(duplicate.id);
-    actAs(ada);
-    await toggleVote(duplicate.id);
+    await vote(cy, original.id);
+    await vote(cy, duplicate.id);
+    await vote(ada, duplicate.id);
     await comment(bo, duplicate.id, "Please!");
     await comment(cy, original.id, "Yes");
 
@@ -147,7 +154,7 @@ describe("refuses", () => {
     await merge(b.id, a.id);
     const voter = await signUp();
     actAs(voter);
-    expect(await toggleVote(b.id)).toEqual({ error: "This post was merged into another one; vote there instead" });
+    expect(await vote(voter, b.id)).toEqual({ error: "This post was merged into another one; vote there instead" });
     expect(await comment(voter, b.id, "Hi")).toEqual({
       error: "This post was merged into another one; comment there instead",
     });

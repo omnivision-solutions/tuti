@@ -187,7 +187,7 @@ export const createPost = defineOperation({
     const created = summary(post, portal);
     await emitEvent(projectId, "post.created", created);
     // Its news is emailed to them: in this page's language where they have none (rememberPageLanguage).
-    await rememberPageLanguage(context.actor, userId, projectId);
+    await rememberPageLanguage(context.actor, userId, projectId, context.pageLanguage);
     return created;
   },
 });
@@ -350,7 +350,7 @@ export const createComment = defineOperation({
     };
     const { url, number, title } = summary(post, portal);
     // The post's news is emailed to them now: in this page's language where they have none (rememberPageLanguage).
-    await rememberPageLanguage(context.actor, userId, projectId);
+    await rememberPageLanguage(context.actor, userId, projectId, context.pageLanguage);
     if (post.sample) {
       return created;
     }

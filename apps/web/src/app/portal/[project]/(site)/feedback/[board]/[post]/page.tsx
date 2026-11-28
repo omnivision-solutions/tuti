@@ -265,7 +265,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
         aria-label={t("aboutIdea")}
         className="flex flex-wrap items-center gap-x-2 gap-y-4 text-sm lg:sticky lg:top-[calc(var(--portal-header-height,4rem)+1.5rem)] lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-[2.375rem] lg:flex-col lg:flex-nowrap lg:items-stretch lg:gap-5 max-lg:[&>:first-child]:grow lg:[&>a]:w-full lg:[&>button]:w-full"
       >
-        <VoteButton shape="upvote" postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} signedOut={!session} />
+        <VoteButton shape="upvote" project={projectSlug} number={post.number} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} signedOut={!session} />
         {subscribe}
         {voterFaces && (
           <div className="flex flex-col gap-2 max-lg:order-last max-lg:basis-full">

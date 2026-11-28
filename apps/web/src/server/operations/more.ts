@@ -325,7 +325,7 @@ export const setVote = defineOperation({
     });
     // The post's news is emailed to them now: in this page's language where they have none (rememberPageLanguage).
     if (input.voted) {
-      await rememberPageLanguage(context.actor, userId, context.projectId);
+      await rememberPageLanguage(context.actor, userId, context.projectId, context.pageLanguage);
     }
     return { number: post.number, voted: input.voted, votes };
   },
@@ -429,7 +429,7 @@ export const setSubscription = defineOperation({
     });
     // The post's news is emailed to them now: in this page's language where they have none (rememberPageLanguage).
     if (input.subscribed) {
-      await rememberPageLanguage(context.actor, userId, context.projectId);
+      await rememberPageLanguage(context.actor, userId, context.projectId, context.pageLanguage);
     }
     return { number: post.number, subscribed: input.subscribed };
   },

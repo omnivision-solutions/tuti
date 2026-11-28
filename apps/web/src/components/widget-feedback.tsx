@@ -9,13 +9,15 @@ import { usePortalHref } from "@/components/portal-base";
 import { StatusDot } from "@/components/post-status-badge";
 import { pillClass } from "@/components/filter-pills";
 import { Skeleton } from "@/components/ui/skeleton";
+import { errorMessage, useTRPCClient, widgetCall } from "@/components/trpc";
 import { VoteButton } from "@/components/vote-button";
 import { heardSignOut } from "@/lib/heard-sign-out";
 import { latestOnly } from "@/lib/latest-only";
+import { type KnownVotes, withAnswer } from "@/lib/widget-votes";
 import { WIDGET_LABEL } from "@/lib/portal-look";
 import { postPath } from "@/lib/post-urls";
 import { WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE } from "@/lib/widget-messages";
-import { type WidgetIdea, widgetCreatePost, widgetIdeas, widgetSignIn, widgetSignOut, widgetVote } from "@/server/widget";
+import { type WidgetIdea, widgetCreatePost, widgetIdeas, widgetSignIn, widgetSignOut } from "@/server/widget";
 import { useTranslations } from "next-intl";
 import { useTeamLanguage } from "@/components/portal-look";
 
@@ -191,6 +193,7 @@ export function WidgetFeedback({
   const team = useTeamLanguage();
   const { signedIn, error, known, pending } = useWidgetSignIn(projectSlug, !portalSignedIn);
   const link = usePortalHref();
+  const client = useTRPCClient();
   const token = signedIn?.token ?? null;
   const viewer = portalSignedIn || !!signedIn;
   // Who votes here: what's known of their votes is theirs only.
@@ -203,16 +206,12 @@ export function WidgetFeedback({
   const mine = viewer && mineAsked;
   // The list shown and what it was asked for (whose, and whether Mine).
   const [list, setList] = useState<{ for: string; ideas: WidgetIdea[]; failed?: true }>({ for: `${null}:${false}`, ideas: initialIdeas });
-  // Each idea's votes, and whether they voted, as the server last answered (a list, or a vote): every list
-  // shows these. Server actions are sent one at a time, so the latest answer is the newest.
-  const [votes, setVotes] = useState<{ identity: string | null; ideas: Record<string, { voteCount: number; voted: boolean }> }>({ identity, ideas: {} });
-  const answered = (at: string | null, ideas: { id: string; voteCount: number; voted: boolean }[]) =>
-    setVotes((before) =>
-      // An answer for someone who's gone isn't kept; someone new starts with none.
-      at !== identityNow.current
-        ? before
-        : { identity: at, ideas: { ...(before.identity === at ? before.ideas : {}), ...Object.fromEntries(ideas.map(({ id, voteCount, voted }) => [id, { voteCount, voted }])) } },
-    );
+  // Each idea's votes, and whether they voted, as the server last answered (a list, similar ideas, or a vote): every
+  // list shows these. Calls overlap, so each answer carries how recent it is (`stamp`: a read's when it was sent, a
+  // vote's when it came back) and an older one never undoes a newer (withAnswer).
+  const [votes, setVotes] = useState<KnownVotes>({ identity, ideas: {} });
+  const answered = (at: string | null, ideas: { id: string; voteCount: number; voted: boolean }[], stamp: number) =>
+    setVotes((before) => withAnswer(before, identityNow.current, at, ideas, stamp));
   // Bumped after each post, to list it.
   const [posted, setPosted] = useState(0);
   const latest = useRef(0);
@@ -227,11 +226,12 @@ export function WidgetFeedback({
     listed.current = key;
     const ask = ++latest.current;
     const at = identity;
+    const sent = performance.now();
     widgetIdeas(projectSlug, token, mine).then(
       (found) => {
         if (ask === latest.current) {
           setList({ for: `${token}:${mine}`, ideas: found });
-          answered(at, found);
+          answered(at, found, sent);
         }
       },
       () => ask === latest.current && setList({ for: `${token}:${mine}`, ideas: [], failed: true }),
@@ -245,18 +245,22 @@ export function WidgetFeedback({
     const shown = (votes.identity === identity && votes.ideas[post.id]) || post;
     return (
       <VoteButton
-        postId={post.id}
+        project={projectSlug}
+        number={post.number}
         count={shown.voteCount}
         voted={shown.voted}
         shape="compact"
         disabled={!known || pending}
         vote={async (voted) => {
           const at = identity;
-          const result = await widgetVote(projectSlug, token, post.id, voted);
-          if (result.votes !== undefined) {
-            answered(at, [{ id: post.id, voteCount: result.votes, voted }]);
-          }
-          return result;
+          // As the widget's person: their token, or (on the portal's own site) its signed-in session.
+          return client.votes.set.mutate({ project: projectSlug, number: post.number, voted }, widgetCall(token)).then(
+            (result) => {
+              answered(at, [{ id: post.id, voteCount: result.votes, voted }], performance.now());
+              return {};
+            },
+            (error: unknown) => ({ error: errorMessage(error) }),
+          );
         }}
         signInHref={known && !viewer ? link(signInTo(postPath(post))) : undefined}
       />
@@ -283,7 +287,7 @@ export function WidgetFeedback({
           onPosted={() => setPosted((n) => n + 1)}
           similarVote={(post) => voteFor({ ...post, board: { slug: post.boardSlug } })}
           widgetToken={token}
-          onSimilar={(posts) => answered(identity, posts)}
+          onSimilar={(posts, sent) => answered(identity, posts, sent)}
           defaultTitle={defaultTitle}
           {...texts}
         />
