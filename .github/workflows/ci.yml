@@ -28,9 +28,10 @@ jobs:
   # reviews. Pushes to main and the nightly always run everything; so does a diff that can't be
   # read. Renames list both paths, so renaming code to .md isn't Markdown-only.
   # The Docker images build on a pull request only when it changes what the Production build
-  # doesn't prove for them: the Dockerfiles and .dockerignore, turbo prune's and pnpm's inputs
-  # (package.json files, the lockfile, workspace, .npmrc, patches, turbo.json), the Prisma schema
-  # and config, the worker's bundle config, the start scripts and this workflow.
+  # (each app with its Dockerfile's build settings) doesn't prove for them: the Dockerfiles and
+  # .dockerignore, turbo prune's and pnpm's inputs (package.json files, the lockfile, workspace,
+  # .npmrc, patches, turbo.json), the Prisma schema and config, the worker's bundle config, the
+  # start scripts and this workflow.
   changes:
     name: Changes
     runs-on: ubuntu-latest
@@ -289,12 +290,15 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
+      # Each app with the settings its Dockerfile builds with, so a pull request that skips the
+      # Docker images still proves them: only the web app gets these placeholders (auth config
+      # reads them when pages are collected).
+      - run: pnpm build --filter=@tuti/web
         env:
-          # Placeholders: auth config reads these when pages are collected.
           APP_URL: https://tuti.example
           PORTAL_URL_TEMPLATE: https://{project}.tuti.example
           BETTER_AUTH_SECRET: ci-build-secret-at-least-32-characters-long
+      - run: pnpm build --filter=!@tuti/web
 
   # Workflow security: injection, risky triggers, unpinned actions, and (online) actions with
   # known vulnerabilities, which is why it runs nightly too. A finding that is safe gets a
