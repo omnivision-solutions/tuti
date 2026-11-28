@@ -1280,7 +1280,7 @@ test("a long list of choices, used by thousands of fields, is gone through once"
   const result = readOpenApi(text);
   spy.mockRestore();
   expect("doc" in result ? result.doc.operations.length : result.error).toBeTruthy();
-  expect(scans).toBeLessThanOrEqual(1);
+  expect(scans).toBe(1);
 });
 
 test("a YAML file that's too large once its aliases are filled in is an error", () => {
@@ -1406,8 +1406,8 @@ test("what many places share is made once: a long pattern, a list of servers, a 
   const doc = spec({ openapi: "3.1.0", paths, components: { pathItems: { Shared: shared }, schemas: { Code: { type: "string", pattern: "^[a-z]+$" } } } });
   joined.mockRestore();
   replaced.mockRestore();
-  expect(joins).toBeLessThanOrEqual(1);
-  expect(titles).toBeLessThanOrEqual(1);
+  expect(joins).toBe(1);
+  expect(titles).toBe(1);
   // A summary is trimmed once for the operation, not for every path that points at it.
   let trims = 0;
   const trim = String.prototype.trim;
@@ -1418,7 +1418,7 @@ test("what many places share is made once: a long pattern, a list of servers, a 
   const padded = spec({ openapi: "3.1.0", paths, components: { pathItems: { Shared: { get: { summary: "  Padded  " } } } } });
   trimmed.mockRestore();
   expect(padded.operations.map((one) => one.title)).toEqual(Array.from({ length: 30 }, () => "Padded"));
-  expect(trims).toBeLessThanOrEqual(1);
+  expect(trims).toBe(1);
   const [first, second] = doc.operations;
   expect(second!.servers).toBe(first!.servers);
   expect(first!.servers![0]!.variables).toEqual({ v: { default: "a", enum: ["a", "b"], description: "" } });
