@@ -7,7 +7,7 @@ import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { createBoard, setBoardOff, updateBoard } from "./boards";
 import { updateGlossary } from "./operations/glossary";
-import { getBoardTranslations, updateBoardTranslation } from "./operations/label-translations";
+import { boardTranslationsOf, getBoardTranslations, translationLanguages, updateBoardTranslation } from "./operations/label-translations";
 import { retranslateLanguage, updateLanguages } from "./operations/languages";
 import { call } from "./operations/run";
 
@@ -150,6 +150,13 @@ test("a board readers don't see: not 'kept up to date' with no translation yet (
   await german();
   await prisma.board.create({ data: { projectId: project.id, name: "Internal", slug: "internal", postVisibility: "TEAM" } });
   expect((await call(getBoardTranslations, as(), { slug: "internal" })).translations).toEqual([{ language: "de", name: null, description: null, keepUpToDate: false }]);
+  // A board turned off too, and both as the Boards page reads them (boardTranslationsOf, from the boards it already has).
+  await prisma.board.create({ data: { projectId: project.id, name: "Old ideas", slug: "old", off: true } });
+  expect((await call(getBoardTranslations, as(), { slug: "old" })).translations).toEqual([{ language: "de", name: null, description: null, keepUpToDate: false }]);
+  const languages = await translationLanguages(project.id);
+  for (const slug of ["internal", "old"]) {
+    expect(boardTranslationsOf(await board(slug), languages)).toEqual([{ language: "de", name: null, description: null, keepUpToDate: false }]);
+  }
   // Set, it's translated once readers see it (the job leaves it until then: no request now).
   expect(await call(updateBoardTranslation, as(), { slug: "internal", language: "de", keepUpToDate: true })).toEqual({ language: "de", name: null, description: null, keepUpToDate: true });
   await languageTranslationsDone();
