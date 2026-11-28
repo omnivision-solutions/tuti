@@ -359,7 +359,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
             <div className="flex gap-3 border-b py-5">
               <PortalAvatar person={{ name: session.user.name, image: session.user.image ?? null }} className="size-8 text-[0.8125rem]" />
               <div className="min-w-0 flex-1">
-                <CommentForm postId={post.id} signedIn uploads={uploads} />
+                <CommentForm postId={post.id} post={{ project: projectSlug, number: post.number }} signedIn uploads={uploads} />
               </div>
             </div>
           ) : (
@@ -382,7 +382,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
               lang={lang}
               portal
               sort={sort}
-              ability={{ can: voter ? "act" : session ? "none" : "signIn", postId: post.id, portal: true, uploads }}
+              ability={{ can: voter ? "act" : session ? "none" : "signIn", postId: post.id, project: projectSlug, number: post.number, portal: true, uploads }}
               comments={post.comments.map(({ _count, likes, ...comment }) => ({ ...comment, likes: _count.likes, liked: likes.length > 0 }))}
               teamUserIds={teamUserIds}
               events={post.events}

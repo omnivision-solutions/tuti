@@ -1,10 +1,10 @@
 import { prisma } from "@tuti/db";
 import { beforeEach, describe, expect, test } from "vitest";
 
-import { actAs, callerAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addComment, callerAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { mergePost } from "./manage-posts";
-import { addComment, createPost } from "./posts";
+import { createPost } from "./posts";
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;

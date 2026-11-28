@@ -10,8 +10,7 @@ import { setVote } from "@/server/operations/more";
 import { OperationError } from "@/server/operations";
 import { call } from "@/server/operations/run";
 import { votersToEmail } from "@/server/post-lists";
-import { addComment } from "@/server/posts";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addComment, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
 let owner: TestUser;

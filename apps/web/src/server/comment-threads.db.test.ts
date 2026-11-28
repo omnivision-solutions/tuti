@@ -6,8 +6,7 @@ import { mergePost } from "@/server/operations/manage";
 import { likeComment } from "@/server/operations/more";
 import { listComments } from "@/server/operations/read";
 import { call } from "@/server/operations/run";
-import { setCommentLike } from "@/server/posts";
-import { actAs, createProject, signUp } from "@/test/helpers";
+import { actAs, createProject, setCommentLike, signUp } from "@/test/helpers";
 
 async function setup() {
   const owner = await signUp("Olive Owner");
@@ -83,7 +82,8 @@ test("likes: one each, taken back, counted for everyone, and only on comments th
 
   // The portal's action: signed out, asked to sign in; signed in, it likes.
   actAs(null);
-  expect(await setCommentLike(comment.id, true)).toEqual({ error: "Sign in to like comments" });
+  // The router's refusal (signed out, the portal shows a link to sign in instead of the button).
+  expect(await setCommentLike(comment.id, true)).toEqual({ error: "Sign in to do this" });
   const fan = await signUp("Fay Fan");
   actAs(fan);
   expect(await setCommentLike(comment.id, true)).toEqual({});

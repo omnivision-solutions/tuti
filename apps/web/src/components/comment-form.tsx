@@ -2,6 +2,7 @@
 
 import { type Doc, isEmptyDoc, readableBy } from "@tuti/content";
 import { useTranslations } from "next-intl";
+import { useRouter } from "next/navigation";
 import { useActionState, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -14,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { FormState } from "@/server/form-state";
-import { addComment } from "@/server/posts";
+import { errorMessage, useTRPCClient } from "@/components/trpc";
 
 /** What's written in a post's portal box, kept in this tab (sessionStorage) till it's sent or emptied; storage off: nothing. */
 const drafts = {
@@ -48,7 +49,8 @@ const drafts = {
  *
  * `replyTo`: a reply to that comment (its box opened by Reply, focused, `onDone` once posted, with Cancel: `onCancel`).
  *
- * `action`: where it's sent instead of a post's comments (a changelog entry's); `postId` then only keys the kept draft.
+ * `post`: the post it comments on (comments.create through /api/trpc), the page refreshed once it's saved. `action`: where
+ * it's sent instead (a changelog entry's); `postId` then only keys the kept draft.
  */
 export function CommentForm({
   postId,
@@ -61,10 +63,12 @@ export function CommentForm({
   autoFocus,
   onDone,
   onCancel,
-  action: send = addComment,
+  post,
+  action: sendTo,
   waiting = false,
 }: {
   postId: string;
+  post?: { project: string; number: number };
   action?: (prev: FormState, formData: FormData) => Promise<FormState>;
   /** It can't be sent yet (the widget's, while the page trades a token): what's typed stays, Comment waits. */
   waiting?: boolean;
@@ -79,6 +83,32 @@ export function CommentForm({
   uploads?: EditorUploads;
 }) {
   const portal = signedIn !== undefined;
+  const client = useTRPCClient();
+  const router = useRouter();
+  // A post's comment, as the team's or the portal's form says it (an internal note, a reply emailed to the voters: the
+  // operation refuses anyone else them).
+  const send =
+    sendTo ??
+    (async (_prev: FormState, formData: FormData): Promise<FormState> => {
+      const value = (name: string) => {
+        const field = formData.get(name);
+        return typeof field === "string" ? field : undefined;
+      };
+      return client.comments.create
+        .mutate({
+          project: post!.project,
+          number: post!.number,
+          content: value("content") || undefined,
+          body: value("body"),
+          ...(value("internal") === "on" && { internal: true }),
+          ...(value("emailVoters") === "on" && { emailVoters: true }),
+          replyTo: value("replyTo") || undefined,
+        })
+        .then(
+          () => (router.refresh(), {}),
+          (error: unknown) => ({ error: errorMessage(error) }),
+        );
+    });
   // The portal's words in the page's language (the app's own, notes and emailing voters, stay English).
   const t = useTranslations("feedback");
   const draftKey = `tuti:comment-draft:${postId}${replyTo ? `:${replyTo}` : ""}`;

@@ -6,10 +6,10 @@ import { handlers } from "@tuti/jobs";
 import { startWebhookReceiver, type WebhookReceiver } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addComment, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { changePostStatus } from "./manage-posts";
-import { addComment, createPost } from "./posts";
+import { createPost } from "./posts";
 import { createWebhook, deleteWebhook, sendTestWebhook } from "./webhooks";
 
 /** A receiver like a customer's (see @tuti/testkit). */
