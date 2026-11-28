@@ -280,6 +280,10 @@ test("Feedback, a board and a post in German: their words, counts and times, and
   // The idea's title is the team's words, in the project's language.
   await expect(reader.getByRole("link", { name: "Dark mode" })).toHaveAttribute("lang", "en");
   await checkpoint(reader, "board-in-german", { fullPage: false });
+  // The sidebar's boards: each named in German, then how many ideas are open (in browse mode too, not only on focus).
+  const sideBoards = reader.getByRole("complementary").getByRole("navigation", { name: "Boards" }).getByRole("link");
+  await expect(sideBoards.first()).toHaveAccessibleName(/^Funktionswünsche ?, 1 offene Idee$/);
+  await expect(sideBoards.first().locator("[lang=de]")).toHaveText("Funktionswünsche");
   await reader.getByRole("button", { name: "Neuer Beitrag" }).click();
   await expect(reader.getByRole("dialog", { name: "Idee teilen" })).toBeVisible();
   await expect(reader.getByRole("textbox", { name: "Titel" })).toHaveAttribute("placeholder", "Kurzer, aussagekräftiger Titel");

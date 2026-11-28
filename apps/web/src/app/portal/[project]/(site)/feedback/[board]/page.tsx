@@ -388,24 +388,21 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                       <Link
                         href={at(boardPath(other))}
                         aria-current={other.id === board.id ? "page" : undefined}
-                        aria-describedby={`board-count-${other.id}`}
                         className={cn(
                           "-mx-2.5 flex min-h-9 items-center gap-2 rounded-lg px-2.5 py-1.5 text-[0.9375rem] font-medium transition-colors",
                           other.id === board.id ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
                         )}
                       >
-                        {/* Named by the board, in its own language (docs/plan.md L14); its count read after it, in the page's,
-                            not "Bugs3". */}
+                        {/* Read as "Bugs, 3 open ideas" (in browse mode too), not "Bugs3": the board's name in its own language
+                            (docs/plan.md L14), its count in the page's. */}
                         <span lang={other.lang} className="min-w-0 flex-1 break-words">
                           {other.name}
                         </span>
+                        <span className="sr-only">, {t("openIdeas", { count: other._count.posts })}</span>
                         <span aria-hidden className="text-[0.8125rem] tabular-nums">
                           {other._count.posts.toLocaleString(language)}
                         </span>
                       </Link>
-                      <span id={`board-count-${other.id}`} hidden>
-                        {t("openIdeas", { count: other._count.posts })}
-                      </span>
                     </li>
                   ))}
                 </ul>
