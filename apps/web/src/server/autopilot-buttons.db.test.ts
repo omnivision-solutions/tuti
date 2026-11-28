@@ -280,3 +280,20 @@ test("Publish now when a teammate published one it named and stopped the other s
   expect(await click(c.id, signAutopilotButton(owner.id, c.id, `publish:${a},${b.id}`)!)).toBe(`/app/${project.slug}/autopilot/activity/${c.id}?done=already&button=publish&update=${a}&kept=1`);
   expect(await click(c.id, signAutopilotButton(owner.id, c.id, `stop:${b.id},${a}`)!)).toBe(`/app/${project.slug}/autopilot/activity/${c.id}?done=already&button=stop&update=${b.id}&went=1`);
 });
+
+test("refused without its token, and to someone off the team even with their own button: nothing done", async () => {
+  const c = await change();
+  const { id } = c;
+  const link = c.actions.find((action) => action.kind === "LINKS")!;
+  const scheduled = scheduledOf(c);
+  expect(await click(id, "")).toBe(`/app/${project.slug}/autopilot/activity/${id}`);
+
+  // Sent while they were on the team, clicked once they'd left: the router refuses them, as the project's pages do.
+  const former = await signUp("Fern Former");
+  actAs(former);
+  for (const button of [`approve:${link.id}`, `publish:${scheduled}`, `stop:${scheduled}`] as const) {
+    await expect(click(id, signAutopilotButton(former.id, id, button)!)).rejects.toMatchObject({ digest: expect.stringMatching(/^NEXT_HTTP_ERROR_FALLBACK;404/) });
+  }
+  expect(await statusOf(link.id)).toBe("PENDING");
+  expect(await statusOf(scheduled)).toBe("SCHEDULED");
+});
