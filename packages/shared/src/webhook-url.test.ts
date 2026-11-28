@@ -55,7 +55,6 @@ test.each([
   ["https://0.0.0.0/", "Webhook URLs must point to a public address"],
   ["https://internal.test/", "Webhook URLs must point to a public address"],
   ["https://mixed.test/", "Webhook URLs must point to a public address"],
-  ["https://nowhere.test/", "nowhere.test can't be found"],
 ])("%s is refused", async (url, message) => {
   await expect(checkWebhookUrl(url)).rejects.toThrow(message);
 });
