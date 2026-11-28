@@ -26,3 +26,26 @@ test("inbox.conversation, with credits on, doesn't give a project its free credi
   // Not given them yet, it reads as out of credits.
   expect(conversation?.aiPaused).toBe(true);
 });
+
+// The panel beside it links their other conversations into the Inbox's list when they're in it: the view it shows, or a
+// search's results (`q`), for the teammate looking.
+test("inbox.conversation's panel says which of their other conversations are in the list beside it: the view, or a search's results", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const email = "e2e-sam@example.com";
+  for (const [number, subject, status] of [
+    [1, "Exporting reports", "OPEN"],
+    [2, "Refund please", "CLOSED"],
+    [3, "Inviting a teammate", "OPEN"],
+  ] as const) {
+    await prisma.conversation.create({ data: { projectId: project.id, number, subject, status, email, origin: "API" } });
+  }
+  const caller = await callerAs(owner);
+  const inView = async (input: { view?: "open" | "closed"; q?: string }) =>
+    Object.fromEntries((await caller.inbox.conversation({ project: project.slug, number: 1, ...input })).conversation!.panel.conversations.map((c) => [c.number, c.inView]));
+
+  expect(await inView({})).toEqual({ 2: false, 3: true });
+  expect(await inView({ view: "closed" })).toEqual({ 2: true, 3: false });
+  // A search's results, whatever the view: closed ones too.
+  expect(await inView({ q: "refund" })).toEqual({ 2: true, 3: false });
+});
