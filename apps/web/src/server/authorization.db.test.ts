@@ -61,7 +61,6 @@ import * as passwordReset from "./password-reset";
 import * as planLicenses from "./plan-licenses";
 import * as portalSettings from "./portal-settings";
 import * as posts from "./posts";
-import * as projectSettings from "./project-settings";
 import * as projects from "./projects";
 import * as readerLanguage from "./reader-language";
 import * as rewrite from "./rewrite";
@@ -124,7 +123,6 @@ const modules = {
   "portal-handoff": portalHandoff,
   "portal-settings": portalSettings,
   posts,
-  "project-settings": projectSettings,
   projects,
   "reader-language": readerLanguage,
   rewrite,
@@ -741,9 +739,6 @@ const matrix: Matrix = {
       call: (_slug, f) => posts.addComment({}, form({ postId: f.postId, body: "Me too" })),
     },
     setCommentLike: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => posts.setCommentLike(f.commentId, true) },
-  },
-  "project-settings": {
-    renameProject: { allowed: "ADMIN", call: (slug) => projectSettings.renameProject(slug, {}, form({ name: "Renamed by the matrix" })) },
   },
   projects: {
     createProject: {
@@ -1484,6 +1479,7 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   "inbox.newConversationEmails": { allowed: "MEMBER", scope: "write", call: (caller, slug) => caller.inbox.newConversationEmails({ project: slug, on: false }) },
   "team.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.team.list({ project: slug }) },
   "project.get": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.project.get({ project: slug }) },
+  "project.update": { allowed: "ADMIN", scope: "write", call: (caller, slug) => caller.project.update({ project: slug, name: "Renamed by the matrix" }) },
   "votes.set": { allowed: "signed in", refusesSsoUsers: true, scope: "write", call: (caller, slug) => caller.votes.set({ project: slug, number: 1, voted: true }) },
 };
 
