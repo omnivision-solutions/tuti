@@ -9,7 +9,7 @@ import { hashSecret } from "@/server/auth/portal-handoff";
 import { DOMAIN_ENTRY, OPEN_DOMAINS } from "@/lib/reader-domains";
 
 import { emailAddress } from "./assistant";
-import { defineOperation, OperationError } from "./define";
+import { actingUserId, defineOperation, OperationError } from "./define";
 import { requirePlan } from "./plan";
 
 /**
@@ -207,7 +207,7 @@ export const addPortalReaders = defineOperation({
       if ((await tx.portalReader.count({ where: { projectId } })) + fresh.length > MAX_READERS) {
         throw new OperationError(400, "invalid_input", `A portal can have up to ${MAX_READERS} readers`);
       }
-      const addedById = actor.kind === "user" ? actor.userId : actor.createdById;
+      const addedById = actingUserId(actor);
       await tx.portalReader.createMany({ data: fresh.map((email) => ({ projectId, email, addedById })) });
       // A domain has nobody to email.
       return { added: fresh, toEmail: notify ? await claimReaderEmails(tx, projectId, fresh.filter((entry) => !isDomain(entry))) : [] };
@@ -216,7 +216,7 @@ export const addPortalReaders = defineOperation({
     let emailed = 0;
     if (toEmail.length > 0) {
       const inviter = await prisma.user.findUnique({
-        where: { id: actor.kind === "user" ? actor.userId : actor.createdById },
+        where: { id: actingUserId(actor) },
         select: { name: true, email: true },
       });
       // Inside each send: setting up the project's sender or reading its brand failing is a failed email, never a failed add.

@@ -1438,6 +1438,8 @@ const procedures: { [N in OperationName]?: ProcedureCase } = {
   "codeChangesTuning.update": { allowed: "OWNER", scope: "write", call: (caller, slug) => caller.codeChangesTuning.update({ project: slug, "decide.rounds": 6 }) },
   // Settings' gate: each settings page asks it.
   "settings.access": { allowed: "ADMIN", scope: "read", call: (caller, slug) => caller.settings.access({ project: slug }) },
+  // The portal's gate: anyone who can read the portal, signed in or not (a private one: portal-readers.db.test.ts).
+  "portal.access": { allowed: "public", scope: "read", call: (caller, slug) => caller.portal.access({ project: slug }) },
   // The team's names and roles, and the project's own setup: the team's (a key counts as the team), never anyone signed in.
   // The Inbox's list pane, and a teammate's own "Email me new conversations" (a key: its creator's).
   "inbox.list": { allowed: "MEMBER", scope: "read", call: (caller, slug) => caller.inbox.list({ project: slug, q: "Post", overview: true }) },
@@ -1550,6 +1552,13 @@ test.each(Object.entries(procedures).map(([name, rule]) => ({ name, rule: rule! 
     expect(await procedureOutcome(rule.call(await callerAs(readKey), fixture.slug, fixture))).toBe("FORBIDDEN");
   }
   expect(await snapshot()).toEqual(before);
+  // What anyone who can read a portal may do, on another project's private one (its team only).
+  if (rule.allowed === "public") {
+    await prisma.project.update({ where: { id: otherProject.id }, data: { portalAccess: "PRIVATE" } });
+    expect(await procedureOutcome(rule.call(await callerAs(users.OWNER), otherProject.slug, fixture))).toMatch(REFUSED);
+    expect(await procedureOutcome(rule.call(await callerAs(null), otherProject.slug, fixture))).toMatch(REFUSED);
+    await prisma.project.update({ where: { id: otherProject.id }, data: { portalAccess: "PUBLIC" } });
+  }
 
   // A portal's session, even an owner's: a reader's, never the team's.
   const reader = await signUp("Portal reader");

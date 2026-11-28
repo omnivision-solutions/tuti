@@ -11,7 +11,7 @@ import { storedProperties } from "@tuti/shared/user-properties";
 
 import type { Actor } from "./operations/define";
 import type { PostViewer } from "./post-visibility";
-import { canReadPortal, PREVIEW_READER_COOKIE, previewReader } from "@/server/auth/portal-readers";
+import { canReadPortal, PREVIEW_READER_COOKIE, previewReader, WIDGET_READER_COOKIE } from "@/server/auth/portal-readers";
 import { widgetTokenUser } from "@/server/auth/widget-session";
 
 import { onTeam, sessionIn } from "./session";
@@ -22,13 +22,6 @@ import { onTeam, sessionIn } from "./session";
  *
  * Not a "use server" module: its exports must never be callable from browsers.
  */
-
-/**
- * In the widget on a customer's site the portal's session cookie isn't sent; the person their app
- * signs in (Tuti.identify) gets this cookie instead (set by widgetSignIn: partitioned per embedding
- * site, holding their signed widget token), so the panel can show a private portal to them.
- */
-export const WIDGET_READER_COOKIE = "tuti_widget_reader";
 
 /**
  * Who's reading on this request: the team member previewing the portal in Customize (its cookie is only ever in
@@ -125,8 +118,8 @@ export async function currentPostViewer(projectId: string): Promise<PostViewer> 
   return read === null ? { team: true, userId } : { team: false, userId: read.signedIn ? userId : null };
 }
 
-/** An operation's caller as a reader: API keys act for the team (everything). */
+/** An operation's caller as a reader: API keys act for the team (everything); a visitor reads as people signed out do. */
 export async function actorReader(actor: Actor, projectId: string): Promise<Reader> {
-  return actor.kind === "apiKey" ? null : readerOf(projectId, actor.userId);
+  return actor.kind === "apiKey" ? null : readerOf(projectId, actor.kind === "user" ? actor.userId : null);
 }
 

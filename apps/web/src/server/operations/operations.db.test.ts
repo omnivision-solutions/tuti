@@ -41,6 +41,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "uploads.status": (f) => ({ mediaId: f.uploadId }),
   "changelogStyle.settings": () => ({}),
   "aiModels.setting": () => ({ group: "changelog" }),
+  "portal.access": () => ({}),
   "propertyFormats.update": () => ({ formats: { mrr: { label: "MRR", format: "money" } } }),
   "team.list": () => ({}),
   "votes.set": () => ({ number: 1, voted: true }),

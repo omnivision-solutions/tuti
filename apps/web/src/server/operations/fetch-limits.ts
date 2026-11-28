@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 
-import { type Actor, OperationError } from "./define";
+import { actingUserId, type Actor, OperationError } from "./define";
 
 // Its own module: API references and Screenshots' suggestions both count against it, and neither imports the other.
 
@@ -14,7 +14,7 @@ export const FETCHES_PER_PROJECT_PER_HOUR = 120;
  * can't overrun the limits together. The 6-hourly sync isn't counted.
  */
 export async function countSpecFetch({ actor, projectId }: { actor: Actor; projectId: string }): Promise<void> {
-  const userId = actor.kind === "user" ? actor.userId : actor.createdById;
+  const userId = actingUserId(actor);
   const hourAgo = new Date(Date.now() - 60 * 60_000);
   const over = await prisma.$transaction(async (tx) => {
     // Locks of their own (classes 11 and 12), always in that order: they wait on nothing else of the project's.

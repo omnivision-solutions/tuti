@@ -13,7 +13,7 @@ import { sessionIn } from "../session";
 import { arrivalOf, spamVerdict } from "../spam";
 import { newWidgetVisitor, type WidgetAuth, widgetPerson } from "../widget-person";
 import { emailAddress, limitHeaders } from "./assistant";
-import { defineOperation, OperationError } from "./define";
+import { actingUserId, defineOperation, OperationError } from "./define";
 import { earlierTurns } from "./docs-ask";
 import { startConversation } from "./conversations";
 import { projectPortal } from "./read";
@@ -317,7 +317,7 @@ export const escalateDocs = defineOperation({
   example: { questionId: "cm3q5x0a1000008l4h2gk7v9e", email: "ada@example.com", note: "I need this for an audit on Friday." },
   run: async ({ actor, projectId }, input) => {
     // An API key acts for the team, and is nobody: the conversation is with the address given.
-    const [askerId, userId] = actor.kind === "user" ? [actor.userId, actor.userId] : [actor.keyId, null];
+    const [askerId, userId] = actor.kind === "apiKey" ? [actor.keyId, null] : [actingUserId(actor), actingUserId(actor)];
     return escalateQuestion(projectId, askerId, input, await limitHeaders(actor), { userId });
   },
 });

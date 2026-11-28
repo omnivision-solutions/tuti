@@ -75,7 +75,7 @@ export async function postViewer(projectId: string, userId: string | null | unde
   return { team: await onTeam(projectId, userId), userId };
 }
 
-/** An operation's caller as a viewer: API keys act for the team. */
+/** An operation's caller as a viewer: API keys act for the team; a visitor views as people signed out do. */
 export function actorPostViewer(actor: Actor, projectId: string): Promise<PostViewer> {
-  return actor.kind === "apiKey" ? Promise.resolve(TEAM_VIEWER) : postViewer(projectId, actor.userId);
+  return actor.kind === "apiKey" ? Promise.resolve(TEAM_VIEWER) : postViewer(projectId, actor.kind === "user" ? actor.userId : null);
 }

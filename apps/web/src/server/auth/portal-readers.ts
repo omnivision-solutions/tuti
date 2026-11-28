@@ -4,6 +4,7 @@ import { planIncludes, readerEntriesFor } from "@tuti/shared";
 
 import type { Session } from "./auth";
 import { previewUser } from "./preview-session";
+import { widgetTokenUser } from "./widget-session";
 import { onTeam, sessionFrom } from "../session";
 
 /*
@@ -30,18 +31,18 @@ export async function canReadPortal(where: { id: string } | { slug: string }, us
   if (!project || project.portalAccess === "PUBLIC") {
     return true;
   }
-  return !!userId && (await isPrivateReader(project, userId, session));
+  return !!userId && (await isPrivateReader(project, userId, onTeam(project.id, userId, session)));
 }
 
 /**
- * On the project's team (onTeam: never with a portal's session), or, on a plan with private portals, signed in by its SSO
- * or one of its readers (with that email verified). `session`: the request's, for proxy.ts.
+ * On the project's team (`team`: onTeam, never with a portal's session), or, on a plan with private portals, signed in by
+ * its SSO or one of its readers (with that email verified).
  */
-async function isPrivateReader(project: { id: string; plan: PlanKey }, userId: string, session?: Session | null): Promise<boolean> {
+async function isPrivateReader(project: { id: string; plan: PlanKey }, userId: string, team: Promise<boolean>): Promise<boolean> {
   const projectId = project.id;
   const readers = planIncludes(project.plan, "privatePortal");
   const [member, sso, reader] = await Promise.all([
-    onTeam(projectId, userId, session),
+    team,
     readers ? prisma.ssoIdentity.findFirst({ where: { userId, projectId }, select: { id: true } }) : null,
     readers ? invitedReader(projectId, userId) : null,
   ]);
@@ -63,20 +64,62 @@ export async function invitedReader(projectId: string, userId: string): Promise<
 }
 
 /**
+ * What a request says about who's reading a portal: its session (a portal's is a reader's, never the team's: whoever runs
+ * a portal's site sees its cookies), Customize's preview cookie (PREVIEW_READER_COOKIE: the team member customizing it,
+ * read-only) and, in the widget on a customer's site, its reader cookie (the widget's signed-in person's token).
+ */
+export type ReaderCredentials = {
+  /** Read only for a private portal. */
+  session: () => Promise<{ userId: string; boundTo: string } | null>;
+  preview?: string | null;
+  widgetReader?: string | null;
+};
+
+/**
+ * Whether a request may read a project's portal: the one function proxy.ts's gate (portalVisitor) and the router's
+ * `reader` check (server/trpc/init.ts) decide with, so the two answer the same person the same. A public portal (or a
+ * missing one) needs nobody.
+ */
+export async function mayReadPortal(where: { id: string } | { slug: string }, credentials: ReaderCredentials): Promise<"public" | "allowed" | "refused"> {
+  const project = await prisma.project.findUnique({ where, select: { id: true, portalAccess: true, plan: true } });
+  if (!project || project.portalAccess === "PUBLIC") {
+    return "public";
+  }
+  const { preview, widgetReader } = credentials;
+  const session = await credentials.session();
+  const member = (userId: string) => prisma.teamMember.count({ where: { projectId: project.id, userId } }).then((count) => count > 0);
+  // A session that works in this project: the app's (the team's, if they're on it) or this portal's (a reader's).
+  if (session && (session.boundTo === "app" || session.boundTo === project.id)) {
+    if (await isPrivateReader(project, session.userId, session.boundTo === "app" ? member(session.userId) : Promise.resolve(false))) {
+      return "allowed";
+    }
+  }
+  if (await previewReader(project.id, preview)) {
+    return "allowed";
+  }
+  // The widget's person, read with no portal session: their team membership counts.
+  const widget = widgetReader ? await widgetTokenUser(project.id, widgetReader) : null;
+  return widget && (await isPrivateReader(project, widget, member(widget))) ? "allowed" : "refused";
+}
+
+/**
  * For proxy.ts: a request to a portal, with its cookies (`preview`: its PREVIEW_READER_COOKIE). A
  * public portal (or a missing one) needs no session.
  */
 export async function portalVisitor(slug: string, headers: Headers, preview?: string): Promise<"public" | "allowed" | "refused"> {
-  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, portalAccess: true, plan: true } });
-  if (!project || project.portalAccess === "PUBLIC") {
-    return "public";
-  }
-  const session = await sessionFrom(headers);
-  if (session && (await isPrivateReader(project, session.user.id, session))) {
-    return "allowed";
-  }
-  return (await previewReader(project.id, preview)) ? "allowed" : "refused";
+  const session = async () => {
+    const found = await sessionFrom(headers);
+    return found && { userId: found.user.id, boundTo: found.session.boundTo ?? "" };
+  };
+  return mayReadPortal({ slug }, { session, preview });
 }
+
+/**
+ * In the widget on a customer's site the portal's session cookie isn't sent; the person their app
+ * signs in (Tuti.identify) gets this cookie instead (set by widgetSignIn: partitioned per embedding
+ * site, holding their signed widget token), so the panel can show a private portal to them.
+ */
+export const WIDGET_READER_COOKIE = "tuti_widget_reader";
 
 /**
  * Customize's preview of a portal (server/auth/preview-session.ts): this cookie, partitioned to the app's

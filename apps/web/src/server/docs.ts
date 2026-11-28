@@ -38,6 +38,7 @@ import {
 import { dismissDocsGap as dismissGapOperation } from "./operations/docs-insights";
 import { asAdmin, asTeam, call } from "./operations/run";
 import { takeArticleScreenshots as takeScreenshotsOperation } from "./operations/screenshots";
+import { actingUserId } from "./operations/define";
 
 /** The team's docs actions (see the articles.*, collections.* and tabs.* operations). */
 
@@ -148,7 +149,7 @@ export async function saveArticle(projectSlug: string, slug: string | null, _sta
             },
             select: { codeChangeActionId: true, authorId: true },
           });
-          const byAutopilot = since.some((one) => one.codeChangeActionId) && !since.some((one) => !one.codeChangeActionId && one.authorId && one.authorId !== (context.actor.kind === "user" ? context.actor.userId : context.actor.createdById));
+          const byAutopilot = since.some((one) => one.codeChangeActionId) && !since.some((one) => !one.codeChangeActionId && one.authorId && one.authorId !== actingUserId(context.actor));
           version.version = { revision: updated.revision, title: row.title, content, mediaUrls: await mediaUrls(content), byAutopilot };
         }
       }

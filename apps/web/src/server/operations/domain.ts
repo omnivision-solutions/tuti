@@ -8,7 +8,7 @@ import { customDomainTarget, normalizeHostname, verificationRecord } from "@/lib
 
 import { certificateStatus, CloudflareError, cloudflareConfigured, createCustomHostname, deleteCustomHostname, getCustomHostname } from "../cloudflare";
 import { forgetCustomDomain, txtRecords } from "../custom-domains";
-import { defineOperation, OperationError } from "./define";
+import { actingUserId, defineOperation, OperationError } from "./define";
 import { lockOwnAddress } from "./own-address";
 import { requirePlan } from "./plan";
 
@@ -167,7 +167,7 @@ export const setDomain = defineOperation({
         verifiedAt: null,
         cloudflareId: null,
         certificate: null,
-        addedById: actor.kind === "user" ? actor.userId : actor.createdById,
+        addedById: actingUserId(actor),
       };
       return { existing, unchanged: false, domain: await tx.customDomain.upsert({ where: { projectId }, create: { projectId, ...data }, update: data, select: domainSelect }) };
     });

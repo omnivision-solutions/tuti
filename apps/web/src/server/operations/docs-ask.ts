@@ -11,7 +11,7 @@ import { readableArticle } from "../docs-queries";
 import { type AnswerSection, answerSections, operationsStillThere } from "../docs-search";
 import { actorReader } from "../portal-access";
 import { ANSWER_LENGTHS, type AssistantSettings, assistantSettings, offLimitsTopic } from "./assistant";
-import { defineOperation, OperationError } from "./define";
+import { actingUserId, defineOperation, OperationError } from "./define";
 import { projectSlug } from "./read";
 
 /**
@@ -434,7 +434,7 @@ export const askDocs = defineOperation({
     .describe("The answer"),
   example: { q: "And on mobile?", followUpTo: "cm3q5x0a1000008l4h2gk7v9e" },
   run: async ({ actor, projectId }, input) =>
-    answerQuestion(projectId, actor.kind === "user" ? actor.userId : actor.keyId, input.q, "API", await actorReader(actor, projectId), {
+    answerQuestion(projectId, actor.kind === "apiKey" ? actor.keyId : actingUserId(actor), input.q, "API", await actorReader(actor, projectId), {
       followUpTo: input.followUpTo,
     }),
 });

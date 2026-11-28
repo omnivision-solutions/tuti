@@ -8,7 +8,7 @@ import { namedProjectUser } from "@/server/project-users";
 
 import { attachMedia, displayDoc, MediaGoneError, readContent } from "../content";
 import { emitEvent } from "../events";
-import { type Actor, defineOperation, OperationError } from "./define";
+import { actingUserId, type Actor, defineOperation, OperationError } from "./define";
 import { actorPostViewer, fromApiVisibility, seesBoard, VISIBILITIES } from "../post-visibility";
 import { commentShape, findVisiblePost, postNumber, postShape, postSummarySelect, projectPortal, summary } from "./read";
 import { onTeam, signedInAsReader } from "../session";
@@ -61,6 +61,9 @@ export const author = z
  * app when `author` is given (created on first sight; see namedProjectUser), otherwise the key's creator.
  */
 export async function authorId(context: { actor: Actor; projectId: string }, input: z.infer<typeof author>) {
+  if (context.actor.kind === "visitor") {
+    actingUserId(context.actor);
+  }
   if (context.actor.kind === "user") {
     if (input) {
       throw new OperationError(403, "forbidden", "Only API keys can write on someone's behalf");
@@ -68,7 +71,7 @@ export async function authorId(context: { actor: Actor; projectId: string }, inp
     return context.actor.userId;
   }
   if (!input) {
-    return context.actor.createdById;
+    return actingUserId(context.actor);
   }
   return namedProjectUser(context.actor, context.projectId, input);
 }

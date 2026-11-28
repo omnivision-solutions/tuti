@@ -57,7 +57,7 @@ import { branding } from "./branding";
 import { imageOutput } from "./widget";
 import { author, authorId, saving } from "./create";
 import { aiOrRefuse } from "./credits";
-import { type Actor, defineOperation, OperationError } from "./define";
+import { actingUserId, type Actor, defineOperation, OperationError } from "./define";
 import { postNumber, projectPortal, projectSlug } from "./read";
 import { onTeam } from "../session";
 import { actorReader } from "../portal-access";
@@ -264,7 +264,7 @@ async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entry
 
 /** API keys are the team's; people are when they're on the project's team (onTeam: never with a portal's session). Only the team sees drafts. */
 export async function isTeam(actor: Actor, projectId: string): Promise<boolean> {
-  return actor.kind === "apiKey" || onTeam(projectId, actor.userId);
+  return actor.kind === "apiKey" || (actor.kind === "user" && onTeam(projectId, actor.userId));
 }
 
 /** An entry as someone off the team reads it: only its public posts (post-visibility.ts), as the portal lists them. */
@@ -343,7 +343,7 @@ async function refusedBeforeCopying(projectId: string, { cover, postIds, sample 
   }
 }
 
-export const uploaderOf = (actor: Actor) => (actor.kind === "user" ? actor.userId : actor.createdById);
+export const uploaderOf = (actor: Actor) => actingUserId(actor);
 
 /** A cover given by URL, not by an upload's id (cuids, which never hold one). */
 const isCoverUrl = (cover: string | null | undefined): cover is string => !!cover?.includes("://");
@@ -656,7 +656,7 @@ export const createChangelogEntry = defineOperation({
             tags: input.tags.map(toTag),
             emailOnly: input.emailOnly,
             coverId: cover ?? null,
-            createdById: actor.kind === "user" ? actor.userId : actor.createdById,
+            createdById: actingUserId(actor),
           },
           select: { id: true },
         });
@@ -1700,7 +1700,7 @@ export const publishChangelogEntry = defineOperation({
         await tx.post.update({ where: { id: postId }, data: { status: "COMPLETED", ...(!current.sample && { shippedEmailsDueAt: current.seen === "TEAM" ? null : new Date() }) } });
         // Its shipped emails are counted on this event: the entry's "told" (entryTold).
         await tx.postEvent.create({
-          data: { postId, actorId: actor.kind === "user" ? actor.userId : actor.createdById, from: current.status, to: "COMPLETED", changelogEntryId: entry.id },
+          data: { postId, actorId: actingUserId(actor), from: current.status, to: "COMPLETED", changelogEntryId: entry.id },
         });
         if (current.sample) {
           continue;

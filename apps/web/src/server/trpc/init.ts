@@ -4,6 +4,9 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import type { TRPC_ERROR_CODE_KEY } from "@trpc/server/rpc";
 import superjson from "superjson";
 
+import { mayReadPortal } from "../auth/portal-readers";
+import { visitorHash } from "../auth/visitor-session";
+import { widgetTokenUser } from "../auth/widget-session";
 import { type Actor, type Operation, OperationError } from "../operations/define";
 import type { TrpcContext } from "./context";
 
@@ -64,11 +67,13 @@ const operationErrors = t.middleware(async ({ next }) => {
 });
 
 /**
- * A mutation with a cookie must come from the page's own site, as server actions' did (fromOwnSite). Queries change
- * nothing, so one from another site can't act, and can't read its answer.
+ * A mutation with a cookie (a session's, or a reader's: they decide what it may read) must come from the page's own site,
+ * as server actions' did (fromOwnSite). Queries change nothing, so one from another site can't act, and can't read its
+ * answer. The widget's tokens come in a header, which another site's page can't send here.
  */
 const sameSite = t.middleware(({ ctx, type, next }) => {
-  if (type === "mutation" && ctx.who?.kind === "session" && ctx.who.via === "cookie" && !ctx.sameSite) {
+  const cookies = (ctx.who?.kind === "session" && ctx.who.via === "cookie") || !!ctx.reader.preview || !!ctx.reader.widgetReader;
+  if (type === "mutation" && cookies && !ctx.sameSite) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Refused: this change didn't come from this site's own page" });
   }
   return next();
@@ -92,14 +97,17 @@ export type ProjectField = { project?: string };
 const notFound = () => new TRPCError({ code: "NOT_FOUND", message: "No such project, or it isn't yours" });
 
 /**
- * The project a procedure acts in, with who's acting there and their role (null: not on its team), or the refusal: a
- * key acts in its own project only; the app's session as the team (its membership, read once per request) or, for
- * `anyone` operations, as anyone; a portal's session (a reader's, even a teammate's) only on its own project and only
- * where anyone may act. The operation's own access, scope and owner rule are checked next (define.ts: authorize).
+ * The project a procedure acts in, with who's acting there and their role (null: not on its team), and, for `reader`
+ * operations, whether the request may read its portal (mayReadPortal, with its reader cookies), or the refusal: a key
+ * acts in its own project only; the app's session as the team (its membership, read once per request) or, for `anyone`
+ * and `reader` operations, as anyone; a portal's session (a reader's, even a teammate's) only on its own project and
+ * only where anyone may act; the widget's person by their token for this project (someone the customer's site signed
+ * in, or a signed-out visitor: a visitor acts only where readers may), and nobody only where readers may. The
+ * operation's own access, scope and owner rule are checked next (define.ts: authorize).
  */
-export async function projectOf(ctx: TrpcContext & { who: NonNullable<TrpcContext["who"]> }, slug: string | undefined, access: Operation["access"]) {
+export async function projectOf(ctx: TrpcContext, slug: string | undefined, access: Operation["access"]) {
   const { who } = ctx;
-  if (who.kind === "apiKey") {
+  if (who?.kind === "apiKey") {
     if (slug !== undefined && !(await prisma.project.count({ where: { id: who.key.projectId, slug } }))) {
       throw notFound();
     }
@@ -108,6 +116,35 @@ export async function projectOf(ctx: TrpcContext & { who: NonNullable<TrpcContex
   }
   if (!slug) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Say which project: its slug in `project`" });
+  }
+  const readers = access === "reader";
+  // Whether this request may read the project's portal: its session, its reader cookies, the widget's signed-in person.
+  const mayRead = (projectId: string) => () =>
+    mayReadPortal(
+      { id: projectId },
+      {
+        session: async () => (who?.kind === "session" ? { userId: who.userId, boundTo: who.boundTo } : null),
+        preview: ctx.reader.preview,
+        widgetReader: who?.kind === "widget" ? who.token : ctx.reader.widgetReader,
+      },
+    ).then((answer) => answer !== "refused");
+  if (who?.kind !== "session") {
+    if (!who && !readers) {
+      throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in to do this" });
+    }
+    const project = await prisma.project.findUnique({ where: { slug }, select: { id: true } });
+    if (!project) {
+      throw notFound();
+    }
+    let actor: Actor = { kind: "visitor", visitorHash: who?.kind === "visitor" ? visitorHash(project.id, who.token) : null };
+    if (who?.kind === "widget") {
+      const userId = await widgetTokenUser(project.id, who.token);
+      if (!userId && !readers) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in again" });
+      }
+      actor = userId ? { kind: "user", userId } : actor;
+    }
+    return { actor, projectId: project.id, role: null, mayRead: mayRead(project.id) };
   }
   const actor: Actor = who.via === "token" ? { kind: "user", userId: who.userId, sessionId: who.sessionId } : { kind: "user", userId: who.userId };
   if (who.boundTo === "app") {
@@ -121,15 +158,15 @@ export async function projectOf(ctx: TrpcContext & { who: NonNullable<TrpcContex
     }
     const member = await ctx.memberships.get(slug)!;
     if (member) {
-      return { actor, ...member };
+      return { actor, ...member, mayRead: mayRead(member.projectId) };
     }
   }
-  if (access !== "anyone") {
+  if (access !== "anyone" && !readers) {
     throw notFound();
   }
   const project = await prisma.project.findUnique({ where: { slug }, select: { id: true } });
   if (!project || (who.boundTo !== "app" && who.boundTo !== project.id)) {
     throw notFound();
   }
-  return { actor, projectId: project.id, role: null };
+  return { actor, projectId: project.id, role: null, mayRead: mayRead(project.id) };
 }
