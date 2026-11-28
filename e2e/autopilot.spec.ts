@@ -1193,7 +1193,7 @@ test("a pull request's edit to a draft: the review shows what it changes in the 
   await confirm.getByRole("button", { name: "Approve" }).click();
   await expect(owner.locator("[data-sonner-toast]").getByText("Approved", { exact: true })).toBeVisible();
   // Still a draft, with the edit in it.
-  const saved = (await api(`/articles/${draftSlug}`, undefined, "GET")) as { status: string; body: string };
+  const saved = (await api(`/articles/${draftSlug}`, undefined, "GET")) as unknown as { status: string; body: string };
   expect(saved).toMatchObject({ status: "draft" });
   expect(saved.body).toContain("Pick Light or Dark in Settings.");
 });
@@ -1237,7 +1237,7 @@ test("a draft holding a pull request's edit, published from Docs: the dialog say
   await expect(confirm).toBeHidden();
   const editor = owner.getByRole("textbox", { name: "Article" });
   await expect(editor).toContainText("Pick Light, Dark or System in Settings.");
-  expect(((await api(`/articles/${draftSlug}`, undefined, "GET")) as { status: string }).status).toBe("draft");
+  expect(((await api(`/articles/${draftSlug}`, undefined, "GET")) as unknown as { status: string }).status).toBe("draft");
   // The teammate's own change, saved: Publish goes on from the version their save left, not the one the page loaded.
   await editor.click();
   await owner.keyboard.press("ControlOrMeta+End");
@@ -1276,7 +1276,7 @@ test("a draft holding a pull request's edit, published from Docs: the dialog say
   await expect(confirm).toContainText("It includes 1 edit Autopilot suggested; it goes live too.");
   await confirm.getByRole("button", { name: "Publish" }).click();
   await expect(owner.locator("[data-sonner-toast]").getByText("Published", { exact: true })).toBeVisible();
-  const published = (await api(`/articles/${draftSlug}`, undefined, "GET")) as { status: string; body: string };
+  const published = (await api(`/articles/${draftSlug}`, undefined, "GET")) as unknown as { status: string; body: string };
   expect(published.status).toBe("published");
   expect(published.body).toContain("Pick Light, Dark or System in Settings.");
   expect(published.body).not.toContain("On every device.");
@@ -1395,7 +1395,7 @@ test("on their account, someone picks when they hear from Autopilot; a choice th
   const asTheyHappen = owner.getByRole("radio", { name: /^As they happen/ });
   await expect(asTheyHappen).toBeChecked();
   // An option is picked by its label (the radio itself is out of sight).
-  const option = (page: typeof owner, name: string) => page.getByRole("radiogroup", { name: "Autopilot emails" }).locator("label").filter({ hasText: name });
+  const option = (page: Page, name: string) => page.getByRole("radiogroup", { name: "Autopilot emails" }).locator("label").filter({ hasText: name });
   await option(owner, "Off").click();
   await expect(off).toBeChecked();
   await expect(owner.getByText("Saved", { exact: true }).first()).toBeVisible();

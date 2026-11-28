@@ -5,7 +5,7 @@ import { type Doc, type MediaUrls } from "@tuti/content";
 import type { ChangelogTag, PostStatus } from "@tuti/db";
 import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cn } from "cn";
-import { BellDotIcon, CheckIcon, ImageIcon, ListIcon, MailIcon, PlusIcon, SparklesIcon, UploadIcon, XIcon } from "lucide-react";
+import { CheckIcon, ImageIcon, PlusIcon, SparklesIcon, UploadIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 
 import { UpgradeDialog } from "@/components/upgrade-dialog";
@@ -138,7 +138,7 @@ export const ChangelogSavingContext = createContext<{
   /** The cover is uploading: Save waits (it would keep the one before), and so does Publish (it publishes what's saved). */
   uploading: boolean;
   setUploading: (uploading: boolean) => void;
-  /** How publishing announces it, picked in the sidebar's Goes to (WhoSeesIt): the email announcement, the widget popup. */
+  /** How publishing announces it, picked in the sidebar's Published in (WhoSeesIt): the email announcement, the widget popup. */
   announce: Announce;
   setAnnounce: (announce: Announce) => void;
   /** Draft with AI's dialog is open: from the top bar's button, Publish's dialog or Ask AI's dialog (on the whole text). */
@@ -150,10 +150,10 @@ export const ChangelogSavingContext = createContext<{
   /** The form's featured image isn't the saved one (one uploaded or removed, not saved yet): Publish offers no cover of its own over it. */
   coverChanged: boolean;
   setCoverChanged: (changed: boolean) => void;
-  /** Audience or the changelog list changed and isn't saved: Publish waits (it publishes what's saved, to whoever that's for). */
+  /** Who sees it or the changelog list changed and isn't saved: Publish waits (it publishes what's saved, to whoever that's for). */
   groupsChanged: boolean;
   setGroupsChanged: (changed: boolean) => void;
-  /** Audience is Some groups with none ticked: neither Save nor Publish goes until one is, or it's Everyone. */
+  /** Who sees it is Some groups with none ticked: neither Save nor Publish goes until one is, or it's Everyone. */
   noGroupPicked: boolean;
   setNoGroupPicked: (none: boolean) => void;
 } | null>(null);
@@ -620,16 +620,24 @@ export function ChangelogForm({
   screenshots = null,
   canTakeScreenshots = false,
   languages = null,
+  fillIns = 0,
+  completing = 0,
+  completionEmails = 0,
 }: {
+  /** How many of its saved posts publishing would complete, and how many emails that sends (emailedOnCompletion). */
+  completing?: number;
+  completionEmails?: number;
   projectSlug: string;
   entry: Entry | null;
+  /** How many lines its saved text has left to fill in ("[Check: …]", "[Screenshot: …]"): said under its status, since Publish waits for them. */
+  fillIns?: number;
   /** Its languages (a published entry's, with other languages): the sidebar's Languages, after its status. */
   languages?: ReactNode;
   /** Its "[Screenshot: …]" lines and their runs (a saved entry's). */
   screenshots?: LineScreenshots | null;
   /** An owner or admin: they take screenshots (changelog.takeScreenshots). */
   canTakeScreenshots?: boolean;
-  /** The project's reader groups, for Audience (not shown without any). */
+  /** The project's reader groups, for Who sees it (not shown without any). */
   groups?: { key: string; name: string }[];
   /** The plan has no reader groups: picking one opens the upgrade prompt (unpicking works: changelog.update needs the plan only for groups added). */
   groupsUpgrade?: UpgradePrompt | null;
@@ -655,10 +663,20 @@ export function ChangelogForm({
   /** The editor's Ask AI on the whole text, for the header's button. */
   const askWhole = useRef<(() => void) | null>(null);
   const askPausedId = useId();
+  const shipsId = useId();
   // Changes not saved yet: the AI helpers edit the saved text, and accepting would lose them.
   const [dirty, setDirty] = useState(false);
   const [linked, setLinked] = useState(entry?.posts ?? []);
-  // Saves so far: Audience and Goes to start afresh after each (from the saved groups), its picks sent again only once changed.
+  // What publishing does with its linked posts, as saved (the page counts them as a Completed dialog does): said only for
+  // a draft that completes some, and emails only where someone would get one. A sample or imported entry's too: publishing
+  // it quietly only skips the popup and the subscribers' email.
+  const shipsLine =
+    entry && !entry.published && completing > 0
+      ? completionEmails > 0
+        ? "Publishing completes linked posts and emails their voters."
+        : "Publishing completes linked posts."
+      : null;
+  // Saves so far: Who sees it and Published in start afresh after each (from the saved groups), its picks sent again only once changed.
   const [saves, setSaves] = useState(0);
   // Published or unpublished: its posts are the saved ones again (as publishing used them), not links changed before.
   const [published, setPublished] = useState(entry?.published);
@@ -692,7 +710,8 @@ export function ChangelogForm({
       id={CHANGELOG_FORM}
       {...keepingFields(action)}
       onInput={(event) => event.currentTarget.contains(event.target as Node) && setDirty(true)}
-      className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start"
+      // One column on phones, no wider than the screen (a long pull request title is cut to its line, not run off it).
+      className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_17rem]"
     >
       {/* Written as it's published: the title, then the text, no boxes. */}
       <FieldGroup className="min-w-0">
@@ -786,16 +805,15 @@ export function ChangelogForm({
         </div>
       </FieldGroup>
 
-      {/* Beside the text with a line on its left, as a post's sidebar is: held in view as the pane scrolls, no taller than
-          it (its PaneBody, a size container); under it on phones, after a line. */}
-      <aside
-        aria-label="Entry settings"
-        className="flex flex-col gap-6 border-t pt-6 text-sm lg:sticky lg:top-0 lg:max-h-[calc(100cqh-3rem)] lg:overflow-y-auto lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
-      >
+      {/* Beside the text with a line on its left, as a post's sidebar is, scrolling with the page (one scrollbar, not one
+          inside another), its line as tall as the text and at least the pane (its PaneBody, a size container, less its
+          padding), with room under its last rows for the support chat's button; under it on phones, after a line. */}
+      <aside aria-label="Entry settings" className="flex flex-col gap-6 border-t pt-6 text-sm lg:min-h-[calc(100cqh-3rem)] lg:border-t-0 lg:border-l lg:pt-0 lg:pb-16 lg:pl-6">
         {standing && (
           <section aria-label="Status" className="flex flex-col gap-2">
             <h2 className="group-label">Status</h2>
             <p className="flex flex-wrap items-center gap-1">{standing}</p>
+            {fillIns > 0 && <p className="text-xs text-highlight-foreground">{`${fillIns} ${fillIns === 1 ? "line" : "lines"} to fill in`}</p>}
           </section>
         )}
         {languages}
@@ -847,24 +865,31 @@ export function ChangelogForm({
           saving={pending}
           onChange={() => setDirty(true)}
         />
-        {/* Published: the saved ones, which publishing completed (not links changed since and not saved). */}
-        <CompletedPosts
-          projectSlug={projectSlug}
-          posts={posts}
-          linked={entry?.published ? entry.posts : linked}
-          editable={!entry?.published}
-          sampleEntry={entry?.sample ?? false}
-          onChange={link}
-        />
-        {entry && pullRequests && <EntryPullRequests projectSlug={projectSlug} number={entry.number} published={entry.published} dirty={dirty} pullRequests={pullRequests} />}
+        {/* What it ships: the posts it completes and the pull requests it's written from, with what each does. */}
+        <section aria-labelledby={shipsId} className="flex flex-col gap-3">
+          <h2 id={shipsId} className="group-label">
+            Ships
+          </h2>
+          {/* Published: the saved ones, which publishing completed (not links changed since and not saved). */}
+          <CompletedPosts
+            projectSlug={projectSlug}
+            posts={posts}
+            linked={entry?.published ? entry.posts : linked}
+            editable={!entry?.published}
+            sampleEntry={entry?.sample ?? false}
+            onChange={link}
+          />
+          {entry && pullRequests && <EntryPullRequests projectSlug={projectSlug} number={entry.number} published={entry.published} dirty={dirty} pullRequests={pullRequests} />}
+          {shipsLine && <p className="text-xs text-muted-foreground">{shipsLine}</p>}
+        </section>
       </aside>
     </form>
   );
 }
 
 /**
- * Who an entry is for and where it goes, under two group labels. Audience: Everyone, or Some groups (the reader groups
- * as chips; not shown without any). Goes to: the changelog list (saved: off is `emailOnly`), the widget popup and the
+ * Who an entry is for and where it goes, under two group labels. Who sees it: Everyone, or Some groups (the reader groups
+ * as chips; not shown without any). Published in: the changelog list (saved: off is `emailOnly`), the widget popup and the
  * email announcement (picked here for Publish, ChangelogSaving; a published entry's say what happened). The groups and
  * the list are sent only once changed, so a save of the text never touches ones set meanwhile (by the API, or a
  * teammate), nor needs the plan for groups it already has.
@@ -902,8 +927,8 @@ export function WhoSeesIt({
   const listChanged = listed === emailOnly;
   // Some groups with none ticked (none yet, or the plan refused one) would be saved, and published, for everyone: the
   // form isn't sent (the first chip says why) and Publish waits, until one is ticked or it's Everyone.
-  const [ticked, setTicked] = useState(picked.length);
-  const noGroup = someGroups && ticked === 0;
+  const [ticked, setTicked] = useState(picked);
+  const noGroup = someGroups && ticked.length === 0;
   const chips = useRef<HTMLDivElement>(null);
   useEffect(() => chips.current?.querySelector("input")?.setCustomValidity(noGroup ? "Pick a group, or choose Everyone." : ""), [noGroup]);
   const held = changed || listChanged || noGroup;
@@ -918,6 +943,10 @@ export function WhoSeesIt({
   const announce = saving?.announce ?? { email: true, markNew: true };
   const pick = (change: Partial<Announce>) => saving?.setAnnounce({ ...announce, ...change });
   const needsId = useId();
+  const reachesId = useId();
+  // Who it reaches: the list, the widget and the email all leave out anyone outside its groups. Not said once it's been
+  // emailed with groups: those it went to keep it.
+  const reach = !someGroups ? "All users" : entry?.emailedSubscribers ? null : "Only users in selected groups";
   return (
     <>
       {changed && <input type="hidden" name="groupsEditable" value="1" />}
@@ -925,11 +954,11 @@ export function WhoSeesIt({
       {!listed && <input type="hidden" name="emailOnly" value="1" />}
       {groups.length > 0 && (
         <fieldset className="flex flex-col gap-2">
-          <legend className="group-label mb-2">Audience</legend>
+          <legend className="group-label mb-2">Who sees it</legend>
           <Segmented
             name="audience"
-            aria-label="Audience"
-            aria-describedby={upgrade ? needsId : undefined}
+            aria-label="Who sees it"
+            aria-describedby={[upgrade && needsId, reach && reachesId].filter(Boolean).join(" ") || undefined}
             options={[
               { value: "everyone", label: "Everyone" },
               { value: "some", label: "Some groups" },
@@ -971,7 +1000,7 @@ export function WhoSeesIt({
                   disabled={!someGroups}
                   // Off, but in the keyboard's reach: a chip focused as a save starts keeps its focus.
                   aria-disabled={pending || undefined}
-                  aria-describedby={upgrade ? needsId : undefined}
+                  aria-describedby={[upgrade && needsId, reach && reachesId].filter(Boolean).join(" ") || undefined}
                   onClick={(event) => {
                     if (pending) {
                       event.preventDefault();
@@ -988,8 +1017,8 @@ export function WhoSeesIt({
                     if (pending || (upgrade && event.currentTarget.checked && !picked.includes(group.key))) {
                       return;
                     }
-                    const step = event.currentTarget.checked ? 1 : -1;
-                    setTicked((n) => n + step);
+                    const on = event.currentTarget.checked;
+                    setTicked((keys) => (on ? [...keys, group.key] : keys.filter((key) => key !== group.key)));
                     setChanged(true);
                     onChange();
                   }}
@@ -1000,6 +1029,11 @@ export function WhoSeesIt({
               </label>
             ))}
           </div>
+          {reach && (
+            <p id={reachesId} className="text-xs text-muted-foreground">
+              {reach}
+            </p>
+          )}
           {upgrade && (
             <>
               <span id={needsId} hidden>
@@ -1011,9 +1045,9 @@ export function WhoSeesIt({
         </fieldset>
       )}
       <fieldset className="flex flex-col gap-2">
-        <legend className="group-label mb-2">Goes to</legend>
+        <legend className="group-label mb-2">Published in</legend>
+        <div className="flex flex-col gap-1">
         <GoesToRow
-          icon={<ListIcon />}
           label="Changelog list"
           checked={listed}
           // Off, but in the keyboard's reach while a save runs.
@@ -1026,17 +1060,17 @@ export function WhoSeesIt({
           }}
         />
         {entry && <AnnounceRows entry={entry} subscribers={subscribers} listed={listed} announce={announce} pick={pick} />}
+        </div>
       </fieldset>
     </>
   );
 }
 
-/** A row of Goes to: its icon, its label (the switch's name) and at most one short line under it (its description). */
-function GoesToRow({ icon, label, line, ...input }: { icon: ReactNode; label: string; line?: string | null } & Omit<React.ComponentProps<"input">, "type">) {
+/** A row of Published in: its label (the switch's name) and at most one short line under it (its description). */
+function GoesToRow({ label, line, ...input }: { label: string; line?: string | null } & Omit<React.ComponentProps<"input">, "type">) {
   const id = useId();
   return (
-    <div className="flex items-center gap-3 rounded-lg border px-3 py-2 [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground">
-      {icon}
+    <div className="flex items-center gap-3 py-1">
       <div className="flex min-w-0 flex-1 flex-col">
         <label htmlFor={id}>{label}</label>
         {line && (
@@ -1078,12 +1112,11 @@ function AnnounceRows({
   };
   const quietReason = entry.sample ? "Not for sample entries" : entry.importedOn ? `Published ${entry.importedOn}, before the import` : null;
   const popup = entry.published ? (
-    <GoesToRow icon={<BellDotIcon />} label="Widget" checked={listed && entry.announced} disabled line={listed ? null : "Needs the changelog list"} readOnly />
+    <GoesToRow label="Widget" checked={listed && entry.announced} disabled line={listed ? null : "Needs the changelog list"} readOnly />
   ) : quietReason ? (
-    <GoesToRow icon={<BellDotIcon />} label="Widget" checked={false} disabled line={quietReason} readOnly />
+    <GoesToRow label="Widget" checked={false} disabled line={quietReason} readOnly />
   ) : (
     <GoesToRow
-      icon={<BellDotIcon />}
       label="Widget"
       // Off with the list, and back as it was once the list is on again: the pick is kept.
       checked={listed && announce.markNew}
@@ -1104,8 +1137,8 @@ function AnnounceRows({
     : entry.groups.length > 0
       ? // Counted in its groups only (changelogEmailed sends it to no one else).
         n === 0
-        ? "No subscribers in its groups"
-        : `${subscriberCountText(n)} in its groups`
+        ? "No subscribers in these groups"
+        : subscriberCountText(n)
       : entry.privatePortal
         ? n === 0
           ? "No readers subscribed"
@@ -1114,16 +1147,15 @@ function AnnounceRows({
           ? "No subscribers yet"
           : subscriberCountText(n);
   const email = entry.published ? (
-    <GoesToRow icon={<MailIcon />} label="Email announcement" checked={entry.emailedSubscribers} disabled readOnly line={join(entry.emailedSubscribers ? sentLine : "Published without it", askedLine)} />
+    <GoesToRow label="Email" checked={entry.emailedSubscribers} disabled readOnly line={join(entry.emailedSubscribers ? sentLine : "Published without it", askedLine)} />
   ) : quietReason ? (
-    <GoesToRow icon={<MailIcon />} label="Email announcement" checked={false} disabled readOnly line={quietReason} />
+    <GoesToRow label="Email" checked={false} disabled readOnly line={quietReason} />
   ) : entry.emailedSubscribers ? (
     // Emailed once already: publishing again sends it only to those it's still to go to, whatever's picked.
-    <GoesToRow icon={<MailIcon />} label="Email announcement" checked disabled readOnly line={sentLine} />
+    <GoesToRow label="Email" checked disabled readOnly line={sentLine} />
   ) : (
     <GoesToRow
-      icon={<MailIcon />}
-      label="Email announcement"
+      label="Email"
       checked={announce.email && n > 0}
       disabled={n === 0}
       line={countLine}
@@ -1228,7 +1260,7 @@ function CompletedPosts({
       {/* The ones shown: a linked post merged away since isn't (saving drops it; it can't be listed). */}
       {editable && shown.map((post) => <input key={post.number} type="hidden" name="posts" value={post.number} />)}
       <GroupHeading count={shown.length}>
-        <h2 className="group-label">Posts</h2>
+        <h3 className="group-label">Posts</h3>
         {editable && (
           <Dialog
             open={open}
@@ -1368,9 +1400,9 @@ function EntryPullRequests({
   return (
     <section aria-labelledby={PULL_REQUESTS_HEADING} className="flex flex-col gap-2">
       <GroupHeading count={list.length}>
-        <h2 id={PULL_REQUESTS_HEADING} tabIndex={-1} className="group-label outline-none">
+        <h3 id={PULL_REQUESTS_HEADING} tabIndex={-1} className="group-label outline-none">
           Pull requests
-        </h2>
+        </h3>
         {!published && canAdd && <AddChanges projectSlug={projectSlug} addsTo={addsTo} saved={saved} />}
       </GroupHeading>
       {list.length > 0 && (
@@ -2032,7 +2064,7 @@ export function ChangelogEntryActions({
   // Draft with AI, Publish and Unpublish wait for a save too: run meanwhile, either could undo the other's posts or text.
   // And for the cover's upload: Publish publishes what's saved, so it would go out without it.
   const busy = pending || (saving?.pending ?? false) || (saving?.uploading ?? false);
-  // As picked in the sidebar's Goes to (WhoSeesIt).
+  // As picked in the sidebar's Published in (WhoSeesIt).
   const announce = saving?.announce ?? { email: true, markNew: true };
   // Nobody to email (or emailed before): it isn't, and the sidebar says so once it's published.
   const emailing = announce.email && subscribers > 0 && !emailedSubscribers;

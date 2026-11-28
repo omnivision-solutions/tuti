@@ -11,7 +11,7 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck",
+    "typecheck": "turbo run typecheck && tsc -p e2e",
     "db:generate": "turbo run db:generate",
     "db:migrate": "pnpm --filter @tuti/db db:migrate",
     "db:studio": "pnpm --filter @tuti/db db:studio",
@@ -24,6 +24,7 @@
   "devDependencies": {
     "@playwright/test": "^1.64.1",
     "@tuti/testkit": "workspace:*",
+    "@types/node": "^22.20.4",
     "@types/pg": "^8.23.1",
     "pg": "^8.23.0",
     "turbo": "^2.11.6",

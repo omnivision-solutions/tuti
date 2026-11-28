@@ -4,7 +4,7 @@ import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";
-import { expect, test } from "./fixtures";
+import { expect, type Page, test } from "./fixtures";
 import { apiFor, createProject, png, signUp } from "./helpers";
 
 /** A query on the journeys' database. */
@@ -450,10 +450,10 @@ test("what a teammate saves in another tab is what Save changes compares with, o
     await api("/changelog", { title, body: "What changed." });
     await api(`/changelog/${index + 1}/publish`, { announce: false });
   }
-  const instructions = (page: typeof team) => page.getByLabel("Instructions");
-  const chips = (page: typeof team) => page.getByRole("list", { name: "Style examples" }).getByRole("listitem");
-  const save = (page: typeof team) => page.getByRole("button", { name: "Save changes" });
-  const pickExample = async (page: typeof team, title: string) => {
+  const instructions = (page: Page) => page.getByLabel("Instructions");
+  const chips = (page: Page) => page.getByRole("list", { name: "Style examples" }).getByRole("listitem");
+  const save = (page: Page) => page.getByRole("button", { name: "Save changes" });
+  const pickExample = async (page: Page, title: string) => {
     await page.getByRole("button", { name: "Pick a style example" }).click();
     await page.getByRole("dialog", { name: "Pick a style example" }).getByRole("button", { name: title }).click();
   };
@@ -484,7 +484,7 @@ test("what a teammate saves in another tab is what Save changes compares with, o
   await expect(save(team)).toBeDisabled();
 
   // Saved in another tab while this one has nothing edited: this one shows it, with nothing to save.
-  const screenshots = (page: typeof team) => page.getByRole("switch", { name: "Mark where screenshots go" });
+  const screenshots = (page: Page) => page.getByRole("switch", { name: "Mark where screenshots go" });
   await instructions(other).fill("From the other tab.");
   await pickExample(other, "Agenda view");
   await screenshots(other).check();
