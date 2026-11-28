@@ -12,11 +12,11 @@ beforeAll(async () => {
 afterAll(() => model.close());
 afterEach(() => {
   vi.unstubAllEnvs();
-  model.done();
-  // Each test reads only its own requests, whatever ran before it.
+  // Each test reads only its own requests, whatever ran before it (cleared first: done() may throw).
   model.requests.length = 0;
   model.decisions.length = 0;
   model.images.length = 0;
+  model.done();
 });
 
 /** Usage goes nowhere, except in the tests about it. */
