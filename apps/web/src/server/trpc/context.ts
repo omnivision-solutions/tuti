@@ -1,6 +1,6 @@
 import type { TeamRole } from "@tuti/db";
 
-import { type ApiKey, authenticateSession, sendsSession } from "../api-auth";
+import { type ApiKey, authenticateSession, sendsSession, type Teammate } from "../api-auth";
 import { sessionFrom } from "../session";
 
 /**
@@ -100,3 +100,13 @@ export function sessionContext(session: Awaited<ReturnType<typeof sessionFrom>>)
 
 /** The context for a project API key, checked already (api-auth.ts: authenticate), for REST and MCP. */
 export const keyContext = (key: ApiKey): TrpcContext => ({ who: { kind: "apiKey", key }, sameSite: true, memberships: new Map() });
+
+/**
+ * The context for the mobile app's teammate on REST (api-auth.ts: authenticateTeammate, until T11), in the project its
+ * request names: their membership there, as authenticateTeammate read it, is this request's.
+ */
+export const teammateContext = (teammate: Teammate, slug: string): TrpcContext => ({
+  who: { kind: "session", userId: teammate.userId, sessionId: teammate.sessionId, boundTo: "app", via: "token" },
+  sameSite: true,
+  memberships: new Map([[slug, Promise.resolve({ projectId: teammate.projectId, role: teammate.role })]]),
+});

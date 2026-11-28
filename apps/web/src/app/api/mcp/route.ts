@@ -1,31 +1,37 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { CallToolRequestSchema, type CallToolResult, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { log } from "@tuti/shared";
-
-import { type ApiKey, authenticate, refusal } from "@/server/api-auth";
-import { OperationError, operations, toolName } from "@/server/operations";
-import { legacyRun } from "@/server/operations/define";
+import { type ApiKey, authenticate } from "@/server/api-auth";
+import { operations, toolName } from "@/server/operations";
+import { authorize } from "@/server/operations/define";
+import { keyContext } from "@/server/trpc/context";
+import { callOperation } from "@/server/trpc/server";
 import { agentOutputSchema, errorsLine, inputSchema } from "@/server/operations/openapi";
 
 /**
- * The MCP server (Streamable HTTP, stateless): every operation is a tool, so AI
- * assistants can search, triage and answer feedback. Authenticated like the REST
- * API, with a project API key as the bearer token; a key only sees the tools it may run (read-only keys, read tools).
+ * The MCP server (Streamable HTTP, stateless): every operation of the public API is a tool, so AI assistants can
+ * search, triage and answer feedback. Authenticated like the REST API, with a project API key as the bearer token, and
+ * called through the router (server/trpc) as the key; a key only sees the tools the router would let it run (the same
+ * check: read-only keys, read tools).
  */
 async function handle(request: Request) {
-  const actor = await authenticate(request);
-  if (actor instanceof Response) {
-    return actor;
+  const key = await authenticate(request);
+  if (key instanceof Response) {
+    return key;
   }
-  const server = mcpServer(actor);
+  const server = mcpServer(key, await allowedTools(key));
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
   return transport.handleRequest(request);
 }
 
-function mcpServer(actor: ApiKey) {
-  const tools = operations.filter((operation) => !refusal(actor, operation));
+/** The operations the key may run, by the check the router applies (authorize, with the key's creator's role). */
+async function allowedTools({ role, ...actor }: ApiKey) {
+  const allowed = await Promise.all(operations.map((operation) => authorize(operation, { actor, projectId: actor.projectId }, role).then(() => true, () => false)));
+  return operations.filter((_, i) => allowed[i]);
+}
+
+function mcpServer(key: ApiKey, tools: typeof operations) {
   const server = new Server(
     { name: "tuti", version: "1.0.0" },
     {
@@ -54,22 +60,13 @@ function mcpServer(actor: ApiKey) {
     if (!operation) {
       return failure(`Unknown tool ${request.params.name}`);
     }
-    const input = operation.input.safeParse(request.params.arguments ?? {});
-    if (!input.success) {
-      const issue = input.error.issues[0];
-      return failure(issue ? `${issue.path.join(".") || "input"}: ${issue.message}` : "Invalid input");
+    const called = await callOperation(keyContext(key), operation, { ...request.params.arguments, project: undefined });
+    if (!called.ok) {
+      return failure(called.message);
     }
-    try {
-      const text = JSON.stringify(await legacyRun(operation, { actor, projectId: actor.projectId }, input.data), null, 2);
-      // As JSON, like the text: what `outputSchema` describes (a date is its ISO string).
-      return { content: [{ type: "text", text }], structuredContent: JSON.parse(text) as Record<string, unknown> };
-    } catch (error) {
-      if (error instanceof OperationError) {
-        return failure(error.message);
-      }
-      log.error("MCP tool failed", { tool: operation.name, error });
-      return failure("Something went wrong");
-    }
+    const text = JSON.stringify(called.result, null, 2);
+    // As JSON, like the text: what `outputSchema` describes (a date is its ISO string).
+    return { content: [{ type: "text", text }], structuredContent: JSON.parse(text) as Record<string, unknown> };
   });
   return server;
 }

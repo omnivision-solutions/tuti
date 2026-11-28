@@ -50,8 +50,8 @@ test("an operation's run is out of reach", () => {
   expect(operations.length).toBeGreaterThan(0);
 });
 
-// legacyRun skips the check: only the callers that check for themselves until they move (REST and MCP until T2,
-// operations/run.ts's call until T12) may use it.
+// legacyRun skips the check: only the caller that checks for itself until it moves (operations/run.ts's call, until
+// T12) may use it. REST and MCP call the router (T2).
 test("legacyRun has only its listed callers", () => {
   const src = fileURLToPath(new URL("../..", import.meta.url));
   const files = execFileSync("grep", ["-rl", "--include=*.ts", "--include=*.tsx", "legacyRun", "."], { cwd: src, encoding: "utf8" })
@@ -59,5 +59,5 @@ test("legacyRun has only its listed callers", () => {
     .split("\n")
     .map((file) => file.replace(/^\.\//, ""))
     .filter((file) => !/\.test\.tsx?$/.test(file));
-  expect(files.sort()).toEqual(["app/api/mcp/route.ts", "app/api/v1/[...path]/route.ts", "server/operations/define.ts", "server/operations/run.ts"]);
+  expect(files.sort()).toEqual(["server/operations/define.ts", "server/operations/run.ts"]);
 });

@@ -75,7 +75,7 @@ const OPERATION_INTERNALS = new Set(["runOperation", "legacyRun", "procedureFor"
  */
 const EXEMPT = [
   // Serve operations rather than call them: REST, MCP, the spec, the API docs.
-  { files: /^src\/app\/api\/(v1|mcp|docs)\//, imports: /^server\/(api-auth|operations\/.+)\.ts$/ },
+  { files: /^src\/app\/api\/(v1|mcp|docs)\//, imports: /^server\/(api-auth|operations\/.+|trpc\/context)\.ts$/ },
   // Left as they are: the job endpoints, the public widget feed, signed email links, webhooks, health, widget.js, media,
   // plans, the licence refresh, AppSumo's redirect, the sign-in card.
   {
