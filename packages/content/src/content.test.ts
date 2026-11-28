@@ -69,7 +69,7 @@ describe("links", () => {
 });
 
 describe("parseDoc", () => {
-  test("accepts what the profile allows and returns it normalised", () => {
+  test("accepts what the profile allows and keeps all of it (normalising: below)", () => {
     const input = doc(p(text("Dark mode", [{ type: "bold" }]), text(" see "), text("here", [link("https://example.com")])), list("a", "b"), video("youtube", "dQw4w9WgXcQ"));
     const result = parseDoc("post", input);
     expect(result).toEqual({ ok: true, doc: input });
