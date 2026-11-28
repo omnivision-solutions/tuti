@@ -1023,6 +1023,9 @@ model Board {
   /// visibility (nobody else sees, votes on or is emailed about them) until it's turned on. Off boards don't count
   /// against the plan's board limit: an import brings boards past it turned off, for an upgrade to turn on.
   off                Boolean        @default(false)
+  /// Its name and description in the project's other languages (docs/plan.md L14; @tuti/jobs LabelTranslations):
+  /// `{ de: { name, description, auto, source } }`. Only a board readers see (on, not the team's alone) is translated.
+  translations       Json           @default("{}")
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
 

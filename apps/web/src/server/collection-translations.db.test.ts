@@ -27,6 +27,8 @@ beforeEach(async () => {
   vi.stubEnv("TUTI_CONFIG", "");
   owner = await signUp("Owner");
   project = await createProject(owner);
+  // Its first board out of the way: boards are translated too (docs/plan.md L14), so this file's replies stay its own labels'.
+  await prisma.board.deleteMany({ where: { projectId: project.id } });
 });
 afterEach(async () => {
   await languageTranslationsDone();

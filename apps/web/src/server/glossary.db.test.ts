@@ -41,6 +41,8 @@ beforeEach(async () => {
   vi.stubEnv("TUTI_CONFIG", "");
   owner = await signUp("Owner");
   project = await createProject(owner);
+  // Its first board out of the way: boards are translated too (docs/plan.md L14), so this file's replies stay its own labels'.
+  await prisma.board.deleteMany({ where: { projectId: project.id } });
 });
 afterEach(async () => {
   await languageTranslationsDone();
@@ -440,6 +442,15 @@ test("a publish between a save's plan and its write: the plan is refused (null) 
   expect(await prisma.$transaction((tx) => applyGlossaryChanges(tx, plan))).toBeNull();
   // Through the operation, planned again: the German version is found.
   expect(await call(updateGlossary, as(), { terms: [{ term: "Board", translations: { de: "Brett" } }], dryRun: true })).toMatchObject({ behind: 1 });
+});
+
+test("a board changed between a save's plan and its write: the plan is refused (null) and made again", async () => {
+  await call(updateLanguages, as(), { languages: [{ code: "de", newPages: "manual" }] });
+  await prisma.board.create({ data: { projectId: project.id, name: "Ideas", slug: "ideas" } });
+  const plan = await planGlossaryChanges(project.id, [], [{ term: "Board", keep: false, translations: { de: "Brett" } }]);
+  // Renamed to use the term after the plan read the boards: its translation must be made again with it.
+  await prisma.board.updateMany({ where: { projectId: project.id, slug: "ideas" }, data: { name: "Board ideas" } });
+  expect(await prisma.$transaction((tx) => applyGlossaryChanges(tx, plan))).toBeNull();
 });
 
 test("an unpublished edit between a save's plan and its write (or a label's translation written): the plan still holds", async () => {

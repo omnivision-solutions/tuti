@@ -881,7 +881,8 @@ async function glossaryPlanState(db: Prisma.TransactionClient | typeof prisma, p
         coalesce((SELECT string_agg(t.id || t.language || t.automatic::text, ',' ORDER BY t.id) FROM changelog_translation t WHERE t."entryId" = e.id), ''), ',' ORDER BY e.id))
         FROM changelog_entry e WHERE e."projectId" = ${projectId} AND e."publishedAt" IS NOT NULL AND NOT e.sample) AS entries,
       (SELECT md5(string_agg(c.id || ':' || md5(concat_ws(chr(31), c.name, c.description)), ',' ORDER BY c.id)) FROM collection c WHERE c."projectId" = ${projectId}) AS collections,
-      (SELECT md5(string_agg(d.id || ':' || md5(d.name), ',' ORDER BY d.id)) FROM docs_tab d WHERE d."projectId" = ${projectId}) AS tabs`;
+      (SELECT md5(string_agg(d.id || ':' || md5(d.name), ',' ORDER BY d.id)) FROM docs_tab d WHERE d."projectId" = ${projectId}) AS tabs,
+      (SELECT md5(string_agg(b.id || ':' || md5(concat_ws(chr(31), b.name, b.description)), ',' ORDER BY b.id)) FROM board b WHERE b."projectId" = ${projectId}) AS boards`;
   return JSON.stringify(row);
 }
 
@@ -894,7 +895,7 @@ export async function planGlossaryChanges(projectId: string, before: Glossary, a
   const match = termMatcher(union);
   const keys = (text: string) => match(text).map(({ term }) => term.toLowerCase());
   const touched: TouchedVersion[] = [];
-  const labels: { table: "collection" | "docs_tab"; id: string; languages: string[] }[] = [];
+  const labels: { table: "collection" | "docs_tab" | "board"; id: string; languages: string[] }[] = [];
   if (changed.size === 0) {
     return { projectId, state, codes: [], touched, labels, matchTerms: (_: string, __: string) => false };
   }
@@ -931,6 +932,7 @@ export async function planGlossaryChanges(projectId: string, before: Glossary, a
   for (const [table, rows] of [
     ["collection", await prisma.collection.findMany({ where: { projectId }, select: { id: true, name: true, description: true } })],
     ["docs_tab", await prisma.docsTab.findMany({ where: { projectId }, select: { id: true, name: true } })],
+    ["board", (await prisma.board.findMany({ where: { projectId }, select: { id: true, name: true, description: true } })).map((board) => ({ ...board, description: board.description ?? "" }))],
   ] as const) {
     for (const label of rows) {
       const used = keys(`${label.name}\n${"description" in label ? label.description : ""}`);
@@ -1030,7 +1032,7 @@ export async function applyGlossaryChanges(tx: Prisma.TransactionClient, plan: G
   }
   // Labels kept up to date that use a changed term: made again (their source cleared, so they're found stale).
   for (const code of codes) {
-    for (const table of ["collection", "docs_tab"] as const) {
+    for (const table of ["collection", "docs_tab", "board"] as const) {
       const ids = labels.filter((label) => label.table === table && label.languages.includes(code)).map(({ id }) => id);
       if (ids.length > 0) {
         await tx.$executeRaw`UPDATE ${Prisma.raw(table)} SET translations = jsonb_set(translations, ${[code, "source"]}::text[], 'null'::jsonb)
