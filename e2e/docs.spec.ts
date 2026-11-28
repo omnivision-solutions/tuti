@@ -1586,6 +1586,9 @@ test("article settings keep collection changes unpublished, preserve a typed tit
   // A collection picked in Settings is saved there, as the article's Save would: on a published article it waits, with
   // the other unpublished changes, to be published. The title being written meanwhile stays as it was typed.
   const title = team.getByRole("textbox", { name: "Title" });
+  // Filled once the page has hydrated (the text's editor is drawn only then): hydrating midway through the fill drops
+  // its select-all, and the new title goes in front of the old one instead of replacing it.
+  await expect(team.getByRole("textbox", { name: "Article", exact: true })).toBeVisible();
   await title.fill("Inviting your whole team");
   await team.getByRole("button", { name: "Settings" }).click();
   await expect(dialog.getByRole("combobox", { name: "Collection" })).toHaveAccessibleDescription("A new collection goes live when you publish the changes.");
