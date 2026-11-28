@@ -33,7 +33,7 @@ export async function GET(request: Request) {
   return inboxStream(request, {
     wants: (change) => change.projectId === projectId,
     stillAllowed: async () => {
-      const still = await stillContext(who);
+      const still = await stillContext(who, { id: projectId, slug });
       return !!still && (await allowed(still, slug)) === projectId;
     },
   });

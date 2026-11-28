@@ -186,3 +186,18 @@ test("the web app's cookie stream: another project's refused, and it ends once i
   expect(await stream.next()).toBeNull();
   expect((await open({ query: `?project=${project.slug}`, slug: null })).status).toBe(404);
 });
+
+test("a new slug doesn't end an open stream: its keepalive checks the project it opened on", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  onTestFinished(() => void vi.useRealTimers());
+  const member = await addMember(project.id, "MEMBER");
+  const app = await open({ token: `Bearer ${tokenOf(member)}` });
+  actAs(owner);
+  const web = await open({ query: `?project=${project.slug}`, slug: null });
+  expect(await app.next()).toBe(ready);
+  expect(await web.next()).toBe(ready);
+  await prisma.project.update({ where: { id: project.id }, data: { slug: `${project.slug}-renamed` } });
+  await vi.advanceTimersByTimeAsync(KEEPALIVE_MS);
+  expect(await app.next()).toBe(": ping");
+  expect(await web.next()).toBe(": ping");
+});

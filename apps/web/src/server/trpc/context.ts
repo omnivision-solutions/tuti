@@ -119,9 +119,14 @@ export const teammateContext = (teammate: Teammate, slug: string): TrpcContext =
 
 /**
  * The same caller again, for a stream's later checks (/api/live, at each keepalive): null once their session has ended
- * (signed out, expired). Their membership is read anew, so a procedure refuses them once they've left the team.
+ * (signed out, expired). Their membership is read anew by the project's id, which the stream's opening check proved, so a
+ * procedure refuses them once they've left the team, and a new slug doesn't end the stream.
  */
-export async function stillContext(who: Extract<Who, { kind: "session" }>): Promise<TrpcContext | null> {
-  const signedIn = await prisma.session.count({ where: { id: who.sessionId, expiresAt: { gt: new Date() } } });
-  return signedIn ? { who, sameSite: true, memberships: new Map() } : null;
+export async function stillContext(who: Extract<Who, { kind: "session" }>, project: { id: string; slug: string }): Promise<TrpcContext | null> {
+  const [signedIn, member] = await Promise.all([
+    prisma.session.count({ where: { id: who.sessionId, expiresAt: { gt: new Date() } } }),
+    prisma.teamMember.findUnique({ where: { projectId_userId: { projectId: project.id, userId: who.userId } }, select: { role: true } }),
+  ]);
+  const membership = member && { projectId: project.id, role: member.role };
+  return signedIn ? { who, sameSite: true, memberships: new Map([[project.slug, Promise.resolve(membership)]]) } : null;
 }
