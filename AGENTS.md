@@ -15,7 +15,7 @@ Open-source feedback, roadmap and changelog tool. The plan and its checklist liv
 | `pnpm lint` | ESLint |
 | `pnpm build` | Production builds |
 
-CI runs all of them on every PR, except that a PR changing only Markdown files runs just the unit tests (some check docs against the code), the secret scan, the workflow audit and the reviews. Run the ones your change touches before pushing.
+CI runs all of them on every PR, except that a PR changing only Markdown files runs just the unit tests (some check docs against the code), the secret scan, the workflow audit and the reviews; the Docker images build only for a PR changing their inputs. Run the ones your change touches before pushing.
 
 ## Tests
 
