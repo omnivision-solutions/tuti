@@ -1519,7 +1519,8 @@ export const getChangelogStyleSettings = defineOperation({
     const background = style.coverBackground;
     return {
       tone: style.tone,
-      examples: style.examples.map((entry) => entry.number),
+      // The picks still published, in the changelog's order (newest first), whatever order they were picked in.
+      examples: published.filter((entry) => style.examples.some((picked) => picked.number === entry.number)).map((entry) => entry.number),
       screenshotMarkers: style.screenshotMarkers,
       // Your background without a background (removed from the API) is the automatic pick, as it draws.
       coverDesign: style.coverDesign && (style.coverDesign !== "background" || background) ? (style.coverDesign as CoverDesign) : null,
